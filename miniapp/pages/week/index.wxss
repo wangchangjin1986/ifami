@@ -1,0 +1,47 @@
+/* 日历页：周/月网格 + 孩子筛选。app-head/body 复用 app.wxss。 */
+
+/* 按孩子筛选面板 */
+.filter-panel {
+  display: flex; flex-wrap: wrap; gap: 12rpx;
+  padding: 16rpx; background: var(--surface); border: 1rpx solid var(--line); border-radius: 16rpx;
+}
+.filter-chip { padding: 8rpx 24rpx; border-radius: 999rpx; background: var(--surface-2); color: var(--muted); font-size: 26rpx; }
+.filter-chip.on { background: var(--accent); color: #fff; }
+
+/* 周/月切换（view 版分段器） */
+.seg { display: flex; background: var(--surface-2); border-radius: 24rpx; padding: 8rpx; gap: 8rpx; }
+.seg-btn { flex: 1; text-align: center; border-radius: 18rpx; padding: 14rpx 0; font-size: 26rpx; color: var(--muted); font-weight: 500; }
+.seg-btn.on { background: var(--surface); color: var(--fg); box-shadow: 0 2rpx 8rpx rgba(0,0,0,.08); }
+
+/* 周视图：时段 × 星期 网格 */
+.week-grid {
+  display: grid;
+  grid-template-columns: 88rpx repeat(7, 1fr);
+  gap: 8rpx;
+}
+.week-grid .slot { color: var(--muted); font-size: 22rpx; display: flex; align-items: center; }
+.week-grid .dow, .week-dow .dow { text-align: center; color: var(--muted); padding: 8rpx 0; font-weight: 500; font-size: 22rpx; }
+.week-grid .cell {
+  background: var(--surface-2); border-radius: 12rpx; min-height: 88rpx;
+  padding: 8rpx 2rpx; display: flex; flex-direction: column; gap: 2rpx;
+  align-items: center; justify-content: center; text-align: center; line-height: 1.25;
+}
+.week-grid .cell.blank { background: transparent; }
+.week-grid .cell.hot { outline: 3rpx solid var(--warn); background: var(--warn-soft); }
+.cell-who { font-size: 20rpx; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.cell-title { font-size: 20rpx; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.cell-more { font-size: 18rpx; color: var(--muted); }
+
+/* 月视图：月历 */
+.week-dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8rpx; margin-bottom: 8rpx; }
+.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8rpx; }
+.mcell {
+  background: var(--surface); border-radius: 12rpx; min-height: 88rpx;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6rpx;
+}
+.mcell.blank { background: transparent; }
+.mcell.today { outline: 3rpx solid var(--accent); }
+.mcell .d { font-size: 28rpx; font-weight: 600; }
+.mdots { display: flex; gap: 4rpx; height: 12rpx; }
+.mdot { width: 12rpx; height: 12rpx; border-radius: 50%; background: var(--accent); }
+.mdot.warn { background: var(--warn); }

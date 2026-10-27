@@ -1,0 +1,79 @@
+<view class="page">
+  <block wx:if="{{loading}}">
+    <view class="empty">加载中…</view>
+  </block>
+
+  <block wx:elif="{{!logged}}">
+    <view class="hero">
+      <text class="hero-title">ifami</text>
+      <text class="hero-sub">以家庭为单位的学习与生活协作</text>
+      <button class="btn" bindtap="doLogin">微信登录</button>
+    </view>
+  </block>
+
+  <block wx:elif="{{!hasFamily}}">
+    <view class="app-head"><text class="title">家庭</text></view>
+    <view class="body">
+      <view class="card">
+        <view class="ev-title">创建你的家庭</view>
+        <view class="ev-meta">家庭是 ifami 的账户单位，创建后即可添加孩子、安排日程。</view>
+        <input class="input" placeholder="家庭名，如「我们的家」" value="{{newFamilyName}}" bindinput="onNewFamily" />
+        <button class="btn" bindtap="createFamily">创建家庭</button>
+      </view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="app-head">
+      <text class="title">家庭</text>
+      <text class="sub link">{{familyName}} ▾</text>
+    </view>
+
+    <view class="body">
+      <view class="card member" wx:for="{{members}}" wx:key="member_id">
+        <view class="avatar">{{item.avatar}}</view>
+        <view class="ev-main">
+          <view class="ev-title">{{item.name}} <text wx:if="{{item.chip}}" class="chip {{item.isVirtual ? 'gray' : ''}}">{{item.chip}}</text></view>
+          <view class="ev-meta">{{item.meta}}</view>
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="ev-title">添加孩子</view>
+        <view class="ev-meta">孩子是虚拟成员，无独立登录，数据由监护人管理。</view>
+        <input class="input" placeholder="孩子姓名" value="{{childName}}" bindinput="onChildName" />
+        <input class="input" placeholder="称谓（如：女儿）" value="{{childRelation}}" bindinput="onChildRelation" />
+        <button class="btn ghost" bindtap="addChild">＋ 添加孩子</button>
+      </view>
+
+      <button class="btn" bindtap="genInvite">＋ 邀请家人</button>
+      <view wx:if="{{inviteToken}}" class="invite-row">
+        <text class="invite-token">{{inviteToken}}</text>
+        <text class="invite-copy" bindtap="copyInvite">复制</text>
+      </view>
+
+      <view class="row">
+        <button class="btn ghost row-btn" bindtap="goManage">全部安排</button>
+        <button class="btn ghost row-btn" bindtap="goReport">家庭周报</button>
+      </view>
+      <view class="row">
+        <button class="btn ghost row-btn" bindtap="goTimeline">成长时间线</button>
+        <button class="btn ghost row-btn" bindtap="goSettings">设置</button>
+      </view>
+
+      <view class="card">
+        <view class="rowline"><text>录入权限</text><text class="v">开放（所有父母可录入）▾</text></view>
+        <view class="muted">可切换为「主理人模式」：只有指定成员能录入，其他父母只读+评论。</view>
+      </view>
+    </view>
+
+    <button class="fab" bindtap="openFab">＋</button>
+    <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeFab">
+      <view class="sheet" catchtap="noop">
+        <button class="opt" bindtap="goEvent"><text class="opt-b">安排一件事</text><text class="opt-s">课程、接送、活动——有固定时间和地点，进日历</text></button>
+        <button class="opt" bindtap="goTask"><text class="opt-b">创建打卡任务</text><text class="opt-s">阅读、跳绳——重复的目标行为，进打卡</text></button>
+        <button class="btn ghost" bindtap="closeFab">取消</button>
+      </view>
+    </view>
+  </block>
+</view>

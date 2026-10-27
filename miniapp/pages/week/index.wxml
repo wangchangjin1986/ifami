@@ -1,0 +1,90 @@
+<view class="page">
+  <block wx:if="{{!logged}}">
+    <view class="empty"><text>请先到「家庭」页登录</text></view>
+  </block>
+
+  <block wx:elif="{{!hasFamily}}">
+    <view class="empty"><text>请先在「家庭」页创建家庭并添加孩子</text></view>
+  </block>
+
+  <block wx:else>
+    <view class="app-head">
+      <text class="title">日历</text>
+      <text class="sub link" bindtap="toggleFilter">{{monthLabel}} · {{childLabel}} ▾</text>
+    </view>
+
+    <view class="body">
+    <!-- 按孩子筛选 -->
+    <view wx:if="{{filterOpen}}" class="filter-panel">
+      <view class="filter-chip {{childFilter === 0 ? 'on' : ''}}" bindtap="selectChild" data-id="0">全部孩子</view>
+      <view
+        class="filter-chip {{childFilter === c.member_id ? 'on' : ''}}"
+        wx:for="{{children}}"
+        wx:for-item="c"
+        wx:key="member_id"
+        bindtap="selectChild"
+        data-id="{{c.member_id}}"
+      >{{c.name}}</view>
+    </view>
+
+    <view class="seg">
+      <view class="seg-btn {{mode === 'week' ? 'on' : ''}}" bindtap="setMode" data-v="week">周</view>
+      <view class="seg-btn {{mode === 'month' ? 'on' : ''}}" bindtap="setMode" data-v="month">月</view>
+    </view>
+
+    <!-- 周视图：时段 × 星期网格，格子=责任人+事项，冲突橙框 -->
+    <view wx:if="{{mode === 'week'}}">
+      <view wx:if="{{weekSlots.length === 0}}" class="empty"><text>本周暂无日程</text></view>
+      <view wx:else class="week-grid">
+        <view class="slot"></view>
+        <view class="dow" wx:for="{{weekDows}}" wx:key="*this">{{item}}</view>
+        <block wx:for="{{weekSlots}}" wx:for-item="sl" wx:key="label">
+          <view class="slot">{{sl.label}}</view>
+          <view
+            class="cell {{d.hot ? 'hot' : ''}} {{d.items.length === 0 ? 'blank' : ''}}"
+            wx:for="{{sl.days}}"
+            wx:for-item="d"
+            wx:key="date"
+            bindtap="tapCell"
+            data-slot="{{sl.label}}"
+            data-date="{{d.date}}"
+          >
+            <block wx:if="{{d.items.length > 0}}">
+              <text class="cell-who">{{d.items[0].childName}} · {{d.items[0].owner}}</text>
+              <text class="cell-title">{{d.items[0].title}}</text>
+              <text wx:if="{{d.items.length > 1}}" class="cell-more">等{{d.items.length}}项</text>
+            </block>
+          </view>
+        </block>
+      </view>
+      <view class="muted">按 2 小时时段排布，格子显示孩子 · 责任人，点开看详情。</view>
+    </view>
+
+    <!-- 月视图：月历，绿点=有日程，橙点=有冲突 -->
+    <view wx:else>
+      <view class="week-dow">
+        <view class="dow" wx:for="{{weekDows}}" wx:key="*this">{{item}}</view>
+      </view>
+      <view class="month-grid">
+        <view class="mcell blank" wx:for="{{monthBlanks}}" wx:key="*this"></view>
+        <view class="mcell {{c.today ? 'today' : ''}}" wx:for="{{monthCells}}" wx:for-item="c" wx:key="day">
+          <text class="d">{{c.day}}</text>
+          <view class="mdots">
+            <view wx:if="{{c.hasSchedule}}" class="mdot {{c.conflict ? 'warn' : ''}}"></view>
+          </view>
+        </view>
+      </view>
+      <view class="muted">绿点 = 当天有课程/接送，橙点 = 有冲突。</view>
+    </view>
+    </view>
+
+    <button class="fab" bindtap="openFab">＋</button>
+    <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeFab">
+      <view class="sheet" catchtap="noop">
+        <button class="opt" bindtap="goEvent"><text class="opt-b">安排一件事</text><text class="opt-s">课程、接送、活动——有固定时间和地点，进日历</text></button>
+        <button class="opt" bindtap="goTask"><text class="opt-b">创建打卡任务</text><text class="opt-s">阅读、跳绳——重复的目标行为，进打卡</text></button>
+        <button class="btn ghost" bindtap="closeFab">取消</button>
+      </view>
+    </view>
+  </block>
+</view>

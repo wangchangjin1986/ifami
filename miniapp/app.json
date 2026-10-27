@@ -1,0 +1,35 @@
+{
+  "pages": [
+    "pages/today/index",
+    "pages/week/index",
+    "pages/daka/index",
+    "pages/family/index",
+    "pages/event/index",
+    "pages/event-detail/index",
+    "pages/task/index",
+    "pages/daka-flow/index",
+    "pages/invite/index",
+    "pages/manage/index"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "ifami",
+    "backgroundColor": "#F4F3EE"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#68705F",
+    "selectedColor": "#2E7D4F",
+    "list": [
+      { "pagePath": "pages/today/index", "text": "今日" },
+      { "pagePath": "pages/week/index", "text": "日历" },
+      { "pagePath": "pages/daka/index", "text": "打卡" },
+      { "pagePath": "pages/family/index", "text": "家庭" }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "permission": {
+    "scope.userLocation": { "desc": "用于填写课程地点" }
+  }
+}

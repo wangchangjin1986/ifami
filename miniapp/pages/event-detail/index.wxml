@@ -1,0 +1,39 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">{{title}}</text>
+  </view>
+
+  <view class="body">
+    <view class="card">
+      <view class="rowline"><text>时间</text><text class="v">{{time}}</text></view>
+      <view class="rowline"><text>孩子</text><text class="v">{{childName}}</text></view>
+      <view class="rowline"><text>责任人</text><text class="v">{{ownerName}}</text></view>
+      <view class="rowline"><text>地点</text><text class="v">{{location || '—'}}</text></view>
+      <view class="rowline"><text>备注</text><text class="v">{{note || '—'}}</text></view>
+    </view>
+
+    <block wx:if="{{canManage}}">
+      <button class="btn" bindtap="openReassign">改分工</button>
+      <view class="row">
+        <button class="btn ghost" style="flex:1" bindtap="edit">编辑</button>
+        <button class="btn danger" style="flex:1" bindtap="cancelInstance">取消本次</button>
+      </view>
+    </block>
+
+    <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeSheet">
+      <view class="sheet" catchtap="noop">
+        <view class="group-label">改分工：本次由谁负责？</view>
+        <button
+          class="opt {{o.picked ? 'picked' : ''}}"
+          wx:for="{{owners}}"
+          wx:for-item="o"
+          wx:key="member_id"
+          bindtap="reassign"
+          data-id="{{o.member_id}}"
+        ><text class="opt-b">{{o.name}}</text></button>
+        <button class="btn ghost" bindtap="closeSheet">取消</button>
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,48 @@
+<view class="page">
+  <block wx:if="{{!logged}}">
+    <view class="empty">请先到「家庭」页登录</view>
+  </block>
+
+  <block wx:elif="{{!hasFamily}}">
+    <view class="empty">请先在「家庭」页创建家庭并添加孩子</view>
+  </block>
+
+  <block wx:else>
+    <view class="app-head">
+      <text class="title">打卡</text>
+      <text class="sub">今日任务</text>
+    </view>
+
+    <view class="body">
+      <view wx:if="{{groups.length === 0}}" class="empty">暂无打卡任务，点右下角 ＋ 新建</view>
+
+      <block wx:for="{{groups}}" wx:for-item="g" wx:key="childId">
+        <view class="group-label">{{g.childName}}</view>
+        <view
+          class="card task {{t.today_checked ? 'done' : ''}}"
+          wx:for="{{g.tasks}}"
+          wx:for-item="t"
+          wx:key="task_id"
+          bindtap="tapTask"
+          data-task="{{t}}"
+        >
+          <view class="dot">{{t.today_checked ? '✓' : ''}}</view>
+          <view class="ev-main">
+            <view class="ev-title">{{t.title}}</view>
+            <view class="ev-meta">{{t.meta}}</view>
+          </view>
+          <text wx:if="{{!t.today_checked}}" class="chip gray">去打卡</text>
+        </view>
+      </block>
+    </view>
+
+    <button class="fab" bindtap="openFab">＋</button>
+    <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeFab">
+      <view class="sheet" catchtap="noop">
+        <button class="opt" bindtap="goEvent"><text class="opt-b">安排一件事</text><text class="opt-s">课程、接送、活动——有固定时间和地点，进日历</text></button>
+        <button class="opt" bindtap="goTask"><text class="opt-b">创建打卡任务</text><text class="opt-s">阅读、跳绳——重复的目标行为，进打卡</text></button>
+        <button class="btn ghost" bindtap="closeFab">取消</button>
+      </view>
+    </view>
+  </block>
+</view>

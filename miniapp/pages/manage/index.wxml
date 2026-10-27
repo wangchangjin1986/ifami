@@ -1,0 +1,27 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">全部安排</text>
+  </view>
+
+  <view class="body">
+    <view class="filters">
+      <view class="chip on" bindtap="filter" data-v="child">按孩子</view>
+      <view class="chip" bindtap="filter" data-v="org">按机构</view>
+      <view class="chip" bindtap="filter" data-v="paused">已暂停</view>
+    </view>
+
+    <view wx:if="{{loading}}" class="empty">加载中…</view>
+    <view wx:elif="{{groups.length === 0}}" class="empty">暂无安排，点右下角 ＋ 新建</view>
+
+    <block wx:else>
+      <block wx:for="{{groups}}" wx:for-item="g" wx:key="childId">
+        <view class="group-label">{{g.childName}}</view>
+        <view class="card tappable" wx:for="{{g.items}}" wx:for-item="it" wx:key="id">
+          <view class="ev-title">{{it.title}} <text wx:if="{{it.isTask}}" class="chip gray">打卡任务</text></view>
+          <view class="ev-meta">{{it.meta}}</view>
+        </view>
+      </block>
+    </block>
+  </view>
+</view>

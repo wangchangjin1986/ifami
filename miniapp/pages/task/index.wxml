@@ -1,0 +1,47 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">创建打卡任务</text>
+  </view>
+
+  <view class="body">
+    <view class="field">
+      <text class="label">模板</text>
+      <view class="filters">
+        <view class="chip {{templateIndex === i ? 'on' : ''}}" wx:for="{{templates}}" wx:for-index="i" wx:key="name" bindtap="selectTemplate" data-i="{{i}}">{{item.name}}</view>
+      </view>
+      <input wx:if="{{templates[templateIndex].name === '自定义'}}" class="input" placeholder="任务名，如：口算" value="{{customName}}" bindinput="onCustomName" />
+    </view>
+
+    <view class="field">
+      <text class="label">目标量</text>
+      <view class="seg">
+        <button class="{{goalIndex === gi ? 'on' : ''}}" wx:for="{{goalOptions}}" wx:for-index="gi" wx:key="label" bindtap="selectGoal" data-i="{{gi}}">{{item.label}}</button>
+      </view>
+      <input wx:if="{{goalOptions[goalIndex].custom}}" class="input" type="number" placeholder="自定义{{goalUnit}}数" value="{{customGoal}}" bindinput="onCustomGoal" />
+    </view>
+
+    <view class="field">
+      <text class="label">频次</text>
+      <view class="seg">
+        <button class="{{freqIndex === fi ? 'on' : ''}}" wx:for="{{freqs}}" wx:for-index="fi" wx:key="value" bindtap="selectFreq" data-i="{{fi}}">{{item.label}}</button>
+      </view>
+    </view>
+
+    <view class="field">
+      <text class="label">孩子</text>
+      <picker range="{{children}}" range-key="name" value="{{childIndex}}" bindchange="onChild" disabled="{{children.length === 0}}">
+        <view class="picker {{children.length === 0 ? 'disabled' : ''}}">{{children.length ? children[childIndex].name : '请先添加孩子'}} ▾</view>
+      </picker>
+    </view>
+
+    <view class="field">
+      <text class="label">责任父母（到点没打卡提醒谁）</text>
+      <view class="seg">
+        <button class="{{ownerIndex === oi ? 'on' : ''}}" wx:for="{{owners}}" wx:for-index="oi" wx:key="member_id" bindtap="selectOwner" data-i="{{oi}}">{{item.name}}</button>
+      </view>
+    </view>
+
+    <button class="btn" bindtap="submit" disabled="{{submitting}}">创建</button>
+  </view>
+</view>

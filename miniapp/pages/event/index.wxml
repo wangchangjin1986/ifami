@@ -1,0 +1,89 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">{{heading}}</text>
+  </view>
+
+  <view class="body">
+    <view class="seg">
+      <button class="{{mode === 'manual' ? 'on' : ''}}" bindtap="setMode" data-mode="manual">手动填写</button>
+      <button class="{{mode === 'scan' ? 'on' : ''}}" bindtap="setMode" data-mode="scan">拍照识别课表</button>
+      <button class="{{mode === 'wechat' ? 'on' : ''}}" bindtap="setMode" data-mode="wechat">从微信导入</button>
+    </view>
+
+    <block wx:if="{{mode === 'manual'}}">
+      <view class="field">
+        <text class="label">事项</text>
+        <input class="input" placeholder="如：数学课 / 接乐乐" value="{{title}}" bindinput="onTitle" />
+      </view>
+
+      <view class="field">
+        <text class="label">类型</text>
+        <picker range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
+          <view class="picker">{{types[typeIndex].label}} ▾</view>
+        </picker>
+      </view>
+
+      <view class="field">
+        <text class="label">日期</text>
+        <picker mode="date" value="{{startDate}}" bindchange="onDate">
+          <view class="picker">{{startDate}} ▾</view>
+        </picker>
+      </view>
+
+      <view class="row" style="align-items:flex-start">
+        <view class="field" style="flex:1">
+          <text class="label">重复</text>
+          <picker range="{{repeats}}" range-key="label" value="{{repeatIndex}}" bindchange="onRepeat">
+            <view class="picker">{{repeats[repeatIndex].label}} ▾</view>
+          </picker>
+        </view>
+        <view class="field" style="flex:1">
+          <text class="label">时间</text>
+          <picker mode="time" value="{{startTime}}" bindchange="onStartTime">
+            <view class="picker">{{startTime}} ▾</view>
+          </picker>
+        </view>
+      </view>
+
+      <view class="row" style="align-items:flex-start">
+        <view class="field" style="flex:1">
+          <text class="label">孩子</text>
+          <picker range="{{children}}" range-key="name" value="{{childIndex}}" bindchange="onChild" disabled="{{children.length === 0}}">
+            <view class="picker {{children.length === 0 ? 'disabled' : ''}}">{{children.length ? children[childIndex].name : '请先添加孩子'}} ▾</view>
+          </picker>
+        </view>
+        <view class="field" style="flex:1">
+          <text class="label">责任人</text>
+          <picker range="{{owners}}" range-key="name" value="{{ownerIndex}}" bindchange="onOwner" disabled="{{owners.length === 0}}">
+            <view class="picker {{owners.length === 0 ? 'disabled' : ''}}">{{owners.length ? owners[ownerIndex].name : '暂无成员'}} ▾</view>
+          </picker>
+        </view>
+      </view>
+
+      <view class="field">
+        <text class="label">地点</text>
+        <input class="input" placeholder="选填" value="{{location}}" bindinput="onLocation" />
+      </view>
+
+      <view class="field">
+        <text class="label">备注</text>
+        <input class="input" placeholder="选填" value="{{note}}" bindinput="onNote" />
+      </view>
+
+      <button class="btn" bindtap="submit" disabled="{{submitting}}">保存</button>
+    </block>
+
+    <block wx:elif="{{mode === 'wechat'}}">
+      <view class="card">
+        <view class="ev-title">从聊天记录选课表</view>
+        <view class="ev-meta">直接选取群聊里的课表图片或机构通知文件，不用先存相册。</view>
+      </view>
+      <button class="btn" bindtap="pickChatFile">选择聊天记录中的文件</button>
+    </block>
+
+    <block wx:else>
+      <view class="empty">拍照识别课表开发中（AI 草稿确认，见 ADR-005）</view>
+    </block>
+  </view>
+</view>

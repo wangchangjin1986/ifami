@@ -1,0 +1,10 @@
+# 域名备案完成后启用；本机部署，反代到 127.0.0.1:8080
+api.ifami.site {
+    handle /h5/* {
+        root * /opt/ifami/h5
+        file_server
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8080
+    }
+}

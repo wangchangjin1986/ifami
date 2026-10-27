@@ -1,0 +1,16 @@
+[Unit]
+Description=ifami Worker（触达/提醒扫描）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ifami
+EnvironmentFile=/opt/ifami/deploy/.env
+ExecStart=/opt/ifami/ifami serve worker
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

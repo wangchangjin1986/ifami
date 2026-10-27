@@ -1,0 +1,10 @@
+.tabbar {
+  display: flex; border-top: 1rpx solid var(--line); background: var(--surface);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tab {
+  flex: 1; padding: 16rpx 0 20rpx; font-size: 24rpx; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 6rpx;
+}
+.tab .ic { font-size: 38rpx; }
+.tab.on { color: var(--accent); font-weight: 500; }
