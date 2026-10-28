@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# ifami Phase 0 ECS 一次性初始化脚本（本机原生，无 Docker）
+# ifami Phase 0 ECS 初始化脚本（本机原生，无 Docker）
 #
 # 用法：仓库 clone 到 /opt/ifami 后，以 root 执行：
 #     cd /opt/ifami && sudo bash deploy/bootstrap.sh
 #
-# 做的事：装 MySQL/Redis/Caddy/Go → 建库建应用账号 → 生成并写 deploy/.env →
-#         编译 ifami → 迁移建表 → 装 systemd 单元（api/worker/caddy）→ 启动 → 健康检查。
+# 职责边界：**不负责安装中间件**，只检测 MySQL / Redis / Caddy / Go(>=1.23)，
+# 缺失时给出安装提示并退出。检测通过后直接完成初始化：
+#   生成并写 deploy/.env → 建库建应用账号 → 编译 ifami → 迁移建表 →
+#   装 systemd 单元（api/worker/caddy）→ 启动 → 健康检查（本机 + 公网）。
 #
-# 幂等：已装组件跳过、DB 用 IF NOT EXISTS、.env 已存在则不重复生成密钥。
+# 幂等：.env 已存在则不重复生成密钥，DB 用 IF NOT EXISTS，迁移幂等。
 # 可预设环境变量跳过交互：WX_MINIAPP_APPID / WX_MINIAPP_SECRET / MYSQL_ROOT_PASSWORD / DB_PASSWORD
-# 中国大陆下载慢/被墙：Go 换 mirrors.aliyun.com/golang，Caddy 换国内镜像，GOPROXY 默认 goproxy.cn。
 set -euo pipefail
 
 # ---------------- 可调参数 ----------------
-GO_VERSION="${GO_VERSION:-1.23.4}"       # go.mod 要求 >=1.23
-CADDY_VERSION="${CADDY_VERSION:-2.9.1}"
 REPO_DIR="${REPO_DIR:-/opt/ifami}"
 APP_DB="${APP_DB:-ifami}"
 APP_USER="${APP_USER:-ifami}"
@@ -25,96 +24,38 @@ log()  { printf '\033[1;32m[ifami]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[ifami]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[ifami]\033[0m %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
-arch_pkg() { case "$(uname -m)" in x86_64) echo amd64;; aarch64|arm64) echo arm64;; *) die "不支持的架构 $(uname -m)";; esac; }
 
 [[ $EUID -eq 0 ]] || die "请用 root 执行（sudo bash deploy/bootstrap.sh）"
 [[ -f "$REPO_DIR/cmd/ifami/main.go" ]] || die "找不到仓库：REPO_DIR=$REPO_DIR（请先 git clone 到 /opt/ifami）"
 cd "$REPO_DIR"
 
-# 探测包管理器
-if have apt-get; then
-  PKG="apt-get install -y"; export DEBIAN_FRONTEND=noninteractive
-  log "发行版：Debian/Ubuntu（apt）"; apt-get update -y
-elif have dnf; then
-  PKG="dnf install -y"; log "发行版：veLinux/CentOS/Rocky（dnf）"
-elif have yum; then
-  PKG="yum install -y"; log "发行版：CentOS（yum）"
-else
-  die "不支持的发行版（需要 apt/dnf/yum）"
-fi
+# ---------------- 中间件检测（只检测不安装，缺失给提示） ----------------
+log "检测中间件…"
+MISSING=0
+check() { # check <命令> <安装提示>
+  if have "$1"; then log "  ✔ $1"; else warn "  ✘ 缺少 $1 —— $2"; MISSING=1; fi
+}
+check mysqld       "apt-get install -y mysql-server（Debian/Ubuntu）或 dnf install -y mysql-server（veLinux/CentOS）"
+check redis-server "apt-get install -y redis-server 或 dnf install -y redis"
+check caddy        "https://caddyserver.com/docs/install"
 
-svc() { local n; for n in "$@"; do systemctl list-unit-files --no-pager 2>/dev/null | grep -q "^${n}\.service" && { echo "$n"; return 0; }; done; echo "$1"; }
-
-wait_mysql() { local i; for i in $(seq 1 15); do mysqladmin ping >/dev/null 2>&1 && return 0; sleep 1; done; return 0; }
-
-# ---------------- 基础工具 ----------------
-log "安装基础工具…"
-$PKG curl wget ca-certificates gnupg openssl git || warn "部分基础工具安装失败（可能已存在）"
-
-# ---------------- MySQL ----------------
-if ! have mysqld; then log "安装 MySQL…"; $PKG mysql-server; fi
-MYSQL_SVC=$(svc mysql mysqld)
-systemctl enable --now "$MYSQL_SVC" 2>/dev/null || systemctl start "$MYSQL_SVC" 2>/dev/null || true
-wait_mysql
-
-MYSQL_CONF=""
-for c in /etc/mysql/mysql.conf.d/mysqld.cnf /etc/my.cnf.d/mysql-server.cnf /etc/my.cnf; do
-  [[ -f "$c" ]] && { MYSQL_CONF="$c"; break; }
-done
-if [[ -n "$MYSQL_CONF" ]]; then
-  if ! grep -q 'ifami bootstrap' "$MYSQL_CONF"; then
-    cat >>"$MYSQL_CONF" <<'EOF'
-
-# ifami bootstrap
-[mysqld]
-bind-address = 127.0.0.1
-character-set-server = utf8mb4
-collation-server = utf8mb4_unicode_ci
-EOF
-    systemctl restart "$MYSQL_SVC"
-    wait_mysql
-  fi
-else
-  warn "未找到 mysqld 配置文件，跳过绑 127.0.0.1（请确保安全组不放 3306）"
-fi
-
-# ---------------- Redis ----------------
-if ! have redis-server; then log "安装 Redis…"; $PKG redis-server || $PKG redis; fi
-REDIS_SVC=$(svc redis-server redis)
-systemctl enable --now "$REDIS_SVC" 2>/dev/null || systemctl start "$REDIS_SVC" 2>/dev/null || true
-
-# ---------------- Caddy（静态二进制） ----------------
-if ! have caddy; then
-  log "安装 Caddy v${CADDY_VERSION}…"
-  tmp=$(mktemp -d)
-  curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_$(arch_pkg).tar.gz" -o "$tmp/caddy.tgz"
-  tar -C "$tmp" -xzf "$tmp/caddy.tgz" caddy
-  install -m 755 "$tmp/caddy" /usr/local/bin/caddy
-  rm -rf "$tmp"
-fi
-id -u caddy >/dev/null 2>&1 || useradd --system --home-dir /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy
-mkdir -p /etc/caddy /var/lib/caddy
-chown -R caddy:caddy /var/lib/caddy
-install -m 644 deploy/caddy.service /etc/systemd/system/caddy.service
-
-# ---------------- Go 工具链 ----------------
-need_go=0
 if have go; then
   minor=$(go version | sed -n 's/.*go1\.\([0-9][0-9]*\)\..*/\1/p')
-  [[ "$minor" =~ ^[0-9]+$ ]] && [[ "$minor" -ge 23 ]] || need_go=1
+  if [[ "$minor" =~ ^[0-9]+$ ]] && [[ "$minor" -ge 23 ]]; then
+    log "  ✔ go（$(go version | awk '{print $3}')）"
+  else
+    warn "  ✘ go 版本过低（需要 >=1.23）—— 下载：https://mirrors.aliyun.com/golang/"
+    MISSING=1
+  fi
 else
-  need_go=1
+  warn "  ✘ 缺少 go —— 安装 >=1.23，大陆镜像：https://mirrors.aliyun.com/golang/"
+  MISSING=1
 fi
-if [[ $need_go -eq 1 ]]; then
-  log "安装 Go v${GO_VERSION}…"
-  tmp=$(mktemp -d)
-  curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-$(arch_pkg).tar.gz" -o "$tmp/go.tgz"
-  rm -rf /usr/local/go
-  tar -C /usr/local -xzf "$tmp/go.tgz"
-  rm -rf "$tmp"
-fi
-export PATH="/usr/local/go/bin:$PATH"
-echo 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh
+[[ $MISSING -eq 0 ]] || die "请先安装以上缺失组件后重跑"
+
+# 已装未起的，同样只提示
+mysqladmin ping >/dev/null 2>&1 || die "MySQL 已安装但未运行：systemctl enable --now mysql（或 mysqld）"
+redis-cli ping >/dev/null 2>&1 || die "Redis 已安装但未运行：systemctl enable --now redis-server（或 redis）"
 
 # ---------------- 密钥与 .env（首次生成，重复执行跳过） ----------------
 ENV_FILE="deploy/.env"
@@ -191,6 +132,10 @@ set -a; source "$ENV_FILE"; set +a
 
 # ---------------- systemd 服务 ----------------
 log "安装并启动 systemd 服务…"
+id -u caddy >/dev/null 2>&1 || useradd --system --home-dir /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy
+mkdir -p /etc/caddy /var/lib/caddy
+chown -R caddy:caddy /var/lib/caddy
+install -m 644 deploy/caddy.service /etc/systemd/system/caddy.service
 install -m 644 deploy/ifami-api.service deploy/ifami-worker.service /etc/systemd/system/
 install -m 644 deploy/Caddyfile /etc/caddy/Caddyfile
 systemctl daemon-reload
@@ -225,7 +170,7 @@ cat <<EOF
  2. 小程序：开发者工具勾选「不校验合法域名」，apiBase 已指向 http://${PUBLIC_IP}
  3. 备份：crontab -e 加一行  \`0 3 * * * ${REPO_DIR}/deploy/backup.sh\`
  4. 密钥都在 ${REPO_DIR}/deploy/.env，务必另行备份（尤其 FIELD_ENC_KEY / MYSQL_ROOT_PASSWORD / INVITE_SECRET）
- 5. 日常发布：本地执行 ./deploy/deploy.sh（默认发到 ${PUBLIC_IP}）
+ 5. 日常发布：本机执行 bash ${REPO_DIR}/deploy/deploy.sh
 
 域名备案完成后：
  1. api.ifami.site 的 A 记录指向 ${PUBLIC_IP}，Caddyfile 把 :80 改成 api.ifami.site（自动 HTTPS）
