@@ -18,6 +18,7 @@ CADDY_VERSION="${CADDY_VERSION:-2.9.1}"
 REPO_DIR="${REPO_DIR:-/opt/ifami}"
 APP_DB="${APP_DB:-ifami}"
 APP_USER="${APP_USER:-ifami}"
+PUBLIC_IP="${PUBLIC_IP:-118.196.79.193}"   # ECS 公网 IP，用于公网健康检查
 
 # ---------------- 工具 ----------------
 log()  { printf '\033[1;32m[ifami]\033[0m %s\n' "$*"; }
@@ -210,13 +211,24 @@ else
   warn "/healthz 未能通过，请排查：journalctl -u ifami-api -e"
 fi
 
-cat <<'EOF'
+# 公网链路验证（Caddy :80 → api），安全组需放通 80
+if curl -fsS --max-time 5 "http://${PUBLIC_IP}/healthz" >/dev/null 2>&1; then
+  log "公网链路正常：http://${PUBLIC_IP}/healthz"
+else
+  warn "公网 http://${PUBLIC_IP}/healthz 不通，请检查安全组是否放通 80 端口"
+fi
 
-后续步骤：
- 1. 域名解析：api.ifami.site 的 A 记录指向本机公网 IP（ICP 备案通过后）
- 2. HTTPS：80/443 放通后 Caddy 自动签发证书，用 curl https://api.ifami.site/healthz 验证
- 3. 小程序：上传前把 miniapp/app.js 的 apiBase 改为 https://api.ifami.site
- 4. 微信后台配置 request / uploadFile / downloadFile 合法域名
- 5. 备份：crontab -e 加一行  `0 3 * * * /opt/ifami/deploy/backup.sh`
- 6. 密钥都在 /opt/ifami/deploy/.env，务必另行备份（尤其 FIELD_ENC_KEY / MYSQL_ROOT_PASSWORD / INVITE_SECRET）
+cat <<EOF
+
+后续步骤（备案完成前，IP 直连阶段）：
+ 1. 安全组：放通 80/22（22 限办公网 IP），不放 3306/6379
+ 2. 小程序：开发者工具勾选「不校验合法域名」，apiBase 已指向 http://${PUBLIC_IP}
+ 3. 备份：crontab -e 加一行  \`0 3 * * * ${REPO_DIR}/deploy/backup.sh\`
+ 4. 密钥都在 ${REPO_DIR}/deploy/.env，务必另行备份（尤其 FIELD_ENC_KEY / MYSQL_ROOT_PASSWORD / INVITE_SECRET）
+ 5. 日常发布：本地执行 ./deploy/deploy.sh（默认发到 ${PUBLIC_IP}）
+
+域名备案完成后：
+ 1. api.ifami.site 的 A 记录指向 ${PUBLIC_IP}，Caddyfile 把 :80 改成 api.ifami.site（自动 HTTPS）
+ 2. miniapp/app.js 的 apiBase 改为 https://api.ifami.site
+ 3. 微信后台配置 request / uploadFile / downloadFile 合法域名
 EOF

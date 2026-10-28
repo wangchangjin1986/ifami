@@ -3,9 +3,9 @@
 // 登录后 token 持久化到 storage，请求统一注入 Authorization / X-Family-Id。
 App({
   globalData: {
-    // 本地联调：微信开发者工具模拟器里 127.0.0.1 即本机后端；
-    // 真机预览请改成电脑的局域网 IP（如 http://192.168.x.x:8080）。
-    apiBase: 'http://127.0.0.1:8080',
+    // 默认指向 Phase 0 服务器（备案完成前 IP 直连 HTTP，开发者工具需勾选「不校验合法域名」）；
+    // 本地联调改回 http://127.0.0.1:8080；备案完成后改为 https://api.ifami.site。
+    apiBase: 'http://118.196.79.193',
     token: '',
     user: null,        // {user_id, nick, avatar}
     memberships: [],   // [{family_id, role}]
