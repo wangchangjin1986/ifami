@@ -53,8 +53,10 @@ else
 fi
 [[ $MISSING -eq 0 ]] || die "请先安装以上缺失组件后重跑"
 
-# 已装未起的，同样只提示
-mysqladmin ping >/dev/null 2>&1 || die "MySQL 已安装但未运行：systemctl enable --now mysql（或 mysqld）"
+# 已装未起的，同样只提示（root 设了密码时 ping 会 Access denied，也说明进程活着）
+mysql_out=$(mysqladmin ping 2>&1 || true)
+[[ "$mysql_out" == *alive* || "$mysql_out" == *"Access denied"* ]] \
+  || die "MySQL 已安装但未运行：systemctl enable --now mysql（或 mysqld）"
 redis-cli ping >/dev/null 2>&1 || die "Redis 已安装但未运行：systemctl enable --now redis-server（或 redis）"
 
 # ---------------- 密钥与 .env（首次生成，重复执行跳过） ----------------
@@ -65,7 +67,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   if [[ -n "${WX_MINIAPP_SECRET:-}" ]]; then WX_SECRET="$WX_MINIAPP_SECRET"; else read -r -s -p "小程序 AppSecret: " WX_SECRET || true; echo; fi
   [[ -n "$WX_SECRET" ]] || warn "AppSecret 为空，微信登录会失败，稍后可在 deploy/.env 补填"
 
-  ROOT_PW="${MYSQL_ROOT_PASSWORD:-$(openssl rand -hex 16)}"
+  ROOT_PW="${MYSQL_ROOT_PASSWORD:-}"   # 默认空 = 保持 root 本机免密；预设则同步修改为该密码
   APP_PW="${DB_PASSWORD:-$(openssl rand -hex 16)}"
   ENC_KEY="$(openssl rand -base64 32)"
   INVITE_SECRET="$(openssl rand -hex 32)"
@@ -110,13 +112,20 @@ MIGRATIONS_DIR=${REPO_DIR}/migrations
 EOF
 
   log "建库 + 建应用账号…"
-  mysql <<SQL
+  # root 认证：预设 MYSQL_ROOT_PASSWORD（如已改成固定密码）则用密码登录，否则走本机 socket 免密
+  MYSQL_CLI=(mysql)
+  [[ -n "${MYSQL_ROOT_PASSWORD:-}" ]] && MYSQL_CLI=(mysql -uroot -p"${MYSQL_ROOT_PASSWORD}")
+  "${MYSQL_CLI[@]}" <<SQL
 CREATE DATABASE IF NOT EXISTS ${APP_DB} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${APP_USER}'@'localhost' IDENTIFIED BY '${APP_PW}';
 GRANT ALL PRIVILEGES ON ${APP_DB}.* TO '${APP_USER}'@'localhost';
-ALTER USER 'root'@'localhost' IDENTIFIED BY '${ROOT_PW}';
 FLUSH PRIVILEGES;
 SQL
+
+  # 预设了 root 密码才同步修改；默认不动，保持本机免密登录
+  if [[ -n "$ROOT_PW" ]]; then
+    "${MYSQL_CLI[@]}" -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${ROOT_PW}'; FLUSH PRIVILEGES;"
+  fi
 else
   log "已存在 deploy/.env，跳过密钥生成与建库（如需重置：删掉后重跑）"
 fi
