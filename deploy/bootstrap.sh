@@ -82,8 +82,9 @@ WX_OFFIACCOUNT_APPID=
 WX_OFFIACCOUNT_SECRET=
 
 # MySQL（本机 127.0.0.1:3306）
+# RDS_DSN 必须加双引号：deploy.sh / backup.sh 用 source 读本文件，括号会被 bash 当语法解析
 MYSQL_ROOT_PASSWORD=${ROOT_PW}
-RDS_DSN=${APP_USER}:${APP_PW}@tcp(127.0.0.1:3306)/${APP_DB}?parseTime=true
+RDS_DSN="${APP_USER}:${APP_PW}@tcp(127.0.0.1:3306)/${APP_DB}?parseTime=true"
 
 # 火山引擎（TOS / SMS / 方舟，Phase 0 可选）
 TOS_AK=
