@@ -1,0 +1,10 @@
+# ifami 服务日志轮转（bootstrap 装到 /etc/logrotate.d/ifami）
+# systemd append 模式进程持有 fd，必须 copytruncate
+/var/log/ifami-api.log /var/log/ifami-worker.log {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

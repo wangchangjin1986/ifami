@@ -11,6 +11,8 @@ EnvironmentFile=/opt/ifami/deploy/.env
 ExecStart=/opt/ifami/ifami serve worker
 Restart=always
 RestartSec=3
+StandardOutput=append:/var/log/ifami-worker.log
+StandardError=append:/var/log/ifami-worker.log
 
 [Install]
 WantedBy=multi-user.target
