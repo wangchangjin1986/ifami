@@ -225,12 +225,13 @@ func (s *Service) AddChild(ctx context.Context, userID, familyID uint64, name, r
 	return m.MemberID, nil
 }
 
-// UpdateRole 改成员角色（仅 admin；末位管理员不可降级）。
-func (s *Service) UpdateRole(ctx context.Context, userID, familyID, memberID uint64, role string) error {
+// UpdateMember 改成员角色与身份（仅 admin；末位管理员不可降级）。
+// role / relationLabel 为 nil 表示不修改该字段；两者至少传一个。
+func (s *Service) UpdateMember(ctx context.Context, userID, familyID, memberID uint64, role, relationLabel *string) error {
 	if _, err := s.requireRole(ctx, userID, familyID, RoleAdmin); err != nil {
 		return err
 	}
-	if !validRole(role) {
+	if role == nil && relationLabel == nil {
 		return ErrBadParam
 	}
 	target, err := s.store.FindMemberByID(ctx, memberID, familyID)
@@ -240,12 +241,29 @@ func (s *Service) UpdateRole(ctx context.Context, userID, familyID, memberID uin
 	if target == nil {
 		return ErrMemberNotFound
 	}
-	if target.Role == RoleAdmin && role != RoleAdmin {
-		if err := s.ensureNotLastAdmin(ctx, familyID, target.MemberID); err != nil {
-			return err
+	fields := map[string]any{}
+	if role != nil {
+		if !validRole(*role) {
+			return ErrBadParam
 		}
+		// 角色与成员类型绑定：虚拟成员（孩子）角色固定为 child，真实成员不可改为 child。
+		if target.Type == TypeVirtual && *role != RoleChild {
+			return ErrBadParam
+		}
+		if target.Type == TypeReal && *role == RoleChild {
+			return ErrBadParam
+		}
+		if target.Role == RoleAdmin && *role != RoleAdmin {
+			if err := s.ensureNotLastAdmin(ctx, familyID, target.MemberID); err != nil {
+				return err
+			}
+		}
+		fields["role"] = *role
 	}
-	return s.store.UpdateMemberRole(ctx, memberID, familyID, role)
+	if relationLabel != nil {
+		fields["relation_label"] = *relationLabel
+	}
+	return s.store.UpdateMemberFields(ctx, memberID, familyID, fields)
 }
 
 // RemoveMember 移除成员：admin 可移除他人，普通成员仅可退出自己。

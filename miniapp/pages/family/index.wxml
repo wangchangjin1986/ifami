@@ -30,12 +30,13 @@
     </view>
 
     <view class="body">
-      <view class="card member" wx:for="{{members}}" wx:key="member_id">
+      <view class="card member {{isAdmin ? 'tappable' : ''}}" wx:for="{{members}}" wx:key="member_id" data-id="{{item.member_id}}" bindtap="openMember">
         <view class="avatar">{{item.avatar}}</view>
         <view class="ev-main">
           <view class="ev-title">{{item.name}} <text wx:if="{{item.chip}}" class="chip {{item.isVirtual ? 'gray' : ''}}">{{item.chip}}</text></view>
           <view class="ev-meta">{{item.meta}}</view>
         </view>
+        <view wx:if="{{isAdmin}}" class="muted">›</view>
       </view>
 
       <view class="card">
@@ -68,6 +69,29 @@
     </view>
 
     <button class="fab" bindtap="openFab">＋</button>
+
+    <!-- 成员管理面板（仅管理员可打开，对齐 prototype scr-member） -->
+    <view class="sheet-mask" wx:if="{{memberSheet.open}}" bindtap="closeMember">
+      <view class="sheet" catchtap="noop">
+        <view class="ev-title">{{memberSheet.name}} <text wx:if="{{memberSheet.chip}}" class="chip {{memberSheet.isVirtual ? 'gray' : ''}}">{{memberSheet.chip}}</text></view>
+        <view class="field">
+          <text class="label">身份（Ta 是孩子的？）</text>
+          <view class="filters">
+            <text wx:for="{{memberSheet.relations}}" wx:key="*this" class="chip {{item === memberSheet.relation ? 'on' : ''}}" data-rel="{{item}}" bindtap="pickRelation">{{item}}</text>
+          </view>
+          <input class="input" placeholder="自定义称谓（可选，填了优先用）" model:value="{{memberSheet.customRelation}}" />
+        </view>
+        <view class="rowline" wx:if="{{!memberSheet.isVirtual}}">
+          <text>管理员</text>
+          <view class="toggle {{memberSheet.isAdmin ? 'on' : ''}}" bindtap="toggleAdmin"></view>
+        </view>
+        <view class="muted" wx:if="{{!memberSheet.isVirtual}}">管理员可管理成员、日程与打卡设置；取消管理员后按身份回落为家长/祖辈。</view>
+        <button class="btn" bindtap="saveMember">保存</button>
+        <button class="btn danger" wx:if="{{!memberSheet.isVirtual}}" bindtap="removeMember">{{memberSheet.isSelf ? '退出家庭' : '移除成员'}}</button>
+        <button class="btn ghost" bindtap="closeMember">取消</button>
+      </view>
+    </view>
+
     <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeFab">
       <view class="sheet" catchtap="noop">
         <button class="opt" bindtap="goEvent"><text class="opt-b">安排一件事</text><text class="opt-s">课程、接送、活动——有固定时间和地点，进日历</text></button>

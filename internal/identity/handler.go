@@ -30,7 +30,7 @@ func (h *Handler) Register(g *route.RouterGroup) {
 	authed.POST("/families/:fid/invitations", h.CreateInvitation)
 	authed.GET("/families/:fid/members", h.ListMembers)
 	authed.POST("/families/:fid/children", h.AddChild)
-	authed.PATCH("/families/:fid/members/:mid", h.UpdateRole)
+	authed.PATCH("/families/:fid/members/:mid", h.UpdateMember)
 	authed.DELETE("/families/:fid/members/:mid", h.RemoveMember)
 }
 
@@ -152,9 +152,11 @@ func (h *Handler) AddChild(ctx context.Context, c *app.RequestContext) {
 	httpx.OK(c, map[string]any{"member_id": memberID})
 }
 
-func (h *Handler) UpdateRole(ctx context.Context, c *app.RequestContext) {
+// UpdateMember 管理员改成员：role（设置/取消管理员等）与 relation_label（身份称谓）均为可选，至少传一个。
+func (h *Handler) UpdateMember(ctx context.Context, c *app.RequestContext) {
 	var req struct {
-		Role string `json:"role"`
+		Role          *string `json:"role"`
+		RelationLabel *string `json:"relation_label"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		httpx.Fail(c, ErrBadParam)
@@ -170,7 +172,7 @@ func (h *Handler) UpdateRole(ctx context.Context, c *app.RequestContext) {
 		httpx.Fail(c, ErrBadParam)
 		return
 	}
-	if err := h.svc.UpdateRole(ctx, auth.UserID(ctx), fid, mid, req.Role); err != nil {
+	if err := h.svc.UpdateMember(ctx, auth.UserID(ctx), fid, mid, req.Role, req.RelationLabel); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

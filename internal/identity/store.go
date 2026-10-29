@@ -136,12 +136,12 @@ func (s *Store) ListMembers(ctx context.Context, familyID uint64) ([]Member, err
 	return ms, err
 }
 
-// UpdateMemberRole 改成员角色。
-func (s *Store) UpdateMemberRole(ctx context.Context, memberID, familyID uint64, role string) error {
+// UpdateMemberFields 更新成员可变字段（role / relation_label）。
+func (s *Store) UpdateMemberFields(ctx context.Context, memberID, familyID uint64, fields map[string]any) error {
 	res := s.db.WithContext(ctx).
 		Model(&Member{}).
 		Where("member_id = ? AND family_id = ? AND status = ?", memberID, familyID, StatusActive).
-		Update("role", role)
+		Updates(fields)
 	if res.Error != nil {
 		return res.Error
 	}

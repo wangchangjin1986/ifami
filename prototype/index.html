@@ -396,12 +396,20 @@ body {
     </div>
   </section>
 
-  <!-- 成员详情 -->
+  <!-- 成员详情（管理员可管理：身份配置 + 管理员开关 + 移除） -->
   <section class="screen" id="scr-member" hidden>
     <div class="app-head"><button class="back">‹ 返回</button><h1 id="member-title">奶奶</h1></div>
     <div class="body">
       <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">身份（Ta 是孩子的？）</div>
+        <div class="filters" id="member-rel">
+          <span class="chip">爸爸</span><span class="chip">妈妈</span><span class="chip">爷爷</span><span class="chip on">奶奶</span><span class="chip">姥姥</span><span class="chip">姥爷</span><span class="chip">叔叔</span><span class="chip">阿姨</span>
+        </div>
+        <div class="muted">仅管理员可修改；身份用于日程分工与打卡里的称谓展示。</div>
+      </div>
+      <div class="card">
         <div class="rowline"><span>角色</span><span class="v" id="member-role">祖辈</span></div>
+        <div class="rowline" id="member-admin-row"><span>管理员</span><button class="toggle" id="member-admin-toggle" aria-label="设为管理员"></button></div>
         <div class="rowline"><span>手机号</span><span class="v">136****9012</span></div>
         <div class="rowline"><span>服务号</span><span class="v">✅ 已关注</span></div>
         <div class="rowline"><span>短信兜底</span><span class="v">✅ 已开启</span></div>
@@ -830,6 +838,20 @@ body {
   var currentMember = '妈妈';
   var previewBar = document.getElementById('preview-bar');
   var previewActive = false;
+  // 成员管理面板：身份 chips 单选 + 管理员开关（虚拟孩子无管理员行）
+  function syncMemberPanel() {
+    var isChild = currentMember === '乐乐' || currentMember === '果果';
+    document.getElementById('member-admin-row').style.display = isChild ? 'none' : '';
+    document.getElementById('member-admin-toggle').classList.toggle('on', currentMember === '妈妈');
+    Array.prototype.forEach.call(document.querySelectorAll('#member-rel .chip'), function (c) {
+      c.classList.toggle('on', c.textContent === currentMember);
+      c.onclick = function () {
+        Array.prototype.forEach.call(document.querySelectorAll('#member-rel .chip'), function (x) { x.classList.remove('on'); });
+        c.classList.add('on');
+        toast('已更新身份为「' + c.textContent + '」（原型演示）');
+      };
+    });
+  }
   Array.prototype.forEach.call(document.querySelectorAll('.member'), function (m) {
     m.addEventListener('click', function () {
       currentMember = m.dataset.member;
@@ -838,6 +860,7 @@ body {
         currentMember === '妈妈' ? '管理员' :
         (currentMember === '爸爸' ? '父母' :
         (currentMember === '奶奶' ? '祖辈' : '孩子（虚拟成员，父母代管）'));
+      syncMemberPanel();
       nav('scr-member');
     });
   });

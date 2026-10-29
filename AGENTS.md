@@ -62,4 +62,5 @@ open prototype/index.html          # 交互原型（界面与交互的唯一权�
 - 术语以 [wiki/product/glossary.md](wiki/product/glossary.md) 为准，代码命名与术语表对齐。
 - 界面与交互以 `prototype/index.html` 为唯一权威参照；改交互先改原型。
 - 需求与验收标准以 [docs/V1-需求列表.md](docs/V1-需求列表.md) 为准；新增需求先改文档再写码。
+- **新增功能流程**：先改原型 + 需求文档（PRD），**等用户 check 确认后再写实现代码**（bug 修复/运维类不受此限）。
 - 提交信息用中文，格式 `<type>: <一句话>`（feat/fix/docs/chore/refactor）。
