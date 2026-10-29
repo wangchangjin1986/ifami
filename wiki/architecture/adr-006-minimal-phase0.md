@@ -32,3 +32,5 @@ Phase 0 只有创始人家一个用户，按最小落地执行：**1 台 ECS + �
 
 - 2026-10-27：MySQL 由「托管 RDS」改判为「Phase 0 自托管（ECS 本机安装 + deploy/backup.sh 每日备份）」。原因：起步仅创始人家一个用户，先用自托管省钱快跑；数据可靠性改由定期备份 + 恢复演练兜底，规模化上量后切回 RDS 自动备份。
 - 2026-10-27：编排由「Docker Compose」改判为「本机原生 systemd 部署，不装 Docker」。原因：单台 ECS 上组件就 MySQL/Redis/Caddy + 单二进制双进程，用 systemd 守护即可，省掉容器层运维与磁盘开销；Redis/Caddy 也从容器改为本机安装。规模化要迁 VKE 时再引入容器化。
+- 2026-10-29：备案等待期入口改判为「公网 IP 纯 HTTP 直连（Caddy `:80`）」，备案完成后 Caddyfile 切回域名自动 HTTPS；小程序体验版靠「打开调试」跳过域名校验。
+- 2026-10-29：bootstrap 职责收窄为「只检测中间件 + 初始化」，安装 MySQL/Redis/Caddy/Go 回归手动（部署操作手册 §3.1–3.4）；api/worker 日志由纯 journald 改为落盘 `/var/log/*.log` + logrotate，journald 保留兜底。

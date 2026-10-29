@@ -1,15 +1,22 @@
-# 当前状态（2026-10-26）
+# 当前状态（2026-10-29）
 
 > coding agent 动手前先读这页。每次里程碑更新此文件。
 
 ## 阶段
 
-**Phase 0 准备期**：仓库骨架 + 核心四模块（identity/schedule/notify/task）已实现并本地端到端联调通过，小程序四个 Tab 页已接真实接口。**主体 = 纯个人开发者**（触达用订阅消息、无短信，后期升个体工商户解锁服务号/短信，见 ADR-002）。
+**Phase 0 部署联调期**：仓库骨架 + 核心四模块（identity/schedule/notify/task）已实现，小程序四个 Tab 页已接真实接口。**服务已部署到 ECS（118.196.79.193，systemd 原生部署）**，备案完成前走公网 IP 纯 HTTP 直连（Caddy `:80`），公网链路已验证可用。**主体 = 纯个人开发者**（触达用订阅消息、无短信，后期升个体工商户解锁服务号/短信，见 ADR-002）。
+
+## 部署现状（2026-10-29）
+
+- ECS：MySQL（root 本机免密 socket）+ Redis + Caddy + ifami(api/worker)，全部 systemd 管理。
+- 入口：`http://118.196.79.193`（Caddy `:80` → 127.0.0.1:8080）；域名 ifami.site **备案中**，完成后切 `api.ifami.site` 自动 HTTPS（切换清单见 bootstrap 输出与部署操作手册）。
+- 脚本：`deploy/bootstrap.sh`（只检测中间件不安装 + 初始化）、`deploy/deploy.sh`（本机发布）、`deploy/service.sh`（启停/日志）。
+- 日志：api/worker 落盘 `/var/log/ifami-{api,worker}.log` + logrotate（14 天），journald 兜底。
+- 小程序：apiBase 指向公网 IP；**体验版必须每台设备「打开调试」才能跳过域名校验**（HTTP+IP 不被正式校验接受）。
 
 ## 等待中的外部事项（不阻塞编码）
 
-域名 ICP 备案、小程序注册（个人主体）、订阅消息模板申请——清单与进度：[../../docs/前置事项.md](../../docs/前置事项.md)。服务号/开放平台/短信签名报备**暂缓至升个体工商户**。
-**备案等待期开发不阻塞**：本地后端 + 小程序体验版（开发者工具关闭域名校验）即可全流程联调。
+域名 ICP 备案（进行中）、订阅消息模板申请——清单与进度：[../../docs/前置事项.md](../../docs/前置事项.md)。服务号/开放平台/短信签名报备**暂缓至升个体工商户**。
 
 ## 下一步（建议顺序）
 
@@ -26,7 +33,7 @@
 
 ### 尚未串起的链路
 
-1. **migrate 接入 golang-migrate**：`cmd/ifami migrate` 仍是骨架，migrations 目前手动执行。
+1. ~~**migrate 接入 golang-migrate**~~ ✅ 已接入并在 ECS 上跑通（2026-10-29）
 2. **真实订阅消息通道**：notify 的 `Channel` 目前是 `MockSubscribe`，待模板申请后接微信订阅消息真实发送。
 3. **备份联系人真实发送**：`escalateBackup` 解析配偶 user_id 的 TODO 未做（需 membership 提供监护人关系查询）。
 4. **日程到点提醒**：接送前 X 分钟的定时提醒需 Worker 扫描 `schedule_instances`（ADR-003「提醒打在实例表」），当前只做写路径立即触达。
