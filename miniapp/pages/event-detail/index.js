@@ -100,7 +100,7 @@ Page({
       title: '取消本次',
       content: '仅取消这一次，不影响之后重复的日程。',
       confirmText: '取消本次',
-      confirmColor: '#B05A1E',
+      confirmColor: '#BF4A3C',
       success: (r) => {
         if (!r.confirm) return
         app.request(`/v1/schedules/instances/${iid}`, { method: 'PATCH', data: { status: 'cancelled' } })

@@ -10,23 +10,23 @@
 /* 布局：桌面端居中手机壳，手机端全宽；壳内为单屏 App，底部 Tab，子页面整屏切换 */
 :root {
   --bg: #F4F3EE; --surface: #FFFFFF; --surface-2: #EFEDE5;
-  --fg: #20241F; --muted: #68705F; --line: #E2DFD3;
-  --accent: #2E7D4F; --accent-fg: #FFFFFF; --accent-soft: #E1EFE5;
-  --warn: #B05A1E; --warn-soft: #F7EADF;
+  --fg: #20241F; --muted: #7C7367; --line: #E2DFD3;
+  --accent: #C75B33; --accent-fg: #FFFFFF; --accent-soft: #F9E7DA;
+  --warn: #BF4A3C; --warn-soft: #F9E3E0;
   --radius: 14px;
   --font: "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #161915; --surface: #22261E; --surface-2: #2A2F24; --fg: #EBECE3;
-    --muted: #99A08E; --line: #343A2C; --accent: #6FBF8F; --accent-fg: #10160F;
-    --accent-soft: #263627; --warn: #E2A066; --warn-soft: #3A2C1E; color-scheme: dark;
+    --bg: #191613; --surface: #242019; --surface-2: #2C2620; --fg: #EBECE3;
+    --muted: #A89E90; --line: #38312A; --accent: #E89A6E; --accent-fg: #1F130C;
+    --accent-soft: #3D2B21; --warn: #E08074; --warn-soft: #3E2420; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #161915; --surface: #22261E; --surface-2: #2A2F24; --fg: #EBECE3;
-  --muted: #99A08E; --line: #343A2C; --accent: #6FBF8F; --accent-fg: #10160F;
-  --accent-soft: #263627; --warn: #E2A066; --warn-soft: #3A2C1E; color-scheme: dark;
+  --bg: #191613; --surface: #242019; --surface-2: #2C2620; --fg: #EBECE3;
+  --muted: #A89E90; --line: #38312A; --accent: #E89A6E; --accent-fg: #1F130C;
+  --accent-soft: #3D2B21; --warn: #E08074; --warn-soft: #3E2420; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -160,7 +160,7 @@ body {
 .tabbar button { flex: 1; border: 0; background: none; padding: 9px 0 10px; font-size: 12px; color: var(--muted); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; font-family: var(--font); }
 .tabbar button .ic { font-size: 19px; }
 .tabbar button.on { color: var(--accent); font-weight: 500; }
-.fab { position: absolute; right: 16px; bottom: 72px; width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-fg); font-size: 26px; cursor: pointer; box-shadow: 0 6px 16px rgba(46, 125, 79, .35); z-index: 5; }
+.fab { position: absolute; right: 16px; bottom: 72px; width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-fg); font-size: 26px; cursor: pointer; box-shadow: 0 6px 16px rgba(199, 91, 51, .35); z-index: 5; }
 .sheet-mask { position: absolute; inset: 0; background: rgba(0,0,0,.35); z-index: 8; display: flex; align-items: flex-end; }
 .sheet { width: 100%; background: var(--surface); border-radius: 18px 18px 0 0; padding: 18px 16px 22px; display: flex; flex-direction: column; gap: 10px; }
 .sheet .opt { border: 1px solid var(--line); border-radius: 14px; padding: 14px; text-align: left; background: var(--surface); cursor: pointer; display: flex; flex-direction: column; gap: 3px; color: var(--fg); font-family: var(--font); }
@@ -172,7 +172,7 @@ body {
 .phone.gp .tabbar, .phone.gp .fab { display: none; }
 .gp-head-date { font-size: 22px; font-weight: 700; }
 .note { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
-.preview-bar { background: #B05A1E; color: #fff; padding: 8px 14px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; z-index: 6; }
+.preview-bar { background: var(--warn); color: #fff; padding: 8px 14px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; z-index: 6; }
 .preview-bar button { border: 1px solid rgba(255,255,255,.65); background: none; color: #fff; border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: var(--font); }
 </style>
 </head>

@@ -4,13 +4,13 @@ page {
   --surface: #FFFFFF;
   --surface-2: #EFEDE5;
   --fg: #20241F;
-  --muted: #68705F;
+  --muted: #7C7367;
   --line: #E2DFD3;
-  --accent: #2E7D4F;
+  --accent: #C75B33;
   --accent-fg: #FFFFFF;
-  --accent-soft: #E1EFE5;
-  --warn: #B05A1E;
-  --warn-soft: #F7EADF;
+  --accent-soft: #F9E7DA;
+  --warn: #BF4A3C;
+  --warn-soft: #F9E3E0;
   background: var(--bg);
   color: var(--fg);
   font-size: 28rpx;
@@ -191,7 +191,7 @@ input { min-height: 88rpx; box-sizing: border-box; }
 .fab {
   position: fixed; right: 32rpx; bottom: 160rpx; width: 104rpx; height: 104rpx;
   border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-size: 52rpx;
-  box-shadow: 0 12rpx 32rpx rgba(46, 125, 79, .35); z-index: 5;
+  box-shadow: 0 12rpx 32rpx rgba(199, 91, 51, .35); z-index: 5;
   display: flex; align-items: center; justify-content: center;
 }
 

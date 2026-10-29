@@ -19,8 +19,8 @@
   },
   "tabBar": {
     "custom": true,
-    "color": "#68705F",
-    "selectedColor": "#2E7D4F",
+    "color": "#7C7367",
+    "selectedColor": "#C75B33",
     "list": [
       { "pagePath": "pages/today/index", "text": "今日" },
       { "pagePath": "pages/week/index", "text": "日历" },
