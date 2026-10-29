@@ -111,23 +111,30 @@ INVITE_SECRET=${INVITE_SECRET}
 MIGRATIONS_DIR=${REPO_DIR}/migrations
 EOF
 
-  log "建库 + 建应用账号…"
-  # root 认证：预设 MYSQL_ROOT_PASSWORD（如已改成固定密码）则用密码登录，否则走本机 socket 免密
-  MYSQL_CLI=(mysql)
-  [[ -n "${MYSQL_ROOT_PASSWORD:-}" ]] && MYSQL_CLI=(mysql -uroot -p"${MYSQL_ROOT_PASSWORD}")
-  "${MYSQL_CLI[@]}" <<SQL
+else
+  log "已存在 deploy/.env，跳过密钥生成"
+fi
+
+# ---------------- 建库 + 校齐应用账号（幂等，每次执行，确保与 .env 一致） ----------------
+log "建库 + 校齐应用账号…"
+set -a; source "$ENV_FILE"; set +a
+# root 认证：.env 里 MYSQL_ROOT_PASSWORD 非空则密码登录，否则走本机 socket 免密
+MYSQL_CLI=(mysql)
+[[ -n "${MYSQL_ROOT_PASSWORD:-}" ]] && MYSQL_CLI=(mysql -uroot -p"${MYSQL_ROOT_PASSWORD}")
+# 从 RDS_DSN 解析应用账号密码（生成值为 hex，不含 : @）
+APP_DB_PW=$(sed -n 's/^RDS_DSN="[^:]*:\(.*\)@tcp.*/\1/p' "$ENV_FILE")
+[[ -n "$APP_DB_PW" ]] || die "无法从 RDS_DSN 解析应用账号密码，请检查 deploy/.env"
+"${MYSQL_CLI[@]}" <<SQL
 CREATE DATABASE IF NOT EXISTS ${APP_DB} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${APP_USER}'@'localhost' IDENTIFIED BY '${APP_PW}';
+CREATE USER IF NOT EXISTS '${APP_USER}'@'localhost' IDENTIFIED BY '${APP_DB_PW}';
+ALTER USER '${APP_USER}'@'localhost' IDENTIFIED BY '${APP_DB_PW}';
 GRANT ALL PRIVILEGES ON ${APP_DB}.* TO '${APP_USER}'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 
-  # 预设了 root 密码才同步修改；默认不动，保持本机免密登录
-  if [[ -n "$ROOT_PW" ]]; then
-    "${MYSQL_CLI[@]}" -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${ROOT_PW}'; FLUSH PRIVILEGES;"
-  fi
-else
-  log "已存在 deploy/.env，跳过密钥生成与建库（如需重置：删掉后重跑）"
+# 预设了 root 密码才同步修改；默认不动，保持本机免密登录
+if [[ -n "${MYSQL_ROOT_PASSWORD:-}" ]]; then
+  "${MYSQL_CLI[@]}" -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}'; FLUSH PRIVILEGES;"
 fi
 
 # ---------------- 编译 ----------------
