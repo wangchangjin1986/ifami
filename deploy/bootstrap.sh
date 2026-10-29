@@ -152,8 +152,10 @@ log "安装并启动 systemd 服务…"
 id -u caddy >/dev/null 2>&1 || useradd --system --home-dir /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy
 mkdir -p /etc/caddy /var/lib/caddy
 chown -R caddy:caddy /var/lib/caddy
-install -m 644 deploy/caddy.service /etc/systemd/system/caddy.service
 install -m 644 deploy/ifami-api.service deploy/ifami-worker.service /etc/systemd/system/
+# caddy 二进制路径因安装方式而异（apt 在 /usr/bin，静态包在 /usr/local/bin），按实际路径生成单元
+CADDY_BIN="$(command -v caddy)"
+sed "s|/usr/local/bin/caddy|${CADDY_BIN}|g" deploy/caddy.service > /etc/systemd/system/caddy.service
 install -m 644 deploy/Caddyfile /etc/caddy/Caddyfile
 install -m 644 deploy/ifami.logrotate /etc/logrotate.d/ifami   # 日志落盘轮转（每日，留 14 天）
 systemctl daemon-reload
