@@ -21,5 +21,11 @@ fi
 
 systemctl restart ifami-api ifami-worker
 
-curl -fsS http://127.0.0.1:8080/healthz >/dev/null
+# 重启后 Hertz 需要一点时间绑定端口，轮询等待而非立即检查
+ok=0
+for _ in $(seq 1 15); do
+  curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1 && { ok=1; break; }
+  sleep 1
+done
+[[ $ok -eq 1 ]] || { echo "健康检查未通过，排查：journalctl -u ifami-api -e" >&2; exit 1; }
 echo "部署完成，/healthz 通过"
