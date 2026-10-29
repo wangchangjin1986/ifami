@@ -145,6 +145,9 @@ button::after { border: none; }
 .field input, .field .input, .field .picker { border: 2rpx solid var(--line); border-radius: 20rpx; padding: 22rpx 24rpx; font-size: 30rpx; background: var(--surface); color: var(--fg); width: 100%; box-sizing: border-box; }
 .field input[disabled], .field .picker.disabled { color: var(--muted); }
 
+/* 原生 input 在 flex 容器里高度会塌陷（真机上表现为太小、点不出光标），统一显式最小高度 */
+input { min-height: 88rpx; box-sizing: border-box; }
+
 /* 分段器 */
 .seg { display: flex; background: var(--surface-2); border-radius: 24rpx; padding: 8rpx; gap: 8rpx; }
 .seg button { flex: 1; border-radius: 18rpx; padding: 18rpx 8rpx; font-size: 26rpx; color: var(--muted); font-weight: 500; }
