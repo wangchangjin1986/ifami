@@ -11,6 +11,14 @@ git pull
 CGO_ENABLED=0 go build -o ifami ./cmd/ifami
 set -a; . deploy/.env; set +a
 ./ifami migrate                          # 幂等建表
+
+# Caddy 配置随仓库走：有变化才更新并 reload
+if ! cmp -s deploy/Caddyfile /etc/caddy/Caddyfile; then
+  install -m 644 deploy/Caddyfile /etc/caddy/Caddyfile
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy
+  echo "Caddyfile 已更新并重载"
+fi
+
 systemctl restart ifami-api ifami-worker
 
 curl -fsS http://127.0.0.1:8080/healthz >/dev/null
