@@ -46,7 +46,6 @@ Page({
     this.setData({ methodIndex: Number(e.currentTarget.dataset.i) })
   },
 
-  onAmount(e) { this.setData({ amount: e.detail.value }) },
 
   submit() {
     if (this.data.submitting) return

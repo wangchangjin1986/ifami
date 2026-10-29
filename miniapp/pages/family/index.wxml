@@ -17,7 +17,7 @@
       <view class="card">
         <view class="ev-title">创建你的家庭</view>
         <view class="ev-meta">家庭是 ifami 的账户单位，创建后即可添加孩子、安排日程。</view>
-        <input class="input" placeholder="家庭名，如「我们的家」" value="{{newFamilyName}}" bindinput="onNewFamily" />
+        <input class="input" placeholder="家庭名，如「我们的家」" model:value="{{newFamilyName}}" />
         <button class="btn" bindtap="createFamily">创建家庭</button>
       </view>
     </view>
@@ -41,8 +41,8 @@
       <view class="card">
         <view class="ev-title">添加孩子</view>
         <view class="ev-meta">孩子是虚拟成员，无独立登录，数据由监护人管理。</view>
-        <input class="input" placeholder="孩子姓名" value="{{childName}}" bindinput="onChildName" />
-        <input class="input" placeholder="称谓（如：女儿）" value="{{childRelation}}" bindinput="onChildRelation" />
+        <input class="input" placeholder="孩子姓名" model:value="{{childName}}" />
+        <input class="input" placeholder="称谓（如：女儿）" model:value="{{childRelation}}" />
         <button class="btn ghost" bindtap="addChild">＋ 添加孩子</button>
       </view>
 

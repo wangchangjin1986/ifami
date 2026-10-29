@@ -79,7 +79,6 @@ Page({
       .catch((e) => wx.showToast({ title: e.message || '登录失败', icon: 'none' }))
   },
 
-  onNewFamily(e) { this.setData({ newFamilyName: e.detail.value }) },
   createFamily() {
     const name = (this.data.newFamilyName || '').trim()
     if (!name) return wx.showToast({ title: '请输入家庭名', icon: 'none' })
@@ -93,8 +92,6 @@ Page({
       .catch((e) => wx.showToast({ title: e.message || '创建失败', icon: 'none' }))
   },
 
-  onChildName(e) { this.setData({ childName: e.detail.value }) },
-  onChildRelation(e) { this.setData({ childRelation: e.detail.value }) },
   addChild() {
     const name = (this.data.childName || '').trim()
     if (!name) return wx.showToast({ title: '请输入孩子姓名', icon: 'none' })

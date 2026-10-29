@@ -19,7 +19,7 @@
 
     <view wx:if="{{methods[methodIndex].key !== 'photo'}}" class="field">
       <text class="label">本次{{goalUnit}}数</text>
-      <input class="input" type="number" placeholder="{{goalUnit === '个' ? '本次数量' : '本次分钟数'}}" value="{{amount}}" bindinput="onAmount" />
+      <input class="input" type="number" placeholder="{{goalUnit === '个' ? '本次数量' : '本次分钟数'}}" model:value="{{amount}}" />
     </view>
 
     <view class="muted">孩子没有账号，在父母设备上切换身份提交；也可由家长代打。</view>

@@ -10,7 +10,7 @@
       <view class="filters">
         <view class="chip {{templateIndex === i ? 'on' : ''}}" wx:for="{{templates}}" wx:for-index="i" wx:key="name" bindtap="selectTemplate" data-i="{{i}}">{{item.name}}</view>
       </view>
-      <input wx:if="{{templates[templateIndex].name === '自定义'}}" class="input" placeholder="任务名，如：口算" value="{{customName}}" bindinput="onCustomName" />
+      <input wx:if="{{templates[templateIndex].name === '自定义'}}" class="input" placeholder="任务名，如：口算" model:value="{{customName}}" />
     </view>
 
     <view class="field">
@@ -18,7 +18,7 @@
       <view class="seg">
         <button class="{{goalIndex === gi ? 'on' : ''}}" wx:for="{{goalOptions}}" wx:for-index="gi" wx:key="label" bindtap="selectGoal" data-i="{{gi}}">{{item.label}}</button>
       </view>
-      <input wx:if="{{goalOptions[goalIndex].custom}}" class="input" type="number" placeholder="自定义{{goalUnit}}数" value="{{customGoal}}" bindinput="onCustomGoal" />
+      <input wx:if="{{goalOptions[goalIndex].custom}}" class="input" type="number" placeholder="自定义{{goalUnit}}数" model:value="{{customGoal}}" />
     </view>
 
     <view class="field">

@@ -110,9 +110,6 @@ Page({
     wx.showToast({ title: '从微信导入开发中', icon: 'none' })
   },
 
-  onTitle(e) { this.setData({ title: e.detail.value }) },
-  onLocation(e) { this.setData({ location: e.detail.value }) },
-  onNote(e) { this.setData({ note: e.detail.value }) },
   onType(e) { this.setData({ typeIndex: Number(e.detail.value) }) },
   onRepeat(e) { this.setData({ repeatIndex: Number(e.detail.value) }) },
   onChild(e) { this.setData({ childIndex: Number(e.detail.value) }) },

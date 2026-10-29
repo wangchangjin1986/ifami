@@ -14,7 +14,7 @@
     <block wx:if="{{mode === 'manual'}}">
       <view class="field">
         <text class="label">事项</text>
-        <input class="input" placeholder="如：数学课 / 接乐乐" value="{{title}}" bindinput="onTitle" />
+        <input class="input" placeholder="如：数学课 / 接乐乐" model:value="{{title}}" />
       </view>
 
       <view class="field">
@@ -63,12 +63,12 @@
 
       <view class="field">
         <text class="label">地点</text>
-        <input class="input" placeholder="选填" value="{{location}}" bindinput="onLocation" />
+        <input class="input" placeholder="选填" model:value="{{location}}" />
       </view>
 
       <view class="field">
         <text class="label">备注</text>
-        <input class="input" placeholder="选填" value="{{note}}" bindinput="onNote" />
+        <input class="input" placeholder="选填" model:value="{{note}}" />
       </view>
 
       <button class="btn" bindtap="submit" disabled="{{submitting}}">保存</button>

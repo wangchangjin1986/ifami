@@ -93,8 +93,6 @@ Page({
   selectFreq(e) { this.setData({ freqIndex: Number(e.currentTarget.dataset.i) }) },
   selectOwner(e) { this.setData({ ownerIndex: Number(e.currentTarget.dataset.i) }) },
   onChild(e) { this.setData({ childIndex: Number(e.detail.value) }) },
-  onCustomName(e) { this.setData({ customName: e.detail.value }) },
-  onCustomGoal(e) { this.setData({ customGoal: e.detail.value }) },
 
   submit() {
     if (this.data.submitting) return
