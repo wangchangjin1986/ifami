@@ -13,6 +13,8 @@ const RELATIONS_CHILD = ['儿子', '女儿']
 
 function memberView(m, selfUserID) {
   const isVirtual = m.type === 'virtual'
+  const role = m.role === 'admin' ? 'parent' : m.role
+  const isAdmin = !!(m.is_admin || m.role === 'admin')
   // 卡片主标题：真实成员用名称（relation_label），孩子用姓名；角色只决定权限与视角。
   const display = isVirtual ? (m.name || '未命名') : (m.relation_label || m.name || '未命名')
   let chip = ''
@@ -22,11 +24,11 @@ function memberView(m, selfUserID) {
     // 孩子也显示名称（儿子/女儿或自定义），让编辑「自定义名称」保存后能反映到卡片上。
     meta = (m.relation_label ? m.relation_label + ' · ' : '') + '虚拟成员，由父母代管'
   } else {
-    if (m.is_admin) {
+    if (isAdmin) {
       chip = '管理员'
-      meta = ROLE_LABEL[m.role] || m.role
+      meta = ROLE_LABEL[role] || role
     } else {
-      meta = ROLE_LABEL[m.role] || m.role
+      meta = ROLE_LABEL[role] || role
     }
   }
   return {
@@ -37,7 +39,8 @@ function memberView(m, selfUserID) {
     chip,
     meta,
     isVirtual,
-    role: m.role,
+    role,
+    is_admin: isAdmin,
     relation: m.relation_label || '',
     isSelf: !isVirtual && selfUserID != null && m.user_id === selfUserID
   }

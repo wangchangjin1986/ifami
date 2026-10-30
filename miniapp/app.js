@@ -1,6 +1,21 @@
 // ifami 小程序入口
 // 账号体系：wx.login → code → 后端换取 openid + token（见 docs/技术方案设计.md §5.1）
 // 登录后 token 持久化到 storage，请求统一注入 Authorization / X-Family-Id。
+function normalizeRole(role) {
+  return role === 'admin' ? 'parent' : role
+}
+
+function isMembershipAdmin(m) {
+  return !!(m && (m.is_admin || m.role === 'admin'))
+}
+
+function normalizeMemberships(list) {
+  return (list || []).map((m) => Object.assign({}, m, {
+    role: normalizeRole(m.role),
+    is_admin: isMembershipAdmin(m)
+  }))
+}
+
 App({
   globalData: {
     // 默认指向 Phase 0 服务器（备案完成前 IP 直连 HTTP，开发者工具需勾选「不校验合法域名」）；
@@ -17,7 +32,7 @@ App({
   onLaunch() {
     this.globalData.token = wx.getStorageSync('token') || ''
     this.globalData.user = wx.getStorageSync('user') || null
-    this.globalData.memberships = wx.getStorageSync('memberships') || []
+    this.globalData.memberships = normalizeMemberships(wx.getStorageSync('memberships'))
     this.globalData.familyId = wx.getStorageSync('familyId') || null
     this.globalData.role = wx.getStorageSync('role') || null
     this.globalData.isAdmin = !!wx.getStorageSync('isAdmin')
@@ -78,7 +93,7 @@ App({
   setSession(data) {
     this.globalData.token = data.token || ''
     this.globalData.user = data.user || null
-    this.globalData.memberships = data.memberships || []
+    this.globalData.memberships = normalizeMemberships(data.memberships)
     wx.setStorageSync('token', this.globalData.token)
     wx.setStorageSync('user', this.globalData.user)
     wx.setStorageSync('memberships', this.globalData.memberships)
@@ -95,9 +110,9 @@ App({
     this.globalData.familyId = familyId || null
     wx.setStorageSync('familyId', this.globalData.familyId)
     if (familyId) {
-      const m = this.globalData.memberships.find((x) => x.family_id === familyId)
-      this.globalData.role = m ? m.role : null
-      this.globalData.isAdmin = !!(m && m.is_admin)
+      const m = this.globalData.memberships.find((x) => String(x.family_id) === String(familyId))
+      this.globalData.role = m ? normalizeRole(m.role) : null
+      this.globalData.isAdmin = isMembershipAdmin(m)
     } else {
       this.globalData.role = null
       this.globalData.isAdmin = false
@@ -110,13 +125,13 @@ App({
   refreshMe() {
     return this.request('/v1/me').then((data) => {
       this.globalData.user = data.user || null
-      this.globalData.memberships = data.memberships || []
+      this.globalData.memberships = normalizeMemberships(data.memberships)
       wx.setStorageSync('user', this.globalData.user)
       wx.setStorageSync('memberships', this.globalData.memberships)
       const list = this.globalData.memberships
       if (list.length === 0) {
         this.setFamily(null)
-      } else if (!list.some((x) => x.family_id === this.globalData.familyId)) {
+      } else if (!list.some((x) => String(x.family_id) === String(this.globalData.familyId))) {
         this.setFamily(list[0].family_id)
       } else {
         this.setFamily(this.globalData.familyId)
@@ -128,7 +143,15 @@ App({
   // 确保已登录（页面 onShow 调用）；token 失效时会重新登录。
   ensureLogin() {
     if (this.globalData.token && this.globalData.user) {
-      return Promise.resolve()
+      // 每次进入页面都刷新 /v1/me，避免小程序本地缓存仍是旧 memberships（缺少 is_admin）时，
+      // 管理员被误判为普通成员，导致家庭成员编辑入口消失。
+      return this.refreshMe().catch((e) => {
+        if (e.code === 4001) {
+          this.logout()
+          return this.login()
+        }
+        throw e
+      })
     }
     return this.login()
   },
