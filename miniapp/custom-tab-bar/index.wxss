@@ -1,10 +1,12 @@
+/* 自定义 tabbar 组件受样式隔离影响，app.wxss 中 page 下的 CSS 变量（--surface 等）无法传入，
+   此处直接写死颜色值，与 app.wxss 的设计 token 保持一致。 */
 .tabbar {
-  display: flex; border-top: 1rpx solid var(--line); background: var(--surface);
+  display: flex; border-top: 1rpx solid #E2DFD3; background: #FFFFFF;
   padding-bottom: env(safe-area-inset-bottom);
 }
 .tab {
-  flex: 1; padding: 16rpx 0 20rpx; font-size: 24rpx; color: var(--muted);
+  flex: 1; padding: 16rpx 0 20rpx; font-size: 24rpx; color: #7C7367;
   display: flex; flex-direction: column; align-items: center; gap: 6rpx;
 }
 .tab .ic { font-size: 38rpx; }
-.tab.on { color: var(--accent); font-weight: 500; }
+.tab.on { color: #C75B33; font-weight: 500; }
