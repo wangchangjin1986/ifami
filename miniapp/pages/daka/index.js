@@ -1,7 +1,12 @@
 // 打卡页：按孩子分组的任务列表，对齐 prototype scr-daka（dot + 任务名 + 责任 meta + 去打卡 chip）。
 const app = getApp()
 
-const FREQ_LABEL = { daily: '每天', weekdays: '工作日', custom: '自定义' }
+const FREQ_LABEL = { daily: '每天', weekdays: '工作日' }
+
+function freqLabel(t) {
+  if (t.freq === 'weekly') return '每周 ' + (t.weekly_target || 'N') + ' 次'
+  return FREQ_LABEL[t.freq] || t.freq
+}
 
 function goalSuffix(t) {
   if (t.goal_type === 'timer') return t.goal_value + ' 分钟'
@@ -48,7 +53,7 @@ Page({
 
         const buildTask = (t, childName) => {
           const suffix = goalSuffix(t)
-          const meta = (FREQ_LABEL[t.freq] || t.freq) + ' · 责任：' + (nameMap[t.owner_member_id] || '—') +
+          const meta = freqLabel(t) + ' · 责任：' + (nameMap[t.owner_member_id] || '—') +
             (t.today_checked ? ' · 已完成' : '')
           return Object.assign({}, t, { title: t.name + (suffix ? ' ' + suffix : ''), meta, childName })
         }

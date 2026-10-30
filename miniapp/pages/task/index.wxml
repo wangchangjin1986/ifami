@@ -26,6 +26,7 @@
       <view class="seg">
         <button class="{{freqIndex === fi ? 'on' : ''}}" wx:for="{{freqs}}" wx:for-index="fi" wx:key="value" bindtap="selectFreq" data-i="{{fi}}">{{item.label}}</button>
       </view>
+      <input wx:if="{{freqs[freqIndex].value === 'weekly'}}" class="input" type="number" placeholder="每周 3 次" model:value="{{weeklyTarget}}" />
     </view>
 
     <view class="field">
@@ -36,7 +37,7 @@
     </view>
 
     <view class="field">
-      <text class="label">责任父母（到点没打卡提醒谁）</text>
+      <text class="label">责任家长（到点没打卡提醒谁）</text>
       <view class="seg">
         <button class="{{ownerIndex === oi ? 'on' : ''}}" wx:for="{{owners}}" wx:for-index="oi" wx:key="member_id" bindtap="selectOwner" data-i="{{oi}}">{{item.name}}</button>
       </view>

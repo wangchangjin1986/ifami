@@ -146,6 +146,15 @@ func (s *Store) ListRemindableTasks(ctx context.Context) ([]Task, error) {
 	return rows, err
 }
 
+// CountCheckinsSince 任务自 since（UTC，含）起的打卡次数（「每周 N 次」达标判定）。
+func (s *Store) CountCheckinsSince(ctx context.Context, familyID, taskID uint64, since time.Time) (int64, error) {
+	var n int64
+	err := s.db.WithContext(ctx).Model(&Checkin{}).
+		Where("family_id = ? AND task_id = ? AND created_at >= ?", familyID, taskID, since).
+		Count(&n).Error
+	return n, err
+}
+
 // HasCheckinOn 任务在某天（UTC 当天 [day, day+1) 半开区间）是否已打卡。
 func (s *Store) HasCheckinOn(ctx context.Context, familyID, taskID uint64, day time.Time) (bool, error) {
 	var n int64

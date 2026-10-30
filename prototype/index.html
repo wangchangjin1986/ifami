@@ -59,7 +59,7 @@ body {
 .app-head h1 { font-size: 19px; margin: 0; font-weight: 700; }
 .app-head .sub { font-size: 12px; color: var(--muted); }
 .back { border: 0; background: none; color: var(--accent); font-size: 15px; cursor: pointer; padding: 0 4px 0 0; font-family: var(--font); font-weight: 500; }
-.body { padding: 14px 16px 90px; display: flex; flex-direction: column; gap: 12px; }
+.body { padding: 14px 16px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 12px; }
 .gp .body { padding-bottom: 24px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
 .card.tappable { cursor: pointer; }
@@ -160,9 +160,9 @@ body {
 .tabbar button { flex: 1; border: 0; background: none; padding: 9px 0 10px; font-size: 12px; color: var(--muted); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; font-family: var(--font); }
 .tabbar button .ic { font-size: 19px; }
 .tabbar button.on { color: var(--accent); font-weight: 500; }
-.fab { position: absolute; right: 16px; bottom: 72px; width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-fg); font-size: 26px; cursor: pointer; box-shadow: 0 6px 16px rgba(199, 91, 51, .35); z-index: 5; }
+.fab { position: absolute; right: 16px; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-fg); font-size: 26px; cursor: pointer; box-shadow: 0 6px 16px rgba(199, 91, 51, .35); z-index: 5; }
 .sheet-mask { position: absolute; inset: 0; background: rgba(0,0,0,.35); z-index: 8; display: flex; align-items: flex-end; }
-.sheet { width: 100%; background: var(--surface); border-radius: 18px 18px 0 0; padding: 18px 16px 22px; display: flex; flex-direction: column; gap: 10px; }
+.sheet { width: 100%; background: var(--surface); border-radius: 18px 18px 0 0; padding: 18px 16px; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 10px; }
 .sheet .opt { border: 1px solid var(--line); border-radius: 14px; padding: 14px; text-align: left; background: var(--surface); cursor: pointer; display: flex; flex-direction: column; gap: 3px; color: var(--fg); font-family: var(--font); }
 .sheet .opt b { font-size: 15px; }
 .sheet .opt span { font-size: 12px; color: var(--muted); }
@@ -357,15 +357,18 @@ body {
         <div class="filters" id="task-tpl">
           <span class="chip on">阅读</span><span class="chip">跳绳</span><span class="chip">练琴</span><span class="chip">英语</span><span class="chip">自定义</span>
         </div>
+        <input id="task-tpl-custom" placeholder="任务名，如「背古诗」" hidden>
       </div>
       <div class="field"><label>目标量</label>
         <div class="seg" id="task-goal"><button class="on">20 分钟</button><button>30 分钟</button><button>自定义</button></div>
+        <input id="task-goal-custom" placeholder="目标量，如 50（个 / 分钟）" hidden>
       </div>
       <div class="field"><label>频次</label>
-        <div class="seg" id="task-freq"><button class="on">每天</button><button>工作日</button><button>自定义</button></div>
+        <div class="seg" id="task-freq"><button class="on">每天</button><button>工作日</button><button>每周 N 次</button></div>
+        <input id="task-freq-custom" type="number" placeholder="每周 3 次" hidden>
       </div>
-      <div class="field"><label>责任父母（到点没打卡提醒谁）</label>
-        <div class="seg" id="task-owner"><button class="on">妈妈</button><button>爸爸</button></div>
+      <div class="field"><label>责任家长（到点没打卡提醒谁，除孩子外都可担任）</label>
+        <div class="seg" id="task-owner"><button class="on">妈妈</button><button>爸爸</button><button>奶奶</button></div>
       </div>
       <button class="btn" id="btn-task-save">创建</button>
     </div>
@@ -780,14 +783,35 @@ body {
     });
   }
   chipWire('task-tpl'); chipWire('invite-rel'); chipWire('manage-filter'); chipWire('tl-filter');
+  // 「自定义/每周 N 次」选项展开输入框（模板名 / 目标量 / 频次）
+  function customToggle(wireId, inputId, triggerText) {
+    var box = document.getElementById(wireId), input = document.getElementById(inputId);
+    box.addEventListener('click', function () {
+      var sel = box.querySelector('.on');
+      input.hidden = !(sel && sel.textContent === triggerText);
+    });
+  }
+  customToggle('task-tpl', 'task-tpl-custom', '自定义');
+  customToggle('task-goal', 'task-goal-custom', '自定义');
+  customToggle('task-freq', 'task-freq-custom', '每周 N 次');
   document.getElementById('btn-task-save').addEventListener('click', function () {
-    var tpl = document.querySelector('#task-tpl .chip.on').textContent;
-    var goal = document.querySelector('#task-goal .on').textContent;
+    var tplChip = document.querySelector('#task-tpl .chip.on');
+    var tpl = tplChip.textContent === '自定义'
+      ? (document.getElementById('task-tpl-custom').value.trim() || '自定义任务')
+      : tplChip.textContent;
+    var goalBtn = document.querySelector('#task-goal .on');
+    var goal = goalBtn.textContent === '自定义'
+      ? ((document.getElementById('task-goal-custom').value.trim() || '30') + ' 分钟')
+      : goalBtn.textContent;
+    var freqBtn = document.querySelector('#task-freq .on');
+    var freq = freqBtn.textContent === '每周 N 次'
+      ? ('每周 ' + (document.getElementById('task-freq-custom').value.trim() || '3') + ' 次')
+      : freqBtn.textContent;
     var list = document.getElementById('daka-list');
     var card = document.createElement('div');
     card.className = 'card task';
     card.dataset.task = tpl + ' ' + goal;
-    card.innerHTML = '<div class="dot"></div><div class="ev-main"><div class="ev-title">' + tpl + ' ' + goal + '</div><div class="ev-meta">每天 · 责任：' + document.querySelector('#task-owner .on').textContent + '</div></div><span class="chip gray">去打卡</span>';
+    card.innerHTML = '<div class="dot"></div><div class="ev-main"><div class="ev-title">' + tpl + ' ' + goal + '</div><div class="ev-meta">' + freq + ' · 责任：' + document.querySelector('#task-owner .on').textContent + '</div></div><span class="chip gray">去打卡</span>';
     list.appendChild(card);
     bindTasks();
     navTab('scr-daka');

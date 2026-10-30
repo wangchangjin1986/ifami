@@ -16,6 +16,13 @@ const (
 	StatusRemoved = "removed"
 )
 
+// 频次枚举（R3.1）。weekly 需配合 WeeklyTarget（每周完成 N 次，按自然周周一算）。
+const (
+	FreqDaily    = "daily"
+	FreqWeekdays = "weekdays"
+	FreqWeekly   = "weekly"
+)
+
 // 成员类型/角色枚举值（对齐 identity 模块，见 wiki/product/roles.md）。
 // 跨模块只走接口传字符串值，不 import identity，保持模块边界。
 const (
@@ -41,6 +48,7 @@ type Task struct {
 	GoalType      string    `gorm:"column:goal_type"`
 	GoalValue     int       `gorm:"column:goal_value"`
 	Freq          string    `gorm:"column:freq"`
+	WeeklyTarget  int       `gorm:"column:weekly_target"` // freq=weekly 时：每周完成 N 次
 	OwnerMemberID uint64    `gorm:"column:owner_member_id"`
 	RemindTime    string    `gorm:"column:remind_time"` // HH:MM，空=不提醒（R3.3 到点未完成提醒责任父母）
 	Status        string    `gorm:"column:status"`

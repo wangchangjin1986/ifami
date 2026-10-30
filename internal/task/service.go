@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"ifami/internal/pkg/logx"
 	"time"
 
 	"gorm.io/gorm"
@@ -63,6 +63,7 @@ type TaskInput struct {
 	GoalType      string `json:"goal_type"`
 	GoalValue     int    `json:"goal_value"`
 	Freq          string `json:"freq"`
+	WeeklyTarget  int    `json:"weekly_target"` // freq=weekly 时：每周完成 N 次
 	ChildMemberID uint64 `json:"child_member_id"`
 	OwnerMemberID uint64 `json:"owner_member_id"`
 	RemindTime    string `json:"remind_time"` // HH:MM，空=不提醒
@@ -76,6 +77,7 @@ type TaskView struct {
 	GoalType      string `json:"goal_type"`
 	GoalValue     int    `json:"goal_value"`
 	Freq          string `json:"freq"`
+	WeeklyTarget  int    `json:"weekly_target"`
 	OwnerMemberID uint64 `json:"owner_member_id"`
 	RemindTime    string `json:"remind_time"`
 	StreakDays    int    `json:"streak_days"`
@@ -159,6 +161,7 @@ func (s *Service) ListTasks(ctx context.Context, userID, familyID uint64) ([]Tas
 			GoalType:      rows[i].GoalType,
 			GoalValue:     rows[i].GoalValue,
 			Freq:          rows[i].Freq,
+			WeeklyTarget:  rows[i].WeeklyTarget,
 			OwnerMemberID: rows[i].OwnerMemberID,
 			RemindTime:    rows[i].RemindTime,
 			StreakDays:    calcStreak(dates, now),
@@ -182,6 +185,7 @@ func (s *Service) UpdateTask(ctx context.Context, userID, familyID, taskID uint6
 		"goal_type":       t.GoalType,
 		"goal_value":      t.GoalValue,
 		"freq":            t.Freq,
+		"weekly_target":   t.WeeklyTarget,
 		"child_member_id": t.ChildMemberID,
 		"owner_member_id": t.OwnerMemberID,
 		"remind_time":     t.RemindTime,
@@ -319,15 +323,26 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 		}
 		checked, err := s.store.HasCheckinOn(ctx, t.FamilyID, t.TaskID, dateOnly(now))
 		if err != nil {
-			log.Printf("[task] 提醒扫描查打卡失败 task=%d err=%v", t.TaskID, err)
+			logx.Errorf("[task] 提醒扫描查打卡失败 task=%d err=%v", t.TaskID, err)
 			continue
 		}
 		if checked {
 			continue // 今天已打卡，不提醒
 		}
+		// 「每周 N 次」任务按自然周累计完成次数判定：达标后不再提醒（R3.3）。
+		if t.Freq == FreqWeekly && t.WeeklyTarget > 0 {
+			n, err := s.store.CountCheckinsSince(ctx, t.FamilyID, t.TaskID, weekStart(now))
+			if err != nil {
+				logx.Errorf("[task] 周完成次数统计失败 task=%d err=%v", t.TaskID, err)
+				continue
+			}
+			if n >= int64(t.WeeklyTarget) {
+				continue
+			}
+		}
 		userID, err := s.id.MemberUserID(ctx, t.FamilyID, t.OwnerMemberID)
 		if err != nil {
-			log.Printf("[task] 触达解析 owner user_id 失败 task=%d err=%v", t.TaskID, err)
+			logx.Warnf("[task] 触达解析 owner user_id 失败 task=%d err=%v", t.TaskID, err)
 			continue
 		}
 		if _, err := s.notify.CreateJob(ctx, NotifyInput{
@@ -337,7 +352,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 			Payload:      map[string]any{"task": t.Name, "child_member_id": t.ChildMemberID},
 			BusinessKey:  fmt.Sprintf("checkin:%d:%s", t.TaskID, dateKey),
 		}); err != nil {
-			log.Printf("[task] 创建提醒触达失败 task=%d err=%v", t.TaskID, err)
+			logx.Errorf("[task] 创建提醒触达失败 task=%d err=%v", t.TaskID, err)
 		}
 	}
 	return nil
@@ -364,7 +379,13 @@ func (s *Service) buildTask(ctx context.Context, familyID uint64, in *TaskInput)
 		return nil, ErrBadGoal
 	}
 	if in.Freq == "" {
-		in.Freq = "daily"
+		in.Freq = FreqDaily
+	}
+	if in.Freq != FreqDaily && in.Freq != FreqWeekdays && in.Freq != FreqWeekly {
+		return nil, ErrBadGoal
+	}
+	if in.Freq == FreqWeekly && in.WeeklyTarget < 1 {
+		return nil, ErrBadGoal
 	}
 	if in.RemindTime != "" {
 		if _, err := time.Parse("15:04", in.RemindTime); err != nil {
@@ -392,6 +413,7 @@ func (s *Service) buildTask(ctx context.Context, familyID uint64, in *TaskInput)
 		GoalType:      in.GoalType,
 		GoalValue:     in.GoalValue,
 		Freq:          in.Freq,
+		WeeklyTarget:  in.WeeklyTarget,
 		OwnerMemberID: in.OwnerMemberID,
 		RemindTime:    in.RemindTime,
 		Status:        StatusActive,
@@ -476,4 +498,11 @@ func toCheckinView(c *Checkin) CheckinView {
 // dateOnly 归一化到 UTC 当天 00:00（streak/窗口边界用）。
 func dateOnly(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// weekStart 返回本周（自然周）周一 00:00 UTC。周完成次数「每周 N 次」判定用。
+func weekStart(t time.Time) time.Time {
+	d := dateOnly(t)
+	daysFromMonday := (int(d.Weekday()) + 6) % 7 // Sunday=0 → 6, Monday=1 → 0 …
+	return d.AddDate(0, 0, -daysFromMonday)
 }

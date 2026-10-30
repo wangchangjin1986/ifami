@@ -1,4 +1,4 @@
-// 创建打卡任务：模板 chips + 目标量/频次/责任父母 seg，对齐 prototype scr-task-create。
+// 创建打卡任务：模板 chips + 目标量/频次/责任家长 seg，对齐 prototype scr-task-create。
 const app = getApp()
 
 const TEMPLATES = [
@@ -25,7 +25,7 @@ const GOAL_PRESETS = {
 const FREQS = [
   { label: '每天', value: 'daily' },
   { label: '工作日', value: 'weekdays' },
-  { label: '自定义', value: 'custom' }
+  { label: '每周 N 次', value: 'weekly' }
 ]
 
 Page({
@@ -42,6 +42,7 @@ Page({
     ownerIndex: 0,
     customName: '',
     customGoal: '',
+    weeklyTarget: '',
     goalUnit: '分钟',
     submitting: false
   },
@@ -108,11 +109,19 @@ Page({
     const goalValue = goal.custom ? parseInt(this.data.customGoal, 10) : goal.value
     if (!goalValue || goalValue <= 0) return wx.showToast({ title: '请输入目标量', icon: 'none' })
 
+    const freq = this.data.freqs[this.data.freqIndex].value
+    let weeklyTarget = 0
+    if (freq === 'weekly') {
+      weeklyTarget = parseInt(this.data.weeklyTarget, 10)
+      if (!weeklyTarget || weeklyTarget <= 0) return wx.showToast({ title: '请输入每周次数', icon: 'none' })
+    }
+
     const payload = {
       name,
       goal_type: t.goal_type,
       goal_value: goalValue,
-      freq: this.data.freqs[this.data.freqIndex].value,
+      freq,
+      weekly_target: weeklyTarget,
       child_member_id: child.member_id,
       owner_member_id: owner.member_id,
       remind_time: ''
