@@ -152,11 +152,13 @@ func (h *Handler) AddChild(ctx context.Context, c *app.RequestContext) {
 	httpx.OK(c, map[string]any{"member_id": memberID})
 }
 
-// UpdateMember 管理员改成员：role（设置/取消管理员等）与 relation_label（身份称谓）均为可选，至少传一个。
+// UpdateMember 管理员改成员：role、is_admin、relation_label（身份/名称）与 name（孩子档案名）均为可选，至少传一个。
 func (h *Handler) UpdateMember(ctx context.Context, c *app.RequestContext) {
 	var req struct {
 		Role          *string `json:"role"`
+		IsAdmin       *bool   `json:"is_admin"`
 		RelationLabel *string `json:"relation_label"`
+		Name          *string `json:"name"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		httpx.Fail(c, ErrBadParam)
@@ -172,7 +174,7 @@ func (h *Handler) UpdateMember(ctx context.Context, c *app.RequestContext) {
 		httpx.Fail(c, ErrBadParam)
 		return
 	}
-	if err := h.svc.UpdateMember(ctx, auth.UserID(ctx), fid, mid, req.Role, req.RelationLabel); err != nil {
+	if err := h.svc.UpdateMember(ctx, auth.UserID(ctx), fid, mid, req.Role, req.IsAdmin, req.RelationLabel, req.Name); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

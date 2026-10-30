@@ -99,7 +99,7 @@ func (s *Store) ListFamiliesByUser(ctx context.Context, userID uint64) ([]Family
 	var rows []FamilyRole
 	err := s.db.WithContext(ctx).
 		Table("members").
-		Select("families.family_id, families.name, members.role").
+		Select("families.family_id, families.name, members.role, members.is_admin").
 		Joins("JOIN families ON families.family_id = members.family_id").
 		Where("members.user_id = ? AND members.status = ?", userID, StatusActive).
 		Scan(&rows).Error
@@ -136,7 +136,7 @@ func (s *Store) ListMembers(ctx context.Context, familyID uint64) ([]Member, err
 	return ms, err
 }
 
-// UpdateMemberFields 更新成员可变字段（role / relation_label）。
+// UpdateMemberFields 更新成员可变字段（role / is_admin / relation_label / name_enc）。
 func (s *Store) UpdateMemberFields(ctx context.Context, memberID, familyID uint64, fields map[string]any) error {
 	res := s.db.WithContext(ctx).
 		Model(&Member{}).
@@ -171,8 +171,8 @@ func (s *Store) CountAdmins(ctx context.Context, familyID, excludeMemberID uint6
 	var n int64
 	err := s.db.WithContext(ctx).
 		Model(&Member{}).
-		Where("family_id = ? AND role = ? AND status = ? AND member_id <> ?",
-			familyID, RoleAdmin, StatusActive, excludeMemberID).
+		Where("family_id = ? AND (is_admin = ? OR role = ?) AND status = ? AND member_id <> ?",
+			familyID, true, RoleAdmin, StatusActive, excludeMemberID).
 		Count(&n).Error
 	return n, err
 }

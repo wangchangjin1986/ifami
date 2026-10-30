@@ -74,18 +74,29 @@
     <view class="sheet-mask" wx:if="{{memberSheet.open}}" bindtap="closeMember">
       <view class="sheet" catchtap="noop">
         <view class="ev-title">{{memberSheet.name}} <text wx:if="{{memberSheet.chip}}" class="chip {{memberSheet.isVirtual ? 'gray' : ''}}">{{memberSheet.chip}}</text></view>
+        <view class="field" wx:if="{{memberSheet.isVirtual}}">
+          <text class="label">成员名称</text>
+          <input class="input" placeholder="孩子名称，如：乐乐" model:value="{{customName}}" />
+        </view>
         <view class="field">
-          <text class="label">身份（Ta 是孩子的？）</text>
+          <text class="label">{{memberSheet.isVirtual ? '身份' : '成员名称'}}</text>
           <view class="filters">
             <text wx:for="{{memberSheet.relations}}" wx:key="*this" class="chip {{item === memberSheet.relation ? 'on' : ''}}" data-rel="{{item}}" bindtap="pickRelation">{{item}}</text>
           </view>
-          <input class="input" placeholder="自定义称谓（可选，填了优先用）" bindinput="onCustomRelation" />
+          <input wx:if="{{!memberSheet.isVirtual}}" class="input" placeholder="自定义名称（可选，填了优先用）" model:value="{{customRelation}}" />
+        </view>
+        <view class="field" wx:if="{{!memberSheet.isVirtual}}">
+          <text class="label">角色</text>
+          <view class="filters">
+            <text wx:for="{{memberSheet.roleOptions}}" wx:key="value" class="chip {{item.value === memberSheet.role ? 'on' : ''}}" data-role="{{item.value}}" bindtap="pickRole">{{item.label}}</text>
+          </view>
         </view>
         <view class="rowline" wx:if="{{!memberSheet.isVirtual}}">
           <text>管理员</text>
           <view class="toggle {{memberSheet.isAdmin ? 'on' : ''}}" bindtap="toggleAdmin"></view>
         </view>
-        <view class="muted" wx:if="{{!memberSheet.isVirtual}}">管理员可管理成员、日程与打卡设置；取消管理员后按身份回落为家长/祖辈。</view>
+        <view class="muted" wx:if="{{!memberSheet.isVirtual}}">角色是系统预设，只决定视角；管理员是单独权限设置；成员名称只用于展示与文案。</view>
+        <view class="muted" wx:else>孩子档案标题使用成员名称；身份仅用于展示儿子/女儿等文案。</view>
         <button class="btn" bindtap="saveMember">保存</button>
         <button class="btn danger" wx:if="{{!memberSheet.isVirtual}}" bindtap="removeMember">{{memberSheet.isSelf ? '退出家庭' : '移除成员'}}</button>
         <button class="btn ghost" bindtap="closeMember">取消</button>

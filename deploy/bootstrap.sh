@@ -6,7 +6,7 @@
 #
 # 职责边界：**不负责安装中间件**，只检测 MySQL / Redis / Caddy / Go(>=1.23)，
 # 缺失时给出安装提示并退出。检测通过后直接完成初始化：
-#   生成并写 deploy/.env → 建库建应用账号 → 编译 ifami → 迁移建表 →
+#   生成并写 deploy/.env → 建库建应用账号 → 编译 ifami → 停旧服务（如有）→ 迁移建表 →
 #   装 systemd 单元（api/worker/caddy）→ 启动 → 健康检查（本机 + 公网）。
 #
 # 幂等：.env 已存在则不重复生成密钥，DB 用 IF NOT EXISTS，迁移幂等。
@@ -115,6 +115,18 @@ else
   log "已存在 deploy/.env，跳过密钥生成"
 fi
 
+# 兼容早期 .env：没有 MIGRATIONS_DIR 时补齐，确保 bootstrap.sh / deploy.sh 均可直接执行迁移。
+if ! grep -q '^MIGRATIONS_DIR=' "$ENV_FILE"; then
+  log "补齐 deploy/.env 中的 MIGRATIONS_DIR…"
+  chmod u+w "$ENV_FILE" 2>/dev/null || true
+  cat >>"$ENV_FILE" <<EOF
+
+# golang-migrate 迁移文件目录
+MIGRATIONS_DIR=${REPO_DIR}/migrations
+EOF
+  chmod 600 "$ENV_FILE" 2>/dev/null || true
+fi
+
 # ---------------- 建库 + 校齐应用账号（幂等，每次执行，确保与 .env 一致） ----------------
 log "建库 + 校齐应用账号…"
 set -a; source "$ENV_FILE"; set +a
@@ -141,6 +153,12 @@ fi
 log "编译 ifami…"
 export GOPROXY="${GOPROXY:-https://goproxy.cn,direct}"
 CGO_ENABLED=0 go build -o ifami ./cmd/ifami
+
+# ---------------- 停旧服务（如有，避免不兼容迁移期间旧进程继续写库） ----------------
+if systemctl list-unit-files ifami-api.service ifami-worker.service >/dev/null 2>&1; then
+  log "停止旧 api/worker（如已安装）…"
+  bash deploy/service.sh stop api worker >/dev/null 2>&1 || true
+fi
 
 # ---------------- 迁移建表 ----------------
 log "迁移建表…"

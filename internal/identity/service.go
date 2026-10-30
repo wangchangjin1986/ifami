@@ -41,6 +41,7 @@ type UserView struct {
 type Membership struct {
 	FamilyID uint64 `json:"family_id"`
 	Role     string `json:"role"`
+	IsAdmin  bool   `json:"is_admin"`
 }
 
 type LoginResult struct {
@@ -60,6 +61,7 @@ type MemberView struct {
 	UserID        *uint64 `json:"user_id"`
 	Type          string  `json:"type"`
 	Role          string  `json:"role"`
+	IsAdmin       bool    `json:"is_admin"`
 	RelationLabel string  `json:"relation_label"`
 	Name          string  `json:"name"`
 	Status        string  `json:"status"`
@@ -124,7 +126,7 @@ func (s *Service) CreateFamily(ctx context.Context, userID uint64, name string) 
 	}
 	f := &Family{Name: name, CreatorID: userID}
 	uid := userID
-	m := &Member{UserID: &uid, Type: TypeReal, Role: RoleAdmin, Status: StatusActive}
+	m := &Member{UserID: &uid, Type: TypeReal, Role: RoleParent, IsAdmin: true, Status: StatusActive}
 	if err := s.store.CreateFamilyWithAdmin(ctx, f, m); err != nil {
 		return 0, 0, err
 	}
@@ -133,7 +135,15 @@ func (s *Service) CreateFamily(ctx context.Context, userID uint64, name string) 
 
 // ListFamilies 当前用户所属家庭列表。
 func (s *Service) ListFamilies(ctx context.Context, userID uint64) ([]FamilyRole, error) {
-	return s.store.ListFamiliesByUser(ctx, userID)
+	rows, err := s.store.ListFamiliesByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].IsAdmin = isAdminValue(rows[i].Role, rows[i].IsAdmin)
+		rows[i].Role = normalizeMemberRole(rows[i].Role)
+	}
+	return rows, nil
 }
 
 // CreateInvitation 生成邀请 token（admin/parent 可邀请）。
@@ -229,13 +239,13 @@ func (s *Service) AddChild(ctx context.Context, userID, familyID uint64, name, r
 	return m.MemberID, nil
 }
 
-// UpdateMember 改成员角色与身份（仅 admin；末位管理员不可降级）。
-// role / relationLabel 为 nil 表示不修改该字段；两者至少传一个。
-func (s *Service) UpdateMember(ctx context.Context, userID, familyID, memberID uint64, role, relationLabel *string) error {
+// UpdateMember 改成员角色、管理员权限、身份/名称与孩子档案名（仅 admin；末位管理员不可降级）。
+// role / isAdmin / relationLabel / name 为 nil 表示不修改该字段；至少传一个。
+func (s *Service) UpdateMember(ctx context.Context, userID, familyID, memberID uint64, role *string, isAdmin *bool, relationLabel, name *string) error {
 	if _, err := s.requireRole(ctx, userID, familyID, RoleAdmin); err != nil {
 		return err
 	}
-	if role == nil && relationLabel == nil {
+	if role == nil && isAdmin == nil && relationLabel == nil && name == nil {
 		return ErrBadParam
 	}
 	target, err := s.store.FindMemberByID(ctx, memberID, familyID)
@@ -250,6 +260,9 @@ func (s *Service) UpdateMember(ctx context.Context, userID, familyID, memberID u
 		if !validRole(*role) {
 			return ErrBadParam
 		}
+		if *role == RoleAdmin {
+			return ErrBadParam
+		}
 		// 角色与成员类型绑定：虚拟成员（孩子）角色固定为 child，真实成员不可改为 child。
 		if target.Type == TypeVirtual && *role != RoleChild {
 			return ErrBadParam
@@ -257,15 +270,34 @@ func (s *Service) UpdateMember(ctx context.Context, userID, familyID, memberID u
 		if target.Type == TypeReal && *role == RoleChild {
 			return ErrBadParam
 		}
-		if target.Role == RoleAdmin && *role != RoleAdmin {
+		fields["role"] = *role
+	}
+	if isAdmin != nil {
+		if target.Type == TypeVirtual {
+			return ErrBadParam
+		}
+		if isMemberAdmin(target) && !*isAdmin {
 			if err := s.ensureNotLastAdmin(ctx, familyID, target.MemberID); err != nil {
 				return err
 			}
 		}
-		fields["role"] = *role
+		fields["is_admin"] = *isAdmin
 	}
 	if relationLabel != nil {
 		fields["relation_label"] = *relationLabel
+	}
+	if name != nil {
+		if target.Type != TypeVirtual || *name == "" {
+			return ErrBadParam
+		}
+		if s.field == nil {
+			return ErrBadParam
+		}
+		nameEnc, err := s.field.Encrypt([]byte(*name))
+		if err != nil {
+			return err
+		}
+		fields["name_enc"] = nameEnc
 	}
 	return s.store.UpdateMemberFields(ctx, memberID, familyID, fields)
 }
@@ -287,10 +319,10 @@ func (s *Service) RemoveMember(ctx context.Context, userID, familyID, memberID u
 		return ErrMemberNotFound
 	}
 	isSelf := target.UserID != nil && *target.UserID == userID
-	if actor.Role != RoleAdmin && !isSelf {
+	if !isMemberAdmin(actor) && !isSelf {
 		return ErrForbidden
 	}
-	if target.Role == RoleAdmin {
+	if isMemberAdmin(target) {
 		if err := s.ensureNotLastAdmin(ctx, familyID, target.MemberID); err != nil {
 			return err
 		}
@@ -306,7 +338,7 @@ func (s *Service) RequireActive(ctx context.Context, userID, familyID uint64) (u
 	if err != nil {
 		return 0, "", err
 	}
-	return m.MemberID, m.Role, nil
+	return m.MemberID, effectivePermissionRole(m), nil
 }
 
 // RequireMember 校验 member_id 属于家庭且 active，返回成员 type 与 role（schedule 校验孩子/责任人）。
@@ -318,7 +350,7 @@ func (s *Service) RequireMember(ctx context.Context, familyID, memberID uint64) 
 	if m == nil {
 		return "", "", ErrMemberNotFound
 	}
-	return m.Type, m.Role, nil
+	return m.Type, effectivePermissionRole(m), nil
 }
 
 // OpenID 返回用户小程序通道的 openid（notify 发订阅消息用）。
@@ -381,7 +413,7 @@ func (s *Service) memberships(ctx context.Context, userID uint64) ([]Membership,
 	}
 	ms := make([]Membership, 0, len(frs))
 	for _, fr := range frs {
-		ms = append(ms, Membership{FamilyID: fr.FamilyID, Role: fr.Role})
+		ms = append(ms, Membership{FamilyID: fr.FamilyID, Role: normalizeMemberRole(fr.Role), IsAdmin: isAdminValue(fr.Role, fr.IsAdmin)})
 	}
 	return ms, nil
 }
@@ -399,7 +431,10 @@ func (s *Service) requireRole(ctx context.Context, userID, familyID uint64, role
 		return m, nil
 	}
 	for _, r := range roles {
-		if m.Role == r {
+		if r == RoleAdmin && isMemberAdmin(m) {
+			return m, nil
+		}
+		if normalizeMemberRole(m.Role) == r {
 			return m, nil
 		}
 	}
@@ -420,7 +455,7 @@ func (s *Service) ensureNotLastAdmin(ctx context.Context, familyID, memberID uin
 func (s *Service) toView(m *Member) MemberView {
 	v := MemberView{
 		MemberID: m.MemberID, UserID: m.UserID, Type: m.Type,
-		Role: m.Role, RelationLabel: m.RelationLabel, Status: m.Status,
+		Role: normalizeMemberRole(m.Role), IsAdmin: isAdminValue(m.Role, m.IsAdmin), RelationLabel: m.RelationLabel, Status: m.Status,
 	}
 	if m.NameEnc != nil && s.field != nil {
 		if plain, err := s.field.Decrypt(m.NameEnc); err == nil {
@@ -432,8 +467,26 @@ func (s *Service) toView(m *Member) MemberView {
 
 func validRole(r string) bool {
 	switch r {
-	case RoleAdmin, RoleParent, RoleGrandparent, RoleChild:
+	case RoleParent, RoleGrandparent, RoleChild:
 		return true
 	}
 	return false
+}
+
+func isMemberAdmin(m *Member) bool { return isAdminValue(m.Role, m.IsAdmin) }
+
+func isAdminValue(role string, isAdmin bool) bool { return isAdmin || role == RoleAdmin }
+
+func normalizeMemberRole(role string) string {
+	if role == RoleAdmin {
+		return RoleParent
+	}
+	return role
+}
+
+func effectivePermissionRole(m *Member) string {
+	if isMemberAdmin(m) {
+		return RoleAdmin
+	}
+	return normalizeMemberRole(m.Role)
 }

@@ -8,9 +8,10 @@ App({
     apiBase: 'http://118.196.79.193',
     token: '',
     user: null,        // {user_id, nick, avatar}
-    memberships: [],   // [{family_id, role}]
+    memberships: [],   // [{family_id, role, is_admin}]
     familyId: null,    // 当前家庭（默认第一个）
-    role: null         // admin|parent|grandparent
+    role: null,        // parent|grandparent|child
+    isAdmin: false
   },
 
   onLaunch() {
@@ -19,6 +20,7 @@ App({
     this.globalData.memberships = wx.getStorageSync('memberships') || []
     this.globalData.familyId = wx.getStorageSync('familyId') || null
     this.globalData.role = wx.getStorageSync('role') || null
+    this.globalData.isAdmin = !!wx.getStorageSync('isAdmin')
   },
 
   // 统一请求：Promise 化 wx.request，注入鉴权头，解析 {code, data, message}。
@@ -95,10 +97,13 @@ App({
     if (familyId) {
       const m = this.globalData.memberships.find((x) => x.family_id === familyId)
       this.globalData.role = m ? m.role : null
+      this.globalData.isAdmin = !!(m && m.is_admin)
     } else {
       this.globalData.role = null
+      this.globalData.isAdmin = false
     }
     wx.setStorageSync('role', this.globalData.role)
+    wx.setStorageSync('isAdmin', this.globalData.isAdmin)
   },
 
   // 刷新当前用户与家庭列表（创建/加入家庭后调用，重新拉 memberships）。
@@ -132,9 +137,11 @@ App({
     this.globalData.token = ''
     this.globalData.user = null
     this.globalData.memberships = []
+    this.globalData.isAdmin = false
     wx.removeStorageSync('token')
     wx.removeStorageSync('user')
     wx.removeStorageSync('memberships')
+    wx.removeStorageSync('isAdmin')
     this.setFamily(null)
   }
 })

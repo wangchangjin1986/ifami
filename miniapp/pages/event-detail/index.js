@@ -26,7 +26,7 @@ Page({
     this._inst = options
     const role = app.globalData.role
     this.setData({
-      canManage: role === 'admin' || role === 'parent',
+      canManage: !!app.globalData.isAdmin || role === 'parent',
       title: options.title || '',
       time: dateLabel(options.occur_date) + ' ' + hhmm(options.start_at) + (options.end_at ? '–' + hhmm(options.end_at) : ''),
       location: options.location || '',

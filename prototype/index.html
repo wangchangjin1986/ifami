@@ -399,26 +399,37 @@ body {
     </div>
   </section>
 
-  <!-- 成员详情（管理员可管理：身份配置 + 管理员开关 + 移除） -->
+  <!-- 成员详情（管理员可管理：名称/身份配置 + 角色选择 + 管理员开关 + 移除） -->
   <section class="screen" id="scr-member" hidden>
     <div class="app-head"><button class="back">‹ 返回</button><h1 id="member-title">奶奶</h1></div>
     <div class="body">
-      <div class="card">
-        <div class="ev-title" style="margin-bottom:8px">身份（Ta 是孩子的？）</div>
+      <div class="card" id="member-name-card">
+        <div class="ev-title" style="margin-bottom:8px">成员名称</div>
+        <input id="member-name-input" placeholder="如：奶奶 / 乐乐" value="奶奶">
+        <div class="muted">名称用于家庭页标题、日程分工与打卡展示；可自定义，不决定权限。</div>
+      </div>
+      <div class="card" id="member-identity-card">
+        <div class="ev-title" style="margin-bottom:8px" id="member-identity-title">成员名称预设</div>
         <div class="filters" id="member-rel">
           <span class="chip">爸爸</span><span class="chip">妈妈</span><span class="chip">爷爷</span><span class="chip on">奶奶</span><span class="chip">姥姥</span><span class="chip">姥爷</span><span class="chip">叔叔</span><span class="chip">阿姨</span>
         </div>
-        <div class="muted">仅管理员可修改；身份用于日程分工与打卡里的称谓展示。</div>
+        <div class="muted" id="member-identity-hint">真实成员可点常用预设快速填入名称；也可在上方自定义名称。</div>
+      </div>
+      <div class="card" id="member-role-card">
+        <div class="ev-title" style="margin-bottom:8px">角色</div>
+        <div class="seg" id="member-role-seg"><button>家长</button><button class="on">祖辈</button></div>
+        <div class="muted">角色是系统预设，只决定视角与业务身份；不包含管理员。</div>
       </div>
       <div class="card">
-        <div class="rowline"><span>角色</span><span class="v" id="member-role">祖辈</span></div>
         <div class="rowline" id="member-admin-row"><span>管理员</span><button class="toggle" id="member-admin-toggle" aria-label="设为管理员"></button></div>
+        <div class="muted" id="member-admin-hint">管理员是单独权限设置，可管理成员、日程与打卡设置；末位管理员不可取消。</div>
         <div class="rowline"><span>手机号</span><span class="v">136****9012</span></div>
         <div class="rowline"><span>服务号</span><span class="v">✅ 已关注</span></div>
         <div class="rowline"><span>短信兜底</span><span class="v">✅ 已开启</span></div>
         <div class="rowline"><span>大字模式</span><button class="toggle on" aria-label="大字模式"></button></div>
       </div>
       <div class="muted">祖辈无编辑权；对日程点「去不了」即触发改分工流程，代替直接修改。</div>
+      <button class="btn" id="btn-save-member">保存</button>
       <button class="btn" id="btn-preview">预览 Ta 的视图</button>
       <button class="btn danger" id="btn-remove-member">移除成员</button>
     </div>
@@ -862,17 +873,38 @@ body {
   var currentMember = '妈妈';
   var previewBar = document.getElementById('preview-bar');
   var previewActive = false;
-  // 成员管理面板：身份 chips 单选 + 管理员开关（虚拟孩子无管理员行）
+  // 成员管理面板：名称/身份、角色、管理员三者分离（虚拟孩子无角色/管理员行）
   function syncMemberPanel() {
     var isChild = currentMember === '乐乐' || currentMember === '果果';
+    var rels = isChild ? ['儿子', '女儿'] : ['爸爸', '妈妈', '爷爷', '奶奶', '姥姥', '姥爷', '叔叔', '阿姨'];
+    var relBox = document.getElementById('member-rel');
+    document.getElementById('member-name-input').value = currentMember;
+    document.getElementById('member-identity-title').textContent = isChild ? '身份' : '成员名称预设';
+    document.getElementById('member-identity-hint').textContent = isChild
+      ? '孩子身份仅用于展示儿子/女儿等文案；孩子档案标题使用上方成员名称。'
+      : '真实成员可点常用预设快速填入名称；也可在上方自定义名称。';
+    relBox.innerHTML = rels.map(function (x, i) {
+      var on = (isChild ? i === 0 : x === currentMember) ? ' on' : '';
+      return '<span class="chip' + on + '">' + x + '</span>';
+    }).join('');
+    document.getElementById('member-role-card').style.display = isChild ? 'none' : '';
     document.getElementById('member-admin-row').style.display = isChild ? 'none' : '';
+    document.getElementById('member-admin-hint').style.display = isChild ? 'none' : '';
     document.getElementById('member-admin-toggle').classList.toggle('on', currentMember === '妈妈');
+    Array.prototype.forEach.call(document.querySelectorAll('#member-role-seg button'), function (b) {
+      b.classList.toggle('on', b.textContent === (currentMember === '奶奶' ? '祖辈' : '家长'));
+      b.onclick = function () {
+        Array.prototype.forEach.call(document.querySelectorAll('#member-role-seg button'), function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        toast('已更新角色为「' + b.textContent + '」（原型演示）');
+      };
+    });
     Array.prototype.forEach.call(document.querySelectorAll('#member-rel .chip'), function (c) {
-      c.classList.toggle('on', c.textContent === currentMember);
       c.onclick = function () {
         Array.prototype.forEach.call(document.querySelectorAll('#member-rel .chip'), function (x) { x.classList.remove('on'); });
         c.classList.add('on');
-        toast('已更新身份为「' + c.textContent + '」（原型演示）');
+        if (!isChild) document.getElementById('member-name-input').value = c.textContent;
+        toast('已更新' + (isChild ? '身份' : '成员名称') + '为「' + c.textContent + '」（原型演示）');
       };
     });
   }
@@ -880,10 +912,6 @@ body {
     m.addEventListener('click', function () {
       currentMember = m.dataset.member;
       document.getElementById('member-title').textContent = currentMember;
-      document.getElementById('member-role').textContent =
-        currentMember === '妈妈' ? '管理员' :
-        (currentMember === '爸爸' ? '父母' :
-        (currentMember === '奶奶' ? '祖辈' : '孩子（虚拟成员，父母代管）'));
       syncMemberPanel();
       nav('scr-member');
     });
@@ -906,6 +934,12 @@ body {
     previewBar.hidden = true;
     phone.classList.remove('gp');
     render('scr-member');
+  });
+  document.getElementById('btn-save-member').addEventListener('click', function () {
+    var isChild = currentMember === '乐乐' || currentMember === '果果';
+    var name = document.getElementById('member-name-input').value.trim();
+    if (!name) { toast('请先填写成员名称'); return; }
+    toast('已保存' + (isChild ? '孩子档案' : '成员设置') + '：「' + name + '」（原型演示）');
   });
   document.getElementById('btn-remove-member').addEventListener('click', function () { toast('原型演示：移除不影响孩子档案'); });
   Array.prototype.forEach.call(document.querySelectorAll('.toggle'), function (t) {
