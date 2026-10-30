@@ -47,7 +47,8 @@ Page({
     childRelation: '',
     inviteToken: '',
     sheetOpen: false,
-    memberSheet: { open: false }
+    memberSheet: { open: false },
+    customRelation: '' // 自定义称谓输入（顶层字段，与其他输入框一致；嵌套路径 model:value 真机回写不可靠）
   },
 
   onShow() {
@@ -147,6 +148,7 @@ Page({
     // 当前身份不在预设里（自定义称谓）时，并入 chips 列表一并展示。
     const relations = m.relation && base.indexOf(m.relation) < 0 ? base.concat([m.relation]) : base
     this.setData({
+      customRelation: '',
       memberSheet: {
         open: true,
         member_id: m.member_id,
@@ -156,7 +158,6 @@ Page({
         isSelf: m.isSelf,
         relations,
         relation: m.relation,
-        customRelation: '',
         isAdmin: m.role === 'admin',
         originRelation: m.relation,
         originIsAdmin: m.role === 'admin'
@@ -164,12 +165,12 @@ Page({
     })
   },
 
-  closeMember() { this.setData({ 'memberSheet.open': false }) },
+  closeMember() { this.setData({ 'memberSheet.open': false, customRelation: '' }) },
 
   pickRelation(e) {
     this.setData({
       'memberSheet.relation': e.currentTarget.dataset.rel,
-      'memberSheet.customRelation': ''
+      customRelation: ''
     })
   },
 
@@ -180,7 +181,8 @@ Page({
   saveMember() {
     const s = this.data.memberSheet
     const fid = app.globalData.familyId
-    const relation = (s.customRelation || '').trim() || s.relation
+    // 自定义称谓（顶层输入）优先于 chips 选择。
+    const relation = (this.data.customRelation || '').trim() || s.relation
     const payload = {}
     if (relation !== s.originRelation) payload.relation_label = relation
     if (!s.isVirtual && s.isAdmin !== s.originIsAdmin) {
