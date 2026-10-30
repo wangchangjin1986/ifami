@@ -25,7 +25,7 @@ CREATE TABLE families (
   family_id  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name       VARCHAR(64) NOT NULL,
   creator_id BIGINT UNSIGNED NOT NULL,
-  settings   JSON NULL COMMENT '含主理人模式 owner_ids 等',
+  settings   JSON NULL COMMENT '预留家庭配置',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

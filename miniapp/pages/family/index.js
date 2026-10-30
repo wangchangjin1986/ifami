@@ -262,8 +262,7 @@ Page({
   },
 
   openEntryPermission() {
-    if (!this.data.isAdmin) return
-    wx.showToast({ title: '录入权限设置开发中', icon: 'none' })
+    wx.showToast({ title: '只有管理员才能录入', icon: 'none' })
   },
 
   goManage() { wx.navigateTo({ url: '/pages/manage/index' }) },

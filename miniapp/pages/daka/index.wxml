@@ -36,7 +36,7 @@
       </block>
     </view>
 
-    <button class="fab" bindtap="openFab">＋</button>
+    <button wx:if="{{isAdmin}}" class="fab" bindtap="openFab">＋</button>
     <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeFab">
       <view class="sheet" catchtap="noop">
         <button class="opt" bindtap="goEvent"><text class="opt-b">安排一件事</text><text class="opt-s">课程、接送、活动——有固定时间和地点，进日历</text></button>

@@ -358,13 +358,13 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-// requireWriter 校验用户是该家庭的 admin/parent（任务录入权限，见 roles.md）。
+// requireWriter 校验用户是该家庭的 admin（任务录入权限，见 roles.md）。
 func (s *Service) requireWriter(ctx context.Context, userID, familyID uint64) error {
 	_, role, err := s.id.RequireActive(ctx, userID, familyID)
 	if err != nil {
 		return err
 	}
-	if role != roleAdmin && role != roleParent {
+	if role != roleAdmin {
 		return ErrForbidden
 	}
 	return nil

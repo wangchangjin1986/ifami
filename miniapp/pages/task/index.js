@@ -50,6 +50,11 @@ Page({
   },
 
   onLoad() {
+    if (!app.globalData.isAdmin) {
+      wx.showToast({ title: '只有管理员才能录入', icon: 'none' })
+      setTimeout(() => wx.navigateBack(), 500)
+      return
+    }
     this.loadMembers()
   },
 

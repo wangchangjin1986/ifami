@@ -14,6 +14,7 @@ Page({
     familyName: '',
     items: [],
     empty: true,
+    isAdmin: false,
     sheetOpen: false
   },
 
@@ -31,16 +32,25 @@ Page({
       this.setData({ logged: false, hasFamily: false, items: [], empty: true, familyName: '' })
       return
     }
+    app.refreshMe()
+      .then(() => this.loadToday())
+      .catch((e) => {
+        if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, items: [], empty: true }) }
+        else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
+      })
+  },
+
+  loadToday() {
     const fid = app.globalData.familyId
     this.setData({ logged: true })
     if (!fid) {
       this.setData({ hasFamily: false, items: [], empty: true })
       return
     }
-    this.setData({ hasFamily: true })
+    this.setData({ hasFamily: true, isAdmin: !!app.globalData.isAdmin })
 
     const today = todayStr()
-    Promise.all([
+    return Promise.all([
       app.request(`/v1/schedules/instances?start=${today}&end=${today}`),
       app.request(`/v1/families/${fid}/members`),
       app.request('/v1/families')
@@ -69,10 +79,6 @@ Page({
           }))
           .sort((a, b) => (a.start < b.start ? -1 : 1))
         this.setData({ familyName: cur.name || '', items, empty: items.length === 0 })
-      })
-      .catch((e) => {
-        if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, items: [], empty: true }) }
-        else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
       })
   },
 

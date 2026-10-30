@@ -278,13 +278,13 @@ func (s *Service) notifyOwner(ctx context.Context, familyID uint64, sch *Schedul
 	}
 }
 
-// requireWriter 校验用户是该家庭的 admin/parent（写日程权限，见 roles.md）。
+// requireWriter 校验用户是该家庭的 admin（写日程权限，见 roles.md）。
 func (s *Service) requireWriter(ctx context.Context, userID, familyID uint64) error {
 	_, role, err := s.id.RequireActive(ctx, userID, familyID)
 	if err != nil {
 		return err
 	}
-	if role != roleAdmin && role != roleParent {
+	if role != roleAdmin {
 		return ErrForbidden
 	}
 	return nil

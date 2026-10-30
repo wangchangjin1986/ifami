@@ -20,6 +20,7 @@ Page({
     logged: false,
     hasFamily: false,
     groups: [],
+    isAdmin: false,
     sheetOpen: false
   },
 
@@ -35,15 +36,24 @@ Page({
       this.setData({ logged: false, hasFamily: false, groups: [] })
       return
     }
+    app.refreshMe()
+      .then(() => this.loadTasks())
+      .catch((e) => {
+        if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, groups: [] }) }
+        else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
+      })
+  },
+
+  loadTasks() {
     const fid = app.globalData.familyId
     this.setData({ logged: true })
     if (!fid) {
       this.setData({ hasFamily: false, groups: [] })
       return
     }
-    this.setData({ hasFamily: true })
+    this.setData({ hasFamily: true, isAdmin: !!app.globalData.isAdmin })
 
-    Promise.all([
+    return Promise.all([
       app.request('/v1/tasks'),
       app.request(`/v1/families/${fid}/members`)
     ])
@@ -73,10 +83,6 @@ Page({
         if (byChild[0] && byChild[0].length) groups.push({ childId: 0, childName: '未分配', tasks: byChild[0].map((t) => buildTask(t, '未分配')) })
 
         this.setData({ groups })
-      })
-      .catch((e) => {
-        if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, groups: [] }) }
-        else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
       })
   },
 

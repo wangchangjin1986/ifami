@@ -393,8 +393,8 @@ body {
         <button class="btn ghost" style="flex:1" id="btn-settings">设置</button>
       </div>
       <div class="card tappable" id="entry-permission-card">
-        <div class="rowline"><span>录入权限</span><span class="v">开放（仅管理员可设置）▾</span></div>
-        <div class="muted">录入权限统一由管理员配置；可切换为「主理人模式」：只有指定成员能录入，其他父母只读+评论。</div>
+        <div class="rowline"><span>录入权限</span><span class="v">仅管理员可录入</span></div>
+        <div class="muted">只有管理员可以录入或编辑日程、打卡任务；其他成员可查看，祖辈通过反馈回路请求调整。</div>
       </div>
     </div>
   </section>
@@ -867,7 +867,7 @@ body {
   document.getElementById('btn-report').addEventListener('click', function () { nav('scr-report'); });
   document.getElementById('btn-timeline').addEventListener('click', function () { nav('scr-timeline'); });
   document.getElementById('btn-settings').addEventListener('click', function () { nav('scr-settings'); });
-  document.getElementById('entry-permission-card').addEventListener('click', function () { toast('录入权限仅管理员可设置（设置页开发中）'); });
+  document.getElementById('entry-permission-card').addEventListener('click', function () { toast('只有管理员才能录入'); });
   document.getElementById('btn-share-report').addEventListener('click', function () { toast('原型演示：转发到微信（略）'); });
   document.getElementById('fam-switch1').addEventListener('click', function (e) { e.preventDefault(); toast('原型演示：多家庭切换（略）'); });
   // 成员详情 + 预览 Ta 的视图

@@ -23,7 +23,6 @@ const (
 	memberTypeReal    = "real"
 	memberTypeVirtual = "virtual"
 	roleAdmin         = "admin"
-	roleParent        = "parent"
 )
 
 // Schedule 日程模板。重复规则存 rrule，实例物化到 ScheduleInstance。

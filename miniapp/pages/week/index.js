@@ -38,6 +38,7 @@ Page({
     childFilter: 0,
     filterOpen: false,
     childLabel: '全部孩子',
+    isAdmin: false,
     sheetOpen: false
   },
 
@@ -53,13 +54,22 @@ Page({
       this.setData({ logged: false, hasFamily: false, weekSlots: [], monthCells: [] })
       return
     }
+    app.refreshMe()
+      .then(() => this.loadCalendar())
+      .catch((e) => {
+        if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, weekSlots: [], monthCells: [] }) }
+        else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
+      })
+  },
+
+  loadCalendar() {
     const fid = app.globalData.familyId
     this.setData({ logged: true })
     if (!fid) {
       this.setData({ hasFamily: false, weekSlots: [], monthCells: [] })
       return
     }
-    this.setData({ hasFamily: true })
+    this.setData({ hasFamily: true, isAdmin: !!app.globalData.isAdmin })
 
     const now = new Date()
     const mon = mondayOf(now)
@@ -72,7 +82,7 @@ Page({
     const monthStart = fmt(new Date(now.getFullYear(), now.getMonth(), 1))
     const monthEnd = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
 
-    Promise.all([
+    return Promise.all([
       app.request(`/v1/schedules/instances?start=${weekStart}&end=${weekEnd}`),
       app.request(`/v1/schedules/instances?start=${monthStart}&end=${monthEnd}`),
       app.request(`/v1/families/${fid}/members`)
