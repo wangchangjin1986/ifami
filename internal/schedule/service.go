@@ -2,7 +2,7 @@ package schedule
 
 import (
 	"context"
-	"log"
+	"ifami/internal/pkg/logx"
 	"time"
 
 	"ifami/internal/pkg/httpx"
@@ -260,7 +260,7 @@ func (s *Service) notifyOwner(ctx context.Context, familyID uint64, sch *Schedul
 	}
 	userID, err := s.id.MemberUserID(ctx, familyID, sch.OwnerMemberID)
 	if err != nil {
-		log.Printf("[schedule] 触达解析 owner user_id 失败: %v", err)
+		logx.Warnf("[schedule] 触达解析 owner user_id 失败: %v", err)
 		return
 	}
 	if _, err := s.notify.CreateJob(ctx, NotifyInput{
@@ -274,7 +274,7 @@ func (s *Service) notifyOwner(ctx context.Context, familyID uint64, sch *Schedul
 			"note":       sch.Note,
 		},
 	}); err != nil {
-		log.Printf("[schedule] 创建触达任务失败: %v", err)
+		logx.Errorf("[schedule] 创建触达任务失败: %v", err)
 	}
 }
 

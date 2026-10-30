@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -26,6 +25,7 @@ import (
 	"ifami/internal/pkg/config"
 	"ifami/internal/pkg/crypto"
 	"ifami/internal/pkg/db"
+	"ifami/internal/pkg/logx"
 	"ifami/internal/pkg/redisx"
 	"ifami/internal/pkg/wechat"
 	"ifami/internal/schedule"
@@ -68,7 +68,7 @@ func usage() {
 func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStore) {
 	gdb, err := db.Open(cfg.RDSDSN)
 	if err != nil {
-		log.Fatalf("连接数据库失败: %v", err)
+		logx.Fatalf("连接数据库失败: %v", err)
 	}
 	rdb := redisx.New(cfg.RedisAddr)
 	wx := wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret)
@@ -76,7 +76,7 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 	// 字段级加密是合规铁律（手机号/孩子姓名），密钥必须配置。
 	field, err := crypto.NewFieldCipher(cfg.FieldEncKey)
 	if err != nil {
-		log.Fatalf("字段加密密钥无效（FIELD_ENC_KEY 需为 base64 编码的 32 字节）: %v", err)
+		logx.Fatalf("字段加密密钥无效（FIELD_ENC_KEY 需为 base64 编码的 32 字节）: %v", err)
 	}
 	sessions := auth.NewRedisStore(rdb)
 
@@ -124,7 +124,7 @@ func serveAPI() {
 	task.NewHandler(taskSvc, sessions).Register(v1)
 	notify.NewHandler(notifSvc, sessions).Register(v1)
 
-	log.Printf("api 监听 %s", cfg.APIAddr)
+	logx.Infof("api 监听 %s", cfg.APIAddr)
 	h.Spin()
 }
 
@@ -139,15 +139,15 @@ func serveWorker() {
 	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, notify.MockSubscribe{})
 	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc})
 
-	log.Printf("worker 启动，触达扫描 + 打卡提醒扫描间隔 30s")
+	logx.Infof("worker 启动，触达扫描 + 打卡提醒扫描间隔 30s")
 	ctx := context.Background()
 	scan := func() {
 		now := time.Now().UTC()
 		if err := notifSvc.ProcessDue(ctx); err != nil {
-			log.Printf("worker 触达扫描失败: %v", err)
+			logx.Errorf("worker 触达扫描失败: %v", err)
 		}
 		if err := taskSvc.RemindDue(ctx, now); err != nil {
-			log.Printf("worker 打卡提醒扫描失败: %v", err)
+			logx.Errorf("worker 打卡提醒扫描失败: %v", err)
 		}
 	}
 	scan()
@@ -161,20 +161,20 @@ func serveWorker() {
 func migrate() {
 	cfg := config.Load()
 	if cfg.RDSDSN == "" {
-		log.Fatal("RDS_DSN 未配置，无法迁移")
+		logx.Fatalf("RDS_DSN 未配置，无法迁移")
 	}
 	sqlDB, err := sql.Open("mysql", withMultiStatements(cfg.RDSDSN))
 	if err != nil {
-		log.Fatalf("打开数据库失败: %v", err)
+		logx.Fatalf("打开数据库失败: %v", err)
 	}
 	defer sqlDB.Close()
 	if err := sqlDB.Ping(); err != nil {
-		log.Fatalf("连接数据库失败: %v", err)
+		logx.Fatalf("连接数据库失败: %v", err)
 	}
 
 	dbDriver, err := migratemysql.WithInstance(sqlDB, &migratemysql.Config{})
 	if err != nil {
-		log.Fatalf("初始化数据库驱动失败: %v", err)
+		logx.Fatalf("初始化数据库驱动失败: %v", err)
 	}
 
 	dir := os.Getenv("MIGRATIONS_DIR")
@@ -183,19 +183,19 @@ func migrate() {
 	}
 	srcDriver, err := (&file.File{}).Open("file://" + dir)
 	if err != nil {
-		log.Fatalf("读取迁移目录失败: %v", err)
+		logx.Fatalf("读取迁移目录失败: %v", err)
 	}
 
 	m, err := gomigrate.NewWithInstance("file", srcDriver, "mysql", dbDriver)
 	if err != nil {
-		log.Fatalf("初始化迁移器失败: %v", err)
+		logx.Fatalf("初始化迁移器失败: %v", err)
 	}
 	if err := m.Up(); err != nil {
 		if errors.Is(err, gomigrate.ErrNoChange) {
 			fmt.Println("数据库已是最新，无需迁移")
 			return
 		}
-		log.Fatalf("迁移失败: %v", err)
+		logx.Fatalf("迁移失败: %v", err)
 	}
 	fmt.Println("迁移完成")
 }

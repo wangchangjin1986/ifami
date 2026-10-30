@@ -2,7 +2,7 @@ package notify
 
 import (
 	"context"
-	"log"
+	"ifami/internal/pkg/logx"
 )
 
 // Channel 是触达通道抽象（ADR-002）。Phase 0 纯个人主体只实现 wechat_subscribe，
@@ -20,7 +20,7 @@ type MockSubscribe struct{}
 func (MockSubscribe) Name() string { return ChannelSubscribe }
 
 func (MockSubscribe) Send(_ context.Context, openid string, job *NotifyJob) error {
-	log.Printf("[notify] mock send channel=%s openid=%s job=%d level=%s payload=%v",
+	logx.Infof("[notify] mock send channel=%s openid=%s job=%d level=%s payload=%v",
 		ChannelSubscribe, openid, job.JobID, job.Level, job.Payload)
 	return nil
 }

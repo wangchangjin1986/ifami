@@ -3,7 +3,7 @@ package notify
 import (
 	"context"
 	"errors"
-	"log"
+	"ifami/internal/pkg/logx"
 	"time"
 
 	"gorm.io/gorm"
@@ -102,7 +102,7 @@ func (s *Service) ProcessDue(ctx context.Context) error {
 	}
 	for i := range pending {
 		if err := s.processPending(ctx, &pending[i], now); err != nil {
-			log.Printf("[notify] process pending job=%d err=%v", pending[i].JobID, err)
+			logx.Errorf("[notify] process pending job=%d err=%v", pending[i].JobID, err)
 		}
 	}
 
@@ -112,7 +112,7 @@ func (s *Service) ProcessDue(ctx context.Context) error {
 	}
 	for i := range sent {
 		if err := s.escalateReddot(ctx, &sent[i], now); err != nil {
-			log.Printf("[notify] escalate reddot job=%d err=%v", sent[i].JobID, err)
+			logx.Errorf("[notify] escalate reddot job=%d err=%v", sent[i].JobID, err)
 		}
 	}
 
@@ -122,7 +122,7 @@ func (s *Service) ProcessDue(ctx context.Context) error {
 	}
 	for i := range reddot {
 		if err := s.escalateBackup(ctx, &reddot[i], now); err != nil {
-			log.Printf("[notify] escalate backup job=%d err=%v", reddot[i].JobID, err)
+			logx.Errorf("[notify] escalate backup job=%d err=%v", reddot[i].JobID, err)
 		}
 	}
 	return nil
