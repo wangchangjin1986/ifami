@@ -79,7 +79,7 @@
           <view class="filters">
             <text wx:for="{{memberSheet.relations}}" wx:key="*this" class="chip {{item === memberSheet.relation ? 'on' : ''}}" data-rel="{{item}}" bindtap="pickRelation">{{item}}</text>
           </view>
-          <input class="input" placeholder="自定义称谓（可选，填了优先用）" model:value="{{customRelation}}" />
+          <input class="input" placeholder="自定义称谓（可选，填了优先用）" bindinput="onCustomRelation" />
         </view>
         <view class="rowline" wx:if="{{!memberSheet.isVirtual}}">
           <text>管理员</text>

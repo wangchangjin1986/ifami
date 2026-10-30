@@ -39,7 +39,7 @@
     <view class="field">
       <text class="label">责任家长（到点没打卡提醒谁）</text>
       <view class="seg">
-        <button class="{{ownerIndex === oi ? 'on' : ''}}" wx:for="{{owners}}" wx:for-index="oi" wx:key="member_id" bindtap="selectOwner" data-i="{{oi}}">{{item.name}}</button>
+        <button class="{{ownerIndex === oi ? 'on' : ''}}" wx:for="{{owners}}" wx:for-index="oi" wx:key="member_id" bindtap="selectOwner" data-i="{{oi}}">{{item.label}}</button>
       </view>
     </view>
 

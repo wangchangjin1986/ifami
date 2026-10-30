@@ -28,6 +28,8 @@ const FREQS = [
   { label: '每周 N 次', value: 'weekly' }
 ]
 
+const ROLE_LABEL = { admin: '管理员', parent: '家长', grandparent: '祖辈', child: '孩子' }
+
 Page({
   data: {
     templates: TEMPLATES,
@@ -52,11 +54,18 @@ Page({
   },
 
   loadMembers() {
+    // 先拉家庭列表定位当前家庭（对齐家庭页 refresh），避免依赖可能为空的 globalData.familyId 导致成员列表不加载。
     app.ensureLogin()
-      .then(() => {
-        const fid = app.globalData.familyId
-        if (!fid) return
-        return app.request(`/v1/families/${fid}/members`)
+      .then(() => app.request('/v1/families'))
+      .then((families) => {
+        const list = families || []
+        if (list.length === 0) {
+          this.setData({ children: [], owners: [], ownerIndex: 0 })
+          return
+        }
+        const cur = list.find((f) => f.family_id === app.globalData.familyId) || list[0]
+        app.setFamily(cur.family_id)
+        return app.request(`/v1/families/${cur.family_id}/members`)
       })
       .then((members) => {
         const children = []
@@ -69,7 +78,13 @@ Page({
           } else {
             const idx = owners.length
             if (m.user_id === myId) ownerIndex = idx
-            owners.push({ member_id: m.member_id, user_id: m.user_id, name: m.name || '成员' + m.member_id })
+            const relLabel = m.relation_label || m.name || '成员' + m.member_id
+            owners.push({
+              member_id: m.member_id,
+              user_id: m.user_id,
+              name: m.name || '成员' + m.member_id,
+              label: relLabel + ' · ' + (ROLE_LABEL[m.role] || m.role)
+            })
           }
         })
         this.setData({ children, owners, ownerIndex })

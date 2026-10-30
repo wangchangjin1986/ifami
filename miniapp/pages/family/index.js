@@ -11,20 +11,26 @@ const GRAND_RELATIONS = ['爷爷', '奶奶', '姥姥', '姥爷']
 
 function memberView(m, selfUserID) {
   const isVirtual = m.type === 'virtual'
+  // 卡片主标题：真实成员用称谓（relation_label），孩子用姓名；对齐 prototype scr-family。
+  const display = isVirtual ? (m.name || '未命名') : (m.relation_label || m.name || '未命名')
   let chip = ''
   let meta = ''
   if (isVirtual) {
     chip = '孩子档案'
+    // 孩子也显示称谓（儿子/女儿或自定义），让编辑「自定义称谓」保存后能反映到卡片上。
     meta = (m.relation_label ? m.relation_label + ' · ' : '') + '虚拟成员，由父母代管'
   } else {
-    if (m.role === 'admin') chip = '管理员'
-    meta = ROLE_LABEL[m.role] || m.role
-    if (m.relation_label) meta += ' · ' + m.relation_label
+    if (m.role === 'admin') {
+      chip = '管理员'
+      meta = ''
+    } else {
+      meta = ROLE_LABEL[m.role] || m.role
+    }
   }
   return {
     member_id: m.member_id,
-    avatar: (m.name || '?').slice(0, 1),
-    name: m.name || '未命名',
+    avatar: (display || '?').slice(0, 1),
+    name: display,
     chip,
     meta,
     isVirtual,
@@ -172,6 +178,11 @@ Page({
       'memberSheet.relation': e.currentTarget.dataset.rel,
       customRelation: ''
     })
+  },
+
+  // 弹层里的 input 用 bindinput 手动同步，避免 model:value 在 wx:if 弹层真机回写不可靠（保存不生效）。
+  onCustomRelation(e) {
+    this.setData({ customRelation: e.detail.value })
   },
 
   toggleAdmin() {
