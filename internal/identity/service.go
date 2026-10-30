@@ -8,6 +8,7 @@ import (
 	"ifami/internal/pkg/auth"
 	"ifami/internal/pkg/crypto"
 	"ifami/internal/pkg/invite"
+	"ifami/internal/pkg/logx"
 	"ifami/internal/pkg/wechat"
 )
 
@@ -70,6 +71,8 @@ type MemberView struct {
 func (s *Service) Login(ctx context.Context, code string) (*LoginResult, error) {
 	sess, err := s.wx.Code2Session(ctx, code)
 	if err != nil {
+		// 记录微信原始 errcode/errmsg，否则「登录凭证无效」无法定位是 appid/secret 错误还是 code 失效。
+		logx.Errorf("登录 code2session 失败: %v", err)
 		return nil, ErrBadCode
 	}
 	userID, err := s.getOrCreateUser(ctx, sess)
@@ -159,6 +162,7 @@ func (s *Service) JoinFamily(ctx context.Context, code, token, relationLabel str
 	}
 	sess, err := s.wx.Code2Session(ctx, code)
 	if err != nil {
+		logx.Errorf("加入家庭 code2session 失败: %v", err)
 		return nil, ErrBadCode
 	}
 	userID, err := s.getOrCreateUser(ctx, sess)
