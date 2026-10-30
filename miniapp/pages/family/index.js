@@ -261,6 +261,11 @@ Page({
     })
   },
 
+  openEntryPermission() {
+    if (!this.data.isAdmin) return
+    wx.showToast({ title: '录入权限设置开发中', icon: 'none' })
+  },
+
   goManage() { wx.navigateTo({ url: '/pages/manage/index' }) },
   openFab() { this.setData({ sheetOpen: true }) },
   closeFab() { this.setData({ sheetOpen: false }) },

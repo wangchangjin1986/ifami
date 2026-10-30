@@ -62,9 +62,9 @@
         <button class="btn ghost row-btn" bindtap="goSettings">设置</button>
       </view>
 
-      <view class="card">
-        <view class="rowline"><text>录入权限</text><text class="v">开放（所有父母可录入）▾</text></view>
-        <view class="muted">可切换为「主理人模式」：只有指定成员能录入，其他父母只读+评论。</view>
+      <view class="card {{isAdmin ? 'tappable' : 'disabled'}}" bindtap="openEntryPermission">
+        <view class="rowline"><text>录入权限</text><text class="v">{{isAdmin ? '开放（仅管理员可设置）▾' : '开放（仅管理员可设置）'}}</text></view>
+        <view class="muted">录入权限统一由管理员配置；可切换为「主理人模式」：只有指定成员能录入，其他父母只读+评论。</view>
       </view>
     </view>
 

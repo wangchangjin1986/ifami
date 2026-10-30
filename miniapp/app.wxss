@@ -42,6 +42,7 @@ button::after { border: none; }
   padding: 28rpx 32rpx; display: flex; flex-direction: column; gap: 12rpx;
 }
 .card.tappable:active { background: var(--surface-2); }
+.card.disabled { opacity: .72; }
 
 /* 祖辈大卡片 */
 .gp-card { background: var(--surface-2); border: 3rpx solid var(--line); border-radius: 32rpx; padding: 32rpx; display: flex; flex-direction: column; gap: 16rpx; }
