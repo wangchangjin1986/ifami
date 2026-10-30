@@ -14,9 +14,22 @@ V1 = 家庭日历分工 + 打卡记录 + 分级触达。明确**不做**：广�
 go run ./cmd/ifami serve api       # 后端 API，:8080，/healthz
 go run ./cmd/ifami serve worker    # 异步 Worker（触达轮询/事件消费/实例续展）
 go build ./... && go vet ./...     # 构建与静态检查
+go test ./...                      # 单测（store 层与含分支逻辑的 service 必须有单测）
 go run ./cmd/ifami migrate          # 数据库迁移（golang-migrate，读 RDS_DSN，迁移目录 MIGRATIONS_DIR）
 open prototype/index.html          # 交互原型（界面与交互的唯一权威参照）
 ```
+
+## 本地运行前置
+
+运行前需配置环境变量（清单见 [deploy/.env.example](deploy/.env.example)），关键项：
+
+- `RDS_DSN`：MySQL 连接串，本机 `ifami:密码@tcp(127.0.0.1:3306)/ifami?parseTime=true`
+- `FIELD_ENC_KEY`：字段级加密密钥，`openssl rand -base64 32` 生成（AES-256-GCM，敏感字段铁律）
+- `INVITE_SECRET`：邀请 token 签名密钥，`openssl rand -hex 32` 生成
+- `WX_MINIAPP_APPID` / `WX_MINIAPP_SECRET`：微信小程序凭据（登录链路需要）
+- `REDIS_ADDR`：Redis 地址，默认 `127.0.0.1:6379`
+
+首次运行先执行 `go run ./cmd/ifami migrate` 建表。
 
 ## 仓库地图
 
