@@ -72,6 +72,9 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 	}
 	rdb := redisx.New(cfg.RedisAddr)
 	wx := wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret)
+	// 临时调试：打印微信凭据以定位 code2session 40125（invalid appsecret）。
+	// %q 会把尾随空格/换行等隐藏字符显式转义出来；定位后请删除本行并轮转日志，避免凭据长期留存。
+	logx.Infof("微信小程序凭据: appid=%s appsecret=%q len=%d", cfg.WXMiniAppID, cfg.WXMiniSecret, len(cfg.WXMiniSecret))
 
 	// 字段级加密是合规铁律（手机号/孩子姓名），密钥必须配置。
 	field, err := crypto.NewFieldCipher(cfg.FieldEncKey)
