@@ -6,7 +6,7 @@ CREATE TABLE ingest_jobs (
   creator_user_id BIGINT UNSIGNED NOT NULL,
   status          VARCHAR(16) NOT NULL COMMENT 'uploading|pending|running|done|failed|confirmed',
   images          JSON NOT NULL COMMENT '[{seq,child_member_id(0=自动识别),status}]，不存路径',
-  result_enc      VARBINARY(65535) NULL COMMENT '草稿 JSON，字段级加密（含孩子姓名/原文片段）',
+  result_enc      MEDIUMBLOB NULL COMMENT '草稿 JSON，字段级加密（含孩子姓名/原文片段）',
   stats           JSON NULL COMMENT '耗时/草稿数/低置信数/确认数',
   error_code      INT NOT NULL DEFAULT 0,
   attempts        INT NOT NULL DEFAULT 0 COMMENT '执行次数（Worker 接管重跑上限 2）',
