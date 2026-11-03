@@ -1,0 +1,75 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack" wx:if="{{!done}}">‹ 返回</text>
+    <text class="title">{{done ? '已导入' : '识别到 ' + groups.length + ' 张图的安排'}}</text>
+    <text class="sub" wx:if="{{!done}}">核对后入库</text>
+  </view>
+
+  <view class="body">
+    <view wx:if="{{loading}}" class="empty">正在读取识别结果…</view>
+
+    <block wx:elif="{{done}}">
+      <view class="done-hero">
+        <view class="ok">✅</view>
+        <block wx:if="{{result.already}}">
+          <view class="t">这份识别结果已经加入日历</view>
+        </block>
+        <block wx:else>
+          <view class="t">{{result.total}} 项安排已排进日历</view>
+          <view class="s">{{result.weekly}} 项每周重复 · {{result.single}} 项单次 · 已通知 {{result.owners}} 位责任人</view>
+        </block>
+      </view>
+      <button class="btn" bindtap="viewWeek">看看这一周</button>
+      <button class="btn ghost" bindtap="importMore">再导入一张</button>
+      <view class="note">以后课表变了，再拍一次新课表即可</view>
+    </block>
+
+    <block wx:else>
+      <view class="banner soft" wx:if="{{lowCount > 0 || conflictCount > 0}}">
+        <text><text class="hl" wx:if="{{lowCount > 0}}">{{lowCount}} 项需要你看一眼</text><text wx:if="{{lowCount > 0}}"> · 已标黄；</text><text wx:if="{{conflictCount > 0}}">{{conflictCount}} 项时间重叠，指派时会帮你避开。</text>其余可直接确认。</text>
+      </view>
+
+      <view class="card" wx:for="{{groups}}" wx:for-item="g" wx:key="seq">
+        <view class="grp-head">
+          <view class="ev-title">{{g.title}}</view>
+          <view class="ev-meta">{{g.meta}}</view>
+        </view>
+        <view class="draft {{r.low ? 'low' : ''}} {{r.selected ? '' : 'off'}}" wx:for="{{g.rows}}" wx:for-item="r" wx:key="key">
+          <text class="check" bindtap="toggle" data-i="{{r.i}}">{{r.selected ? '✓' : ''}}</text>
+          <view class="main" bindtap="edit" data-i="{{r.i}}">
+            <view class="l1">{{r.l1}}<text class="chip warn" wx:if="{{r.l1Tag}}">{{r.l1Tag}}</text></view>
+            <view class="l2" wx:if="{{r.l2}}">{{r.l2}}</view>
+            <view class="l3">
+              <text class="chip {{c.c}}" wx:for="{{r.chips}}" wx:for-item="c" wx:key="t">{{c.t}}</text>
+              <text class="link" wx:if="{{r.canExpand}}" catchtap="expand" data-i="{{r.i}}">展开 {{r.mergedCount}} 节</text>
+            </view>
+          </view>
+          <text class="edit" bindtap="edit" data-i="{{r.i}}">{{r.unreadable ? '补' : '改'}}</text>
+        </view>
+      </view>
+
+      <view class="foot">
+        <button class="btn ghost" bindtap="openBulk">{{unassigned > 0 ? '批量指派责任人（' + unassigned + ' 项待指派）' : '已全部指派 · 点此调整'}}</button>
+        <button class="btn" bindtap="onSubmit" disabled="{{submitting || selectedCount === 0}}">确认加入日历（{{selectedCount}} 项）</button>
+        <view class="note">AI 只生成草稿，确认后才进日历并通知责任人；重复课以后每周自动出现</view>
+      </view>
+    </block>
+  </view>
+
+  <view class="sheet-mask" wx:if="{{bulkOpen}}" bindtap="closeBulk">
+    <view class="sheet tall" catchtap="noop">
+      <view class="ev-title">批量指派责任人</view>
+      <view class="muted">点名字即指派；同一时间已有安排的成员会置灰。</view>
+      <view class="muted" wx:if="{{bulkRows.length === 0}}">没有需要指派的安排。</view>
+      <view class="bulk-row" wx:for="{{bulkRows}}" wx:for-item="b" wx:key="i">
+        <view class="bulk-label">{{b.label}}</view>
+        <view class="mini-chips">
+          <text wx:for="{{b.opts}}" wx:for-item="o" wx:key="member_id"
+            class="chip {{o.on ? '' : 'off'}} {{o.busy ? 'busy' : ''}}"
+            bindtap="pickOwner" data-i="{{b.i}}" data-id="{{o.member_id}}" data-busy="{{o.busy}}" data-with="{{o.busyWith}}">{{o.name}}</text>
+        </view>
+      </view>
+      <button class="btn" bindtap="closeBulk">完成指派</button>
+    </view>
+  </view>
+</view>

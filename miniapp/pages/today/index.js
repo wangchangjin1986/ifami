@@ -101,6 +101,10 @@ Page({
     this.closeFab()
     wx.navigateTo({ url: '/pages/task/index' })
   },
+  goImport() {
+    this.closeFab()
+    wx.navigateTo({ url: '/pages/import/index' })
+  },
 
   onPullDownRefresh() {
     this.refresh()

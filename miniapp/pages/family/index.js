@@ -11,6 +11,9 @@ const ROLE_OPTIONS_REAL = [
 const RELATIONS_REAL = ['爸爸', '妈妈', '爷爷', '奶奶', '姥姥', '姥爷', '叔叔', '阿姨']
 const RELATIONS_CHILD = ['儿子', '女儿']
 
+function familyNameKey(fid) { return 'familyName:' + fid }
+function familyMembersKey(fid) { return 'familyMembers:' + fid }
+
 function memberView(m, selfUserID) {
   const isVirtual = m.type === 'virtual'
   const role = m.role === 'admin' ? 'parent' : m.role
@@ -72,7 +75,17 @@ Page({
   },
 
   refresh() {
-    this.setData({ loading: true })
+    // 家庭页是登录入口：无本地会话时必须立即落到登录态，不能在 onShow 里自动 wx.login + 请求后端，
+    // 否则网络/微信登录链路异常时首屏会一直停在「加载中…」。
+    if (!app.globalData.token || !app.globalData.user) {
+      this.setData({ loading: false, logged: false, hasFamily: false, members: [], familyName: '' })
+      return Promise.resolve()
+    }
+
+    // 首屏性能：已有本地会话时，先用本地 familyId / memberships / 最近一次成员缓存同步渲染，
+    // 不把首屏阻塞在 /v1/me、/v1/families、/members 串行网络请求上；远程数据随后静默刷新覆盖。
+    this.renderLocalFirst()
+
     return app.ensureLogin()
       .then(() => app.request('/v1/families'))
       .then((families) => {
@@ -83,7 +96,9 @@ Page({
         }
         const cur = list.find((f) => f.family_id === app.globalData.familyId) || list[0]
         app.setFamily(cur.family_id)
+        wx.setStorageSync(familyNameKey(cur.family_id), cur.name || '')
         this.setData({
+          loading: false,
           logged: true,
           hasFamily: true,
           isAdmin: !!app.globalData.isAdmin,
@@ -91,6 +106,7 @@ Page({
         })
         return app.request(`/v1/families/${cur.family_id}/members`).then((members) => {
           const selfID = app.globalData.user ? app.globalData.user.user_id : null
+          wx.setStorageSync(familyMembersKey(cur.family_id), members || [])
           this.setData({ members: (members || []).map((m) => memberView(m, selfID)), loading: false })
         })
       })
@@ -102,6 +118,26 @@ Page({
         }
         wx.showToast({ title: e.message || '加载失败', icon: 'none' })
       })
+  },
+
+  renderLocalFirst() {
+    const memberships = app.globalData.memberships || []
+    const fid = app.globalData.familyId || (memberships[0] && memberships[0].family_id)
+    if (!fid || memberships.length === 0) {
+      this.setData({ loading: false, logged: true, hasFamily: false, members: [], familyName: '' })
+      return
+    }
+    if (!app.globalData.familyId) app.setFamily(fid)
+    const cachedMembers = wx.getStorageSync(familyMembersKey(fid)) || []
+    const selfID = app.globalData.user ? app.globalData.user.user_id : null
+    this.setData({
+      loading: false,
+      logged: true,
+      hasFamily: true,
+      isAdmin: !!app.globalData.isAdmin,
+      familyName: wx.getStorageSync(familyNameKey(fid)) || this.data.familyName || '家庭',
+      members: cachedMembers.map((m) => memberView(m, selfID))
+    })
   },
 
   doLogin() {
@@ -277,8 +313,12 @@ Page({
     this.closeFab()
     wx.navigateTo({ url: '/pages/task/index' })
   },
-  goReport() { wx.showToast({ title: '家庭周报开发中', icon: 'none' }) },
-  goTimeline() { wx.showToast({ title: '成长时间线开发中', icon: 'none' }) },
+  goImport() {
+    this.closeFab()
+    wx.navigateTo({ url: '/pages/import/index' })
+  },
+  goReport() { wx.navigateTo({ url: '/pages/report/index' }) },
+  goTimeline() { wx.navigateTo({ url: '/pages/timeline/index' }) },
   goSettings() { wx.showToast({ title: '设置页开发中', icon: 'none' }) },
 
   onPullDownRefresh() {

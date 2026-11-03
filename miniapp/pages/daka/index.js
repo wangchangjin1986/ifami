@@ -116,6 +116,14 @@ Page({
     this.closeFab()
     wx.navigateTo({ url: '/pages/task/index' })
   },
+  goTaskTemplates() {
+    this.closeFab()
+    wx.navigateTo({ url: '/pages/task/index?batch=1' })
+  },
+  goImport() {
+    this.closeFab()
+    wx.navigateTo({ url: '/pages/import/index' })
+  },
 
   onPullDownRefresh() {
     this.refresh()

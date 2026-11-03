@@ -1,0 +1,8 @@
+/* 家庭周报：自动小结 + 家庭内分享。 */
+.empty-card { gap: 20rpx; }
+.report-actions { align-items: stretch; }
+.report-actions .btn { flex: 1; }
+.kpi .num { font-size: 42rpx; font-weight: 700; font-variant-numeric: tabular-nums; }
+.row-main { min-width: 0; flex: 1; }
+.highlight { padding: 20rpx 0; border-bottom: 2rpx solid var(--line); }
+.highlight:last-child { border-bottom: 0; padding-bottom: 0; }

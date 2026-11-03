@@ -1,0 +1,84 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">{{title || '手动补一条'}}</text>
+    <text class="sub">对照原图修改</text>
+  </view>
+
+  <view class="body">
+    <view class="field" wx:if="{{sourceText}}">
+      <text class="label">原图对应位置</text>
+      <view class="crop">{{sourceText}}</view>
+    </view>
+
+    <view class="field">
+      <text class="label">事项</text>
+      <input class="input" placeholder="如：钢琴课" model:value="{{title}}" />
+    </view>
+
+    <view class="field">
+      <text class="label">重复</text>
+      <view class="seg">
+        <button class="{{repeat === 'weekly' ? 'on' : ''}}" bindtap="setRepeat" data-v="weekly">每周</button>
+        <button class="{{repeat === 'once' ? 'on' : ''}}" bindtap="setRepeat" data-v="once">单次</button>
+      </view>
+    </view>
+
+    <view class="field" wx:if="{{repeat === 'weekly'}}">
+      <text class="label">星期（可多选）</text>
+      <view class="dow-pick">
+        <text wx:for="{{dows}}" wx:key="v" class="{{item.on ? 'on' : ''}}" bindtap="toggleDow" data-i="{{index}}">{{item.t}}</text>
+      </view>
+    </view>
+    <view class="field" wx:else>
+      <text class="label">日期</text>
+      <picker mode="date" value="{{date}}" bindchange="onDate"><view class="picker">{{date || '选择日期'}} ▾</view></picker>
+    </view>
+
+    <view class="row" style="align-items:flex-start">
+      <view class="field" style="flex:1">
+        <text class="label">开始</text>
+        <picker mode="time" value="{{startTime}}" bindchange="onStart"><view class="picker">{{startTime}} ▾</view></picker>
+      </view>
+      <view class="field" style="flex:1">
+        <text class="label">结束</text>
+        <picker mode="time" value="{{endTime}}" bindchange="onEnd"><view class="picker">{{endTime}} ▾</view></picker>
+      </view>
+    </view>
+
+    <view class="row" style="align-items:flex-start">
+      <view class="field" style="flex:1">
+        <text class="label">孩子</text>
+        <picker range="{{children}}" range-key="name" value="{{childIndex}}" bindchange="onChild" disabled="{{children.length === 0}}">
+          <view class="picker">{{children.length ? children[childIndex].name : '请先添加孩子'}} ▾</view>
+        </picker>
+      </view>
+      <view class="field" style="flex:1" wx:if="{{!isSchool}}">
+        <text class="label">责任人</text>
+        <picker range="{{owners}}" range-key="name" value="{{ownerIndex}}" bindchange="onOwner">
+          <view class="picker">{{owners[ownerIndex].name}} ▾</view>
+        </picker>
+      </view>
+    </view>
+
+    <view class="field">
+      <text class="label">地点</text>
+      <input class="input" placeholder="选填" model:value="{{location}}" />
+    </view>
+    <view class="field">
+      <text class="label">备注</text>
+      <input class="input" placeholder="如：带琴谱（选填）" model:value="{{note}}" />
+    </view>
+
+    <view class="field" wx:if="{{repeat === 'weekly'}}">
+      <text class="label">持续到</text>
+      <view class="row">
+        <picker mode="date" value="{{until}}" bindchange="onUntil" style="flex:1"><view class="picker">{{until || '一直重复'}} ▾</view></picker>
+        <text class="link" wx:if="{{until}}" bindtap="clearUntil">清除</text>
+      </view>
+    </view>
+
+    <button class="btn" bindtap="save">保存这一条</button>
+    <button class="btn danger" bindtap="remove">不要这一条</button>
+  </view>
+</view>

@@ -7,6 +7,11 @@
     "pages/event/index",
     "pages/event-detail/index",
     "pages/task/index",
+    "pages/import/index",
+    "pages/import-confirm/index",
+    "pages/import-edit/index",
+    "pages/timeline/index",
+    "pages/report/index",
     "pages/daka-flow/index",
     "pages/invite/index",
     "pages/manage/index"

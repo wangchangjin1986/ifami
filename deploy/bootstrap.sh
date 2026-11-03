@@ -11,6 +11,7 @@
 #
 # 幂等：.env 已存在则不重复生成密钥，DB 用 IF NOT EXISTS，迁移幂等。
 # 可预设环境变量跳过交互：WX_MINIAPP_APPID / WX_MINIAPP_SECRET / MYSQL_ROOT_PASSWORD / DB_PASSWORD
+#   拍照导入日程（火山方舟·豆包多模态）：ARK_API_KEY / ARK_MODEL（接入点 ep-xxx，可留空稍后补填）
 set -euo pipefail
 
 # ---------------- 可调参数 ----------------
@@ -18,6 +19,8 @@ REPO_DIR="${REPO_DIR:-/opt/ifami}"
 APP_DB="${APP_DB:-ifami}"
 APP_USER="${APP_USER:-ifami}"
 PUBLIC_IP="${PUBLIC_IP:-118.196.79.193}"   # ECS 公网 IP，用于公网健康检查
+DEFAULT_ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
+DEFAULT_INGEST_DIR="/var/lib/ifami/ingest"   # 识别原图临时目录：落盘识别、任务结束即删（ADR-006 修订 2026-11-03）
 
 # ---------------- 工具 ----------------
 log()  { printf '\033[1;32m[ifami]\033[0m %s\n' "$*"; }
@@ -67,6 +70,10 @@ if [[ ! -f "$ENV_FILE" ]]; then
   if [[ -n "${WX_MINIAPP_SECRET:-}" ]]; then WX_SECRET="$WX_MINIAPP_SECRET"; else read -r -s -p "小程序 AppSecret: " WX_SECRET || true; echo; fi
   [[ -n "$WX_SECRET" ]] || warn "AppSecret 为空，微信登录会失败，稍后可在 deploy/.env 补填"
 
+  # 拍照导入日程：方舟凭据可选，留空时识别会失败（其余功能不受影响），稍后可在 deploy/.env 补填
+  if [[ -n "${ARK_API_KEY:-}" ]]; then ARK_KEY="$ARK_API_KEY"; else read -r -s -p "火山方舟 API Key（拍照导入日程用，回车跳过）: " ARK_KEY || true; echo; fi
+  if [[ -n "${ARK_MODEL:-}" ]]; then ARK_EP="$ARK_MODEL"; else read -r -p "火山方舟推理接入点 ID（ep-xxxx，回车跳过）: " ARK_EP || true; fi
+
   ROOT_PW="${MYSQL_ROOT_PASSWORD:-}"   # 默认空 = 保持 root 本机免密；预设则同步修改为该密码
   APP_PW="${DB_PASSWORD:-$(openssl rand -hex 16)}"
   ENC_KEY="$(openssl rand -base64 32)"
@@ -96,7 +103,14 @@ TOS_ENDPOINT=
 SMS_AK=
 SMS_SK=
 SMS_SIGN=
-ARK_API_KEY=
+# 火山方舟（拍照导入日程，豆包多模态）
+ARK_API_KEY=${ARK_KEY:-}
+ARK_BASE_URL=${DEFAULT_ARK_BASE_URL}
+# 方舟推理接入点 ID（ep-xxxx）
+ARK_MODEL=${ARK_EP:-}
+
+# 拍照导入识别原图临时目录（落盘识别、任务结束即删；权限 700）
+INGEST_DIR=${DEFAULT_INGEST_DIR}
 
 # Redis（本机）
 REDIS_ADDR=127.0.0.1:6379
@@ -115,16 +129,32 @@ else
   log "已存在 deploy/.env，跳过密钥生成"
 fi
 
-# 兼容早期 .env：没有 MIGRATIONS_DIR 时补齐，确保 bootstrap.sh / deploy.sh 均可直接执行迁移。
-if ! grep -q '^MIGRATIONS_DIR=' "$ENV_FILE"; then
-  log "补齐 deploy/.env 中的 MIGRATIONS_DIR…"
+# 兼容早期 .env：缺失的配置项按默认值补齐（不覆盖已有值），确保 bootstrap.sh / deploy.sh 均可直接执行。
+ensure_env() { # ensure_env <KEY> <默认值> <注释>
+  grep -q "^$1=" "$ENV_FILE" && return 0
+  log "补齐 deploy/.env 中的 $1…"
   chmod u+w "$ENV_FILE" 2>/dev/null || true
-  cat >>"$ENV_FILE" <<EOF
-
-# golang-migrate 迁移文件目录
-MIGRATIONS_DIR=${REPO_DIR}/migrations
-EOF
+  printf '\n# %s\n%s=%s\n' "$3" "$1" "$2" >>"$ENV_FILE"
   chmod 600 "$ENV_FILE" 2>/dev/null || true
+}
+ensure_env MIGRATIONS_DIR "${REPO_DIR}/migrations" "golang-migrate 迁移文件目录"
+ensure_env ARK_API_KEY  "${ARK_API_KEY:-}" "火山方舟 API Key（拍照导入日程，豆包多模态）"
+ensure_env ARK_BASE_URL "${DEFAULT_ARK_BASE_URL}" "火山方舟 API 地址"
+ensure_env ARK_MODEL    "${ARK_MODEL:-}" "方舟推理接入点 ID（ep-xxxx）"
+ensure_env INGEST_DIR   "${DEFAULT_INGEST_DIR}" "拍照导入识别原图临时目录（落盘识别、任务结束即删；权限 700）"
+
+# ---------------- 拍照导入：识别原图临时目录 + 方舟配置检查 ----------------
+set -a; source "$ENV_FILE"; set +a
+INGEST_DIR="${INGEST_DIR:-$DEFAULT_INGEST_DIR}"
+[[ "$INGEST_DIR" == /* && "$INGEST_DIR" != "/" ]] || die "INGEST_DIR 必须是绝对路径且不能是 /：当前为 '$INGEST_DIR'"
+log "准备识别原图临时目录 ${INGEST_DIR}（700，仅 api/worker 运行用户 root 可读写）…"
+mkdir -p "$INGEST_DIR"
+chown root:root "$INGEST_DIR"
+chmod 700 "$INGEST_DIR"
+if [[ -z "${ARK_API_KEY:-}" || -z "${ARK_MODEL:-}" ]]; then
+  warn "ARK_API_KEY / ARK_MODEL 未配置：拍照导入日程会识别失败（其余功能正常）。补填 deploy/.env 后执行 bash deploy/service.sh restart api worker"
+else
+  log "  ✔ 火山方舟已配置（接入点 ${ARK_MODEL}）"
 fi
 
 # ---------------- 建库 + 校齐应用账号（幂等，每次执行，确保与 .env 一致） ----------------
@@ -209,9 +239,11 @@ cat <<EOF
  3. 备份：crontab -e 加一行  \`0 3 * * * ${REPO_DIR}/deploy/backup.sh\`
  4. 密钥都在 ${REPO_DIR}/deploy/.env，务必另行备份（尤其 FIELD_ENC_KEY / MYSQL_ROOT_PASSWORD / INVITE_SECRET）
  5. 日常发布：本机执行 bash ${REPO_DIR}/deploy/deploy.sh
+ 6. 拍照导入日程：deploy/.env 需配置 ARK_API_KEY / ARK_MODEL（火山方舟控制台开通豆包视觉模型并创建推理接入点）；
+    识别原图临时存于 ${INGEST_DIR}，识别完成即删，不进 MySQL 备份
 
 域名备案完成后：
  1. api.ifami.site 的 A 记录指向 ${PUBLIC_IP}，Caddyfile 把 :80 改成 api.ifami.site（自动 HTTPS）
  2. miniapp/app.js 的 apiBase 改为 https://api.ifami.site
- 3. 微信后台配置 request / uploadFile / downloadFile 合法域名
+ 3. 微信后台配置 request / uploadFile / downloadFile 合法域名（拍照导入走 uploadFile）
 EOF

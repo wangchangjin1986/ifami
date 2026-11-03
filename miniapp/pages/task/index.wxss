@@ -1,1 +1,10 @@
 /* 表单/seg/chips 复用 app.wxss 全局组件样式 */
+.template-row {
+  display: flex; align-items: flex-start; gap: 18rpx; padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--line);
+}
+.template-row:last-child { border-bottom: 0; }
+.template-check {
+  width: 36rpx; height: 36rpx; border-radius: 50%; border: 3rpx solid var(--accent);
+  display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 24rpx; font-weight: 700; flex-shrink: 0;
+}

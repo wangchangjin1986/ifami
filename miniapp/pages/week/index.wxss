@@ -45,3 +45,5 @@
 .mdots { display: flex; gap: 4rpx; height: 12rpx; }
 .mdot { width: 12rpx; height: 12rpx; border-radius: 50%; background: var(--accent); }
 .mdot.warn { background: var(--warn); }
+/* 在校块单行（不占时段格） */
+.school-line { font-size: 24rpx; color: var(--muted); background: var(--surface-2); border-radius: 16rpx; padding: 12rpx 20rpx; margin-bottom: 12rpx; }

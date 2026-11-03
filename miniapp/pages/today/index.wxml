@@ -32,6 +32,7 @@
       <view class="sheet" catchtap="noop">
         <button class="opt" bindtap="goEvent"><text class="opt-b">安排一件事</text><text class="opt-s">课程、接送、活动——有固定时间和地点，进日历</text></button>
         <button class="opt" bindtap="goTask"><text class="opt-b">创建打卡任务</text><text class="opt-s">阅读、跳绳——重复的目标行为，进打卡</text></button>
+        <button class="opt" bindtap="goImport"><text class="opt-b">📷 拍照导入日程</text><text class="opt-s">拍课表、作息表、群通知截图——自动识别成日程草稿，确认后入库</text></button>
         <button class="btn ghost" bindtap="closeFab">取消</button>
       </view>
     </view>

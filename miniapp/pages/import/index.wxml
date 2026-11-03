@@ -1,0 +1,60 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">{{stage === 'scanning' ? '正在识别' : '拍照导入日程'}}</text>
+  </view>
+
+  <view class="body" wx:if="{{isAdmin}}">
+    <block wx:if="{{stage === 'pick'}}">
+      <view class="card tappable" wx:for="{{pendingJobs}}" wx:key="job_id" bindtap="openJob" data-id="{{item.job_id}}">
+        <view class="rowline"><text>有 1 份识别结果待确认（{{item.total}} 张图）</text><text class="v">去核对 ›</text></view>
+      </view>
+
+      <view class="methods">
+        <button bindtap="choose" data-source="camera">📷 拍照</button>
+        <button bindtap="choose" data-source="album">🖼 相册</button>
+      </view>
+      <view class="muted">支持课表、作息表、群通知截图（群里的图片先长按保存到相册）。一次最多 9 张。</view>
+
+      <view class="card" wx:if="{{images.length > 0}}">
+        <view class="ev-title">已选 {{images.length}} 张 · 这是谁的安排？</view>
+        <view class="img-row" wx:for="{{images}}" wx:for-index="i" wx:key="path">
+          <image class="thumb" src="{{item.path}}" mode="aspectFill" bindtap="preview" data-i="{{i}}" />
+          <view class="ev-main">
+            <view class="ev-title small">{{item.name}}<text wx:if="{{item.tooBig}}" class="chip warn">超过 5MB</text></view>
+            <view class="mini-chips">
+              <text wx:for="{{children}}" wx:for-item="c" wx:key="member_id"
+                class="chip {{item.childId === c.member_id ? '' : 'off'}}" bindtap="pickChild" data-i="{{i}}" data-id="{{c.member_id}}">{{c.name}}</text>
+              <text class="chip {{item.childId === 0 ? '' : 'off'}}" bindtap="pickChild" data-i="{{i}}" data-id="0">都有 / 识别</text>
+            </view>
+          </view>
+          <text class="x" bindtap="removeImage" data-i="{{i}}">×</text>
+        </view>
+      </view>
+
+      <view wx:if="{{children.length === 0}}" class="muted">还没有添加孩子，请先到「家庭」页添加，识别结果才能对应到孩子。</view>
+      <button class="btn" bindtap="start" disabled="{{images.length === 0}}">开始识别（{{images.length}} 张）</button>
+      <view class="note">图片仅用于识别，识别完成后立即删除</view>
+    </block>
+
+    <block wx:elif="{{stage === 'scanning'}}">
+      <view class="scan-box">
+        <view class="scan-ring"></view>
+        <view class="ev-title">{{stepText}}</view>
+        <view class="progress"><view class="bar" style="width: {{progress}}%"></view></view>
+        <view class="muted">通常 10–30 秒。可以先离开，识别好了会提醒你确认。</view>
+      </view>
+      <button class="btn ghost" bindtap="leave">先去忙，好了叫我</button>
+    </block>
+
+    <block wx:else>
+      <view class="done-hero">
+        <view class="ok">😕</view>
+        <view class="t">没识别出来</view>
+        <view class="s">{{failMsg}}</view>
+      </view>
+      <button class="btn" bindtap="retry">换张图再试（已选图片保留）</button>
+      <button class="btn ghost" bindtap="goManual">手动安排一件事</button>
+    </block>
+  </view>
+</view>

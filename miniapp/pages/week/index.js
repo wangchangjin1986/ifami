@@ -32,6 +32,7 @@ Page({
     monthLabel: '',
     weekDows: WEEK_CN,
     weekSlots: [],
+    schoolLines: [],
     monthBlanks: [],
     monthCells: [],
     children: [],
@@ -52,9 +53,9 @@ Page({
   refresh() {
     if (!app.globalData.token) {
       this.setData({ logged: false, hasFamily: false, weekSlots: [], monthCells: [] })
-      return
+      return Promise.resolve()
     }
-    app.refreshMe()
+    return app.refreshMe()
       .then(() => this.loadCalendar())
       .catch((e) => {
         if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, weekSlots: [], monthCells: [] }) }
@@ -67,7 +68,7 @@ Page({
     this.setData({ logged: true })
     if (!fid) {
       this.setData({ hasFamily: false, weekSlots: [], monthCells: [] })
-      return
+      return Promise.resolve()
     }
     this.setData({ hasFamily: true, isAdmin: !!app.globalData.isAdmin })
 
@@ -128,9 +129,22 @@ Page({
   },
 
   // 周视图：按时段桶 × 周一到周日分组，格子显示「责任人 + 事项」，冲突标橙。
+  // 在校块（type=school）不占时段格，汇总为表头下方单行（技术方案 §5.5.7）。
   buildWeek(instances, nameMap, mon, childFilter) {
-    const items = (instances || [])
+    const visible = (instances || [])
       .filter((i) => i.status !== 'cancelled' && (childFilter === 0 || i.child_member_id === childFilter))
+    const schoolMap = {}
+    visible.filter((i) => i.type === 'school').forEach((i) => {
+      const k = i.child_member_id + '|' + hhmm(i.start_at) + '|' + (i.end_at ? hhmm(i.end_at) : '')
+      const s = schoolMap[k] || (schoolMap[k] = { child: nameMap[i.child_member_id] || '孩子', start: hhmm(i.start_at), end: i.end_at ? hhmm(i.end_at) : '', days: {} })
+      s.days[(new Date(i.occur_date + 'T00:00:00').getDay() + 6) % 7] = true
+    })
+    const schoolLines = Object.keys(schoolMap).map((k) => {
+      const s = schoolMap[k]
+      const days = Object.keys(s.days).map(Number).sort().map((d) => this.data.weekDows[d]).join('')
+      return s.child + ' 在校 周' + days + ' ' + s.start + (s.end ? '–' + s.end : '')
+    })
+    const items = visible.filter((i) => i.type !== 'school')
       .map((i) => ({
         instanceId: i.instance_id,
         scheduleId: i.schedule_id,
@@ -172,7 +186,7 @@ Page({
       return { label: slotLabel(i), days }
     }).filter((s) => s.days.some((d) => d.items.length > 0))
 
-    this.setData({ weekSlots })
+    this.setData({ weekSlots, schoolLines })
   },
 
   // 月视图：月历，绿点=当天有日程，橙点=当天有冲突。
@@ -238,6 +252,10 @@ Page({
   goTask() {
     this.closeFab()
     wx.navigateTo({ url: '/pages/task/index' })
+  },
+  goImport() {
+    this.closeFab()
+    wx.navigateTo({ url: '/pages/import/index' })
   },
 
   onPullDownRefresh() {

@@ -20,6 +20,14 @@ type Config struct {
 
 	// 邀请 token 签名密钥（HMAC-SHA256）
 	InviteSecret string
+
+	// 火山方舟（拍照导入日程，豆包多模态）
+	ArkAPIKey  string
+	ArkBaseURL string
+	ArkModel   string
+
+	// 拍照导入识别原图临时目录（落盘识别、任务结束即删）
+	IngestDir string
 }
 
 // Load 读取环境变量，未设置的回落到默认值。
@@ -32,6 +40,10 @@ func Load() *Config {
 		RedisAddr:    getenv("REDIS_ADDR", "localhost:6379"),
 		FieldEncKey:  getenv("FIELD_ENC_KEY", ""),
 		InviteSecret: getenv("INVITE_SECRET", ""),
+		ArkAPIKey:    getenv("ARK_API_KEY", ""),
+		ArkBaseURL:   getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+		ArkModel:     getenv("ARK_MODEL", ""),
+		IngestDir:    getenv("INGEST_DIR", "/var/lib/ifami/ingest"),
 	}
 }
 

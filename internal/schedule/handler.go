@@ -26,6 +26,7 @@ func NewHandler(svc *Service, sessions auth.SessionStore) *Handler {
 func (h *Handler) Register(g *route.RouterGroup) {
 	authed := g.Group("", auth.BearerAuth(h.sessions))
 	authed.POST("/schedules", h.CreateSchedule)
+	authed.POST("/schedules/batch", h.CreateSchedulesBatch)
 	authed.GET("/schedules", h.ListSchedules)
 	authed.PATCH("/schedules/:sid", h.UpdateSchedule)
 	authed.DELETE("/schedules/:sid", h.DeleteSchedule)
@@ -48,6 +49,28 @@ func (h *Handler) CreateSchedule(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	res, err := h.svc.CreateSchedule(ctx, auth.UserID(ctx), fid, &req.ScheduleInput, req.Force)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, res)
+}
+
+func (h *Handler) CreateSchedulesBatch(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	var req struct {
+		Schedules []ScheduleInput `json:"schedules"`
+		Force     bool            `json:"force"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	res, err := h.svc.CreateSchedulesBatch(ctx, auth.UserID(ctx), fid, req.Schedules, req.Force)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

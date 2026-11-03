@@ -380,6 +380,22 @@ func (s *Service) MemberUserID(ctx context.Context, familyID, memberID uint64) (
 	return *m.UserID, nil
 }
 
+// ChildNames 返回家庭内孩子（虚拟成员）的 member_id → 解密姓名（ingest 识别结果匹配孩子用）。
+func (s *Service) ChildNames(ctx context.Context, familyID uint64) (map[uint64]string, error) {
+	ms, err := s.store.ListMembers(ctx, familyID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[uint64]string{}
+	for i := range ms {
+		if ms[i].Type != TypeVirtual {
+			continue
+		}
+		out[ms[i].MemberID] = s.toView(&ms[i]).Name
+	}
+	return out, nil
+}
+
 // ---- 内部辅助 ----
 
 func (s *Service) getOrCreateUser(ctx context.Context, sess *wechat.Session) (uint64, error) {

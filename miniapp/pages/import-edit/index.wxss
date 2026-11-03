@@ -1,0 +1,6 @@
+/* 单条修改：对齐 prototype scr-draft-edit */
+.crop { background: var(--surface-2); border: 2rpx solid var(--line); border-radius: 20rpx; padding: 24rpx; font-family: Menlo, monospace; font-size: 26rpx; line-height: 1.7; white-space: pre-wrap; }
+.dow-pick { display: flex; gap: 12rpx; }
+.dow-pick text { flex: 1; text-align: center; padding: 16rpx 0; border-radius: 18rpx; background: var(--surface-2); color: var(--muted); font-size: 26rpx; }
+.dow-pick text.on { background: var(--accent); color: var(--accent-fg); font-weight: 500; }
+.link { color: var(--accent); font-size: 26rpx; flex-shrink: 0; }

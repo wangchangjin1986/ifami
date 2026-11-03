@@ -28,6 +28,11 @@ fi
 
 set -a; . deploy/.env; set +a
 
+# 拍照导入识别原图临时目录（早期 .env 无 INGEST_DIR 时用默认值；程序启动也会 MkdirAll，这里提前收紧权限）。
+INGEST_DIR="${INGEST_DIR:-/var/lib/ifami/ingest}"
+mkdir -p "$INGEST_DIR" && chmod 700 "$INGEST_DIR"
+[[ -n "${ARK_API_KEY:-}" && -n "${ARK_MODEL:-}" ]] || echo "提示：ARK_API_KEY / ARK_MODEL 未配置，拍照导入日程会识别失败（重跑 bootstrap.sh 可补齐配置项）" >&2
+
 # 先停旧 api/worker，再迁移结构性变更，避免旧进程在迁移期间继续按旧 schema 写库。
 bash deploy/service.sh stop api worker
 ./ifami migrate                          # 幂等建表
