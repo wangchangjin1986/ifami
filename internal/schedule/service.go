@@ -73,6 +73,20 @@ type CreateResult struct {
 	Conflicts  []InstanceView `json:"conflicts"`
 }
 
+// BatchCreateResult 批量创建结果（拍照导入确认后一次性入库）。
+type BatchCreateResult struct {
+	ScheduleIDs []uint64        `json:"schedule_ids"`
+	Conflicts   []BatchConflict `json:"conflicts"`
+}
+
+// BatchConflict 批量创建的冲突项：Index 为入参下标；
+// 与库内实例冲突时 Instance 非空，与同批另一条冲突时 OtherIndex 非空。
+type BatchConflict struct {
+	Index      int           `json:"index"`
+	Instance   *InstanceView `json:"instance,omitempty"`
+	OtherIndex *int          `json:"other_index,omitempty"`
+}
+
 // ScheduleView 模板视图。
 type ScheduleView struct {
 	ScheduleID    uint64  `json:"schedule_id"`
@@ -135,6 +149,158 @@ func (s *Service) CreateSchedule(ctx context.Context, userID, familyID uint64, i
 	}
 	s.notifyOwner(ctx, familyID, sch)
 	return &CreateResult{ScheduleID: sch.ScheduleID, Conflicts: conflicts}, nil
+}
+
+// CreateSchedulesBatch 批量创建日程模板（拍照导入确认后一次入库，单事务）。
+// 冲突检测含两部分：与库内已有实例、同批条目两两之间；冲突项带入参下标便于前端定位。
+func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uint64, inputs []ScheduleInput, force bool) (*BatchCreateResult, error) {
+	if err := s.requireWriter(ctx, userID, familyID); err != nil {
+		return nil, err
+	}
+	if len(inputs) == 0 || len(inputs) > MaxBatchSize {
+		return nil, ErrBadParam
+	}
+	today := dateOnly(time.Now().UTC())
+	schedules := make([]*Schedule, 0, len(inputs))
+	instances := make([][]ScheduleInstance, 0, len(inputs))
+	conflicts := make([]BatchConflict, 0)
+	for i := range inputs {
+		sch, err := s.buildSchedule(ctx, familyID, &inputs[i])
+		if err != nil {
+			return nil, err
+		}
+		insts, err := s.materialize(sch, today)
+		if err != nil {
+			return nil, err
+		}
+		hits, err := s.conflicts(ctx, familyID, sch.ChildMemberID, sch.OwnerMemberID, insts, 0)
+		if err != nil {
+			return nil, err
+		}
+		for j := range hits {
+			conflicts = append(conflicts, BatchConflict{Index: i, Instance: &hits[j]})
+		}
+		schedules = append(schedules, sch)
+		instances = append(instances, insts)
+	}
+	conflicts = append(conflicts, intraBatchConflicts(schedules, instances)...)
+	if len(conflicts) > 0 && !force {
+		return nil, &httpx.Err{Code: 2005, Message: "存在时间冲突", HTTP: 400, Data: map[string]any{"conflicts": conflicts}}
+	}
+	if err := s.store.CreateSchedules(ctx, schedules, instances); err != nil {
+		return nil, err
+	}
+	ids := make([]uint64, 0, len(schedules))
+	for _, sch := range schedules {
+		ids = append(ids, sch.ScheduleID)
+		s.notifyOwner(ctx, familyID, sch)
+	}
+	return &BatchCreateResult{ScheduleIDs: ids, Conflicts: conflicts}, nil
+}
+
+// MaxBatchSize 批量创建上限（拍照导入单任务草稿上限与之一致）。
+const MaxBatchSize = 50
+
+// intraBatchConflicts 同批条目两两检测：同孩子、或同一非空责任人，且任一实例时间重叠。
+// 每对条目最多报一次（i<j，记在 j 上，OtherIndex=i）。
+func intraBatchConflicts(schedules []*Schedule, instances [][]ScheduleInstance) []BatchConflict {
+	var out []BatchConflict
+	for i := 0; i < len(schedules); i++ {
+		for j := i + 1; j < len(schedules); j++ {
+			a, b := schedules[i], schedules[j]
+			sameChild := a.ChildMemberID == b.ChildMemberID
+			sameOwner := a.OwnerMemberID != 0 && a.OwnerMemberID == b.OwnerMemberID
+			if !sameChild && !sameOwner {
+				continue
+			}
+			if instancesOverlap(instances[i], instances[j]) {
+				other := i
+				out = append(out, BatchConflict{Index: j, OtherIndex: &other})
+			}
+		}
+	}
+	return out
+}
+
+func instancesOverlap(xs, ys []ScheduleInstance) bool {
+	for _, x := range xs {
+		xe := x.StartAt
+		if x.EndAt != nil {
+			xe = *x.EndAt
+		}
+		for _, y := range ys {
+			if !x.OccurDate.Equal(y.OccurDate) {
+				continue
+			}
+			ye := y.StartAt
+			if y.EndAt != nil {
+				ye = *y.EndAt
+			}
+			// 与 Store.FindConflicts 同一判定：区间相交（零时长实例按点处理）。
+			if y.StartAt.Before(xe) && ye.After(x.StartAt) || x.StartAt.Equal(y.StartAt) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ExtendInstances 滚动续展：为所有 active 重复日程补齐到 today+90 天的实例（ADR-003，Worker 每日调用）。
+// 返回新增实例数。只补"最后一个已物化日期之后"的发生，不重建、不覆盖已取消的单实例。
+func (s *Service) ExtendInstances(ctx context.Context, today time.Time) (int, error) {
+	today = dateOnly(today)
+	rows, err := s.store.ListRecurringSchedules(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	ids := make([]uint64, 0, len(rows))
+	for i := range rows {
+		ids = append(ids, rows[i].ScheduleID)
+	}
+	last, err := s.store.MaxOccurDates(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for i := range rows {
+		insts, err := extensionInstances(&rows[i], last[rows[i].ScheduleID], today)
+		if err != nil {
+			logx.Warnf("[schedule] 续展跳过 schedule_id=%d: %v", rows[i].ScheduleID, err)
+			continue
+		}
+		if len(insts) == 0 {
+			continue
+		}
+		if err := s.store.InsertInstances(ctx, insts); err != nil {
+			return total, err
+		}
+		total += len(insts)
+	}
+	return total, nil
+}
+
+// extensionInstances 计算单个重复日程需要续展的实例：从起点完整展开（保证 COUNT 语义正确），
+// 只保留 > last 且 >= today 的日期，窗口上限 today+90。
+func extensionInstances(sch *Schedule, last *time.Time, today time.Time) ([]ScheduleInstance, error) {
+	r, err := ParseRRule(sch.RRule)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, nil
+	}
+	end := today.AddDate(0, 0, materializeWindowDays)
+	var out []ScheduleInstance
+	for _, d := range occurrencesBetween(r, sch.StartDate, sch.StartDate, end) {
+		if d.Before(today) || (last != nil && !d.After(dateOnly(*last))) {
+			continue
+		}
+		out = append(out, newInstance(sch, d))
+	}
+	return out, nil
 }
 
 // UpdateSchedule 全量更新模板：重建未来实例 + 冲突检测（force 跳过冲突拦截）。
@@ -255,7 +421,7 @@ func (s *Service) UpdateInstance(ctx context.Context, userID, familyID, instance
 // notifyOwner 接送类日程创建/变更后立即强触达执行端 owner（R4.3：创建→收到<1min）。
 // 触达是尽力而为，失败不阻塞日程主流程（log 后忽略）。到点提醒（开始前 X 分钟）需 Worker 扫实例表，留 TODO。
 func (s *Service) notifyOwner(ctx context.Context, familyID uint64, sch *Schedule) {
-	if s.notify == nil || sch.Type != TypePickup {
+	if s.notify == nil || sch.Type != TypePickup || sch.OwnerMemberID == 0 {
 		return
 	}
 	userID, err := s.id.MemberUserID(ctx, familyID, sch.OwnerMemberID)
@@ -308,7 +474,12 @@ func (s *Service) buildSchedule(ctx context.Context, familyID uint64, in *Schedu
 		return nil, ErrBadParam
 	}
 	if in.EndTime != "" {
-		if _, err := parseClock(in.EndTime); err != nil {
+		et, err := parseClock(in.EndTime)
+		if err != nil {
+			return nil, ErrBadParam
+		}
+		st, _ := parseClock(in.StartTime)
+		if !et.After(st) {
 			return nil, ErrBadParam
 		}
 	}
@@ -319,12 +490,17 @@ func (s *Service) buildSchedule(ctx context.Context, familyID uint64, in *Schedu
 	if mtype != memberTypeVirtual {
 		return nil, ErrChildRequired
 	}
-	ownerType, _, err := s.id.RequireMember(ctx, familyID, in.OwnerMemberID)
-	if err != nil {
-		return nil, err
-	}
-	if ownerType != memberTypeReal {
-		return nil, ErrOwnerRequired
+	// 在校块无责任人；其余类型责任人必须是真实成员。
+	if in.Type == TypeSchool {
+		in.OwnerMemberID = 0
+	} else {
+		ownerType, _, err := s.id.RequireMember(ctx, familyID, in.OwnerMemberID)
+		if err != nil {
+			return nil, err
+		}
+		if ownerType != memberTypeReal {
+			return nil, ErrOwnerRequired
+		}
 	}
 
 	startDate, _ := time.Parse("2006-01-02", in.StartDate)
@@ -357,27 +533,33 @@ func (s *Service) materialize(sch *Schedule, today time.Time) ([]ScheduleInstanc
 	dates := occurrences(r, sch.StartDate, today, materializeWindowDays)
 	instances := make([]ScheduleInstance, 0, len(dates))
 	for _, d := range dates {
-		startAt := combineDateTime(d, sch.StartTime)
-		var endAt *time.Time
-		if sch.EndTime != nil {
-			t := combineDateTime(d, *sch.EndTime)
-			endAt = &t
-		}
-		instances = append(instances, ScheduleInstance{
-			FamilyID:      sch.FamilyID,
-			ChildMemberID: sch.ChildMemberID,
-			Title:         sch.Title,
-			Type:          sch.Type,
-			OccurDate:     d,
-			StartAt:       startAt,
-			EndAt:         endAt,
-			Location:      sch.Location,
-			Note:          sch.Note,
-			OwnerMemberID: sch.OwnerMemberID,
-			Status:        StatusActive,
-		})
+		instances = append(instances, newInstance(sch, d))
 	}
 	return instances, nil
+}
+
+// newInstance 由模板与发生日期构造实例（冗余展示字段）。
+func newInstance(sch *Schedule, d time.Time) ScheduleInstance {
+	startAt := combineDateTime(d, sch.StartTime)
+	var endAt *time.Time
+	if sch.EndTime != nil {
+		t := combineDateTime(d, *sch.EndTime)
+		endAt = &t
+	}
+	return ScheduleInstance{
+		ScheduleID:    sch.ScheduleID,
+		FamilyID:      sch.FamilyID,
+		ChildMemberID: sch.ChildMemberID,
+		Title:         sch.Title,
+		Type:          sch.Type,
+		OccurDate:     d,
+		StartAt:       startAt,
+		EndAt:         endAt,
+		Location:      sch.Location,
+		Note:          sch.Note,
+		OwnerMemberID: sch.OwnerMemberID,
+		Status:        StatusActive,
+	}
 }
 
 // conflicts 逐个新实例查时间重叠，按 instance_id 去重返回冲突视图。
@@ -411,7 +593,7 @@ func NewConflictError(conflicts []InstanceView) error {
 
 func validType(t string) bool {
 	switch t {
-	case TypeCourse, TypePickup, TypeActivity, TypeReminder:
+	case TypeCourse, TypePickup, TypeActivity, TypeReminder, TypeSchool:
 		return true
 	}
 	return false

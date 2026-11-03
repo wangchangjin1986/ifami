@@ -5,13 +5,7 @@
   </view>
 
   <view class="body">
-    <view class="seg">
-      <button class="{{mode === 'manual' ? 'on' : ''}}" bindtap="setMode" data-mode="manual">手动填写</button>
-      <button class="{{mode === 'scan' ? 'on' : ''}}" bindtap="setMode" data-mode="scan">拍照识别课表</button>
-      <button class="{{mode === 'wechat' ? 'on' : ''}}" bindtap="setMode" data-mode="wechat">从微信导入</button>
-    </view>
-
-    <block wx:if="{{mode === 'manual'}}">
+    <block>
       <view class="field">
         <text class="label">事项</text>
         <input class="input" placeholder="如：数学课 / 接乐乐" model:value="{{title}}" />
@@ -72,18 +66,6 @@
       </view>
 
       <button class="btn" bindtap="submit" disabled="{{submitting}}">保存</button>
-    </block>
-
-    <block wx:elif="{{mode === 'wechat'}}">
-      <view class="card">
-        <view class="ev-title">从聊天记录选课表</view>
-        <view class="ev-meta">直接选取群聊里的课表图片或机构通知文件，不用先存相册。</view>
-      </view>
-      <button class="btn" bindtap="pickChatFile">选择聊天记录中的文件</button>
-    </block>
-
-    <block wx:else>
-      <view class="empty">拍照识别课表开发中（AI 草稿确认，见 ADR-005）</view>
     </block>
   </view>
 </view>

@@ -1,0 +1,40 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">成长时间线</text>
+  </view>
+
+  <view class="body">
+    <view wx:if="{{loading}}" class="empty">加载中…</view>
+    <view wx:elif="{{!logged}}" class="empty">请先到「家庭」页登录</view>
+    <view wx:elif="{{!hasFamily}}" class="empty">请先在「家庭」页创建家庭</view>
+    <block wx:else>
+      <view class="filters">
+        <text class="chip {{childFilter === 0 ? 'on' : ''}}" bindtap="selectChild" data-id="0">全部</text>
+        <text
+          class="chip {{childFilter === item.member_id ? 'on' : ''}}"
+          wx:for="{{children}}"
+          wx:key="member_id"
+          bindtap="selectChild"
+          data-id="{{item.member_id}}"
+        >{{item.name}}</text>
+      </view>
+
+      <view class="card intro-card">
+        <view class="ev-title">自动沉淀</view>
+        <view class="muted">打卡记录和活动日程会按孩子汇入时间线；只做事实记录，不做排名和打榜。</view>
+      </view>
+
+      <view wx:if="{{filteredEntries.length === 0}}" class="empty">暂无成长记录；完成打卡或安排活动后会自动出现在这里</view>
+      <view wx:else class="timeline-list">
+        <view class="tl" wx:for="{{filteredEntries}}" wx:key="id">
+          <view class="tl-date">{{item.day}}</view>
+          <view class="tl-body">
+            <view class="ev-title">{{item.title}}</view>
+            <view class="ev-meta">{{item.meta}}</view>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+</view>

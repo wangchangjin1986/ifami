@@ -10,6 +10,9 @@ const (
 	TypePickup   = "pickup"
 	TypeActivity = "activity"
 	TypeReminder = "reminder"
+	// TypeSchool 在校整块（如周一至五 08:00–16:30），仅由拍照导入生成：
+	// 无责任人（owner_member_id=0）、不触达、冲突只按孩子判定。
+	TypeSchool = "school"
 
 	StatusActive    = "active"
 	StatusCancelled = "cancelled" // 单实例：取消本次

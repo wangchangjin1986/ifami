@@ -14,6 +14,10 @@
     </view>
 
     <view class="body">
+      <view wx:if="{{isAdmin}}" class="card tappable" bindtap="goTaskTemplates">
+        <view class="rowline"><text>任务模板</text><text class="v">阅读 / 跳绳 / 练琴</text></view>
+        <view class="muted">一次勾选多个常见任务，统一设置孩子、频次和责任家长。</view>
+      </view>
       <view wx:if="{{groups.length === 0}}" class="empty">暂无打卡任务，点右下角 ＋ 新建</view>
 
       <block wx:for="{{groups}}" wx:for-item="g" wx:key="childId">
@@ -41,6 +45,7 @@
       <view class="sheet" catchtap="noop">
         <button class="opt" bindtap="goEvent"><text class="opt-b">安排一件事</text><text class="opt-s">课程、接送、活动——有固定时间和地点，进日历</text></button>
         <button class="opt" bindtap="goTask"><text class="opt-b">创建打卡任务</text><text class="opt-s">阅读、跳绳——重复的目标行为，进打卡</text></button>
+        <button class="opt" bindtap="goImport"><text class="opt-b">📷 拍照导入日程</text><text class="opt-s">拍课表、作息表、群通知截图——自动识别成日程草稿，确认后入库</text></button>
         <button class="btn ghost" bindtap="closeFab">取消</button>
       </view>
     </view>

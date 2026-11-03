@@ -1,10 +1,56 @@
 <view class="page">
   <view class="app-head">
     <text class="back" bindtap="goBack">‹ 返回</text>
-    <text class="title">创建打卡任务</text>
+    <text class="title">{{batchMode ? '任务模板' : '创建打卡任务'}}</text>
   </view>
 
   <view class="body">
+    <block wx:if="{{batchMode}}">
+      <view class="card">
+        <view class="ev-title">选择任务模板</view>
+        <view
+          class="template-row"
+          wx:for="{{batchTemplates}}"
+          wx:for-index="i"
+          wx:key="name"
+          bindtap="toggleBatchTemplate"
+          data-i="{{i}}"
+        >
+          <text class="template-check">{{item.selected ? '✓' : ''}}</text>
+          <view class="ev-main">
+            <view class="ev-title">{{item.name}} · {{item.goalLabel}}</view>
+            <view class="ev-meta">可批量启用，创建后进入今日打卡列表</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="field">
+        <text class="label">孩子</text>
+        <picker range="{{children}}" range-key="name" value="{{childIndex}}" bindchange="onChild" disabled="{{children.length === 0}}">
+          <view class="picker {{children.length === 0 ? 'disabled' : ''}}">{{children.length ? children[childIndex].name : '请先添加孩子'}} ▾</view>
+        </picker>
+      </view>
+
+      <view class="field">
+        <text class="label">频次</text>
+        <view class="seg">
+          <button class="{{batchFreqIndex === fi ? 'on' : ''}}" wx:for="{{batchFreqs}}" wx:for-index="fi" wx:key="value" bindtap="selectBatchFreq" data-i="{{fi}}">{{item.label}}</button>
+        </view>
+        <input wx:if="{{batchFreqs[batchFreqIndex].value === 'weekly'}}" class="input" type="number" placeholder="每周 3 次" model:value="{{batchWeeklyTarget}}" />
+      </view>
+
+      <view class="field">
+        <text class="label">责任家长（到点没打卡提醒谁）</text>
+        <view class="seg">
+          <button class="{{ownerIndex === oi ? 'on' : ''}}" wx:for="{{owners}}" wx:for-index="oi" wx:key="member_id" bindtap="selectOwner" data-i="{{oi}}">{{item.label}}</button>
+        </view>
+      </view>
+
+      <button class="btn" bindtap="submitBatch" disabled="{{submitting}}">启用所选模板</button>
+      <view class="muted">批量创建会复用同一个孩子、频次和责任家长；后续可在任务详情中逐个调整。</view>
+    </block>
+
+    <block wx:else>
     <view class="field">
       <text class="label">模板</text>
       <view class="filters">
@@ -44,5 +90,6 @@
     </view>
 
     <button class="btn" bindtap="submit" disabled="{{submitting}}">创建</button>
+    </block>
   </view>
 </view>

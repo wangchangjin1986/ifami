@@ -1,7 +1,9 @@
-// 安排一件事 / 编辑日程：手动填写 / 拍照识别课表 / 从微信导入，对齐 prototype scr-create。
+// 安排一件事 / 编辑日程：手动填写，对齐 prototype scr-create（拍照导入走 ＋ 面板「拍照导入日程」）。
 // 冲突时支持强制保存（对齐后端 2005 冲突返回）；编辑模式走 PATCH /v1/schedules/:sid。
 const app = getApp()
 const { todayStr, weekdayCode } = require('../../utils/date')
+
+const DAILY_RRULE = 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU'
 
 const TYPES = [
   { value: 'course', label: '课程' },
@@ -18,7 +20,6 @@ const REPEATS = [
 Page({
   data: {
     heading: '安排一件事',
-    mode: 'manual',
     types: TYPES,
     repeats: REPEATS,
     children: [],
@@ -87,8 +88,8 @@ Page({
         const s = (schedules || []).find((x) => String(x.schedule_id) === String(scheduleId))
         if (!s) { wx.showToast({ title: '未找到该日程', icon: 'none' }); return }
         let repeatIndex = 0
-        if (s.rrule && s.rrule.indexOf('FREQ=WEEKLY') >= 0) repeatIndex = 2
-        else if (s.rrule && s.rrule.indexOf('FREQ=DAILY') >= 0) repeatIndex = 1
+        if (s.rrule === DAILY_RRULE) repeatIndex = 1
+        else if (s.rrule && s.rrule.indexOf('FREQ=WEEKLY') >= 0) repeatIndex = 2
         this._endTime = s.end_time || ''
         this.setData({
           title: s.title || '',
@@ -105,14 +106,6 @@ Page({
       .catch((e) => {
         if (e.code !== 4001) wx.showToast({ title: e.message || '加载失败', icon: 'none' })
       })
-  },
-
-  setMode(e) {
-    this.setData({ mode: e.currentTarget.dataset.mode })
-  },
-
-  pickChatFile() {
-    wx.showToast({ title: '从微信导入开发中', icon: 'none' })
   },
 
   onType(e) { this.setData({ typeIndex: Number(e.detail.value) }) },
@@ -132,8 +125,9 @@ Page({
 
     const repeat = this.data.repeats[this.data.repeatIndex]
     let rrule = ''
+    // 后端只支持 FREQ=WEEKLY：「每天」= 每周七天都选。
     if (repeat.value === 'weekly') rrule = 'FREQ=WEEKLY;BYDAY=' + weekdayCode(this.data.startDate)
-    else if (repeat.value === 'daily') rrule = 'FREQ=DAILY'
+    else if (repeat.value === 'daily') rrule = DAILY_RRULE
 
     const payload = {
       title: this.data.title.trim(),

@@ -34,7 +34,8 @@
 
     <!-- 周视图：时段 × 星期网格，格子=责任人+事项，冲突橙框 -->
     <view wx:if="{{mode === 'week'}}">
-      <view wx:if="{{weekSlots.length === 0}}" class="empty"><text>本周暂无日程</text></view>
+      <view wx:for="{{schoolLines}}" wx:key="*this" class="school-line">🏫 {{item}}</view>
+      <view wx:if="{{weekSlots.length === 0}}" class="empty"><text>本周暂无日程，点右下角 ＋ 添加</text></view>
       <view wx:else class="week-grid">
         <view class="slot"></view>
         <view class="dow" wx:for="{{weekDows}}" wx:key="*this">{{item}}</view>
@@ -79,12 +80,14 @@
     </view>
 
     <button wx:if="{{isAdmin}}" class="fab" bindtap="openFab">＋</button>
-    <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeFab">
+      <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeFab">
       <view class="sheet" catchtap="noop">
         <button class="opt" bindtap="goEvent"><text class="opt-b">安排一件事</text><text class="opt-s">课程、接送、活动——有固定时间和地点，进日历</text></button>
         <button class="opt" bindtap="goTask"><text class="opt-b">创建打卡任务</text><text class="opt-s">阅读、跳绳——重复的目标行为，进打卡</text></button>
+        <button class="opt" bindtap="goImport"><text class="opt-b">📷 拍照导入日程</text><text class="opt-s">拍课表、作息表、群通知截图——自动识别成日程草稿，确认后入库</text></button>
         <button class="btn ghost" bindtap="closeFab">取消</button>
       </view>
     </view>
+
   </block>
 </view>

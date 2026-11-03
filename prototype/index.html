@@ -174,6 +174,36 @@ body {
 .note { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
 .preview-bar { background: var(--warn); color: #fff; padding: 8px 14px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; z-index: 6; }
 .preview-bar button { border: 1px solid rgba(255,255,255,.65); background: none; color: #fff; border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: var(--font); }
+/* 拍照导入 */
+.thumb { width: 52px; height: 64px; border-radius: 8px; flex-shrink: 0; background: repeating-linear-gradient(180deg, var(--surface-2) 0 7px, var(--line) 7px 8px); border: 1px solid var(--line); position: relative; overflow: hidden; }
+.thumb::after { content: ""; position: absolute; inset: 6px 50% 6px 6px; border-right: 1px solid var(--line); }
+.img-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.img-row:last-child { border-bottom: 0; }
+.img-row .x { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+.mini-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.mini-chips .chip { cursor: pointer; }
+.mini-chips .chip:not(.on) { background: var(--surface-2); color: var(--muted); }
+.draft { display: flex; gap: 10px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.draft:last-child { border-bottom: 0; }
+.draft input[type=checkbox] { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+.draft .main { flex: 1; min-width: 0; cursor: pointer; }
+.draft .l1 { font-size: 15px; font-weight: 500; }
+.draft .l2 { font-size: 13px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+.draft .l3 { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.draft .edit { color: var(--accent); font-size: 13px; flex-shrink: 0; cursor: pointer; padding-top: 2px; }
+.draft.low { background: var(--warn-soft); margin: 0 -10px; padding: 11px 10px; border-radius: 10px; border-bottom: 0; }
+.draft.off .l1, .draft.off .l2 { opacity: .5; }
+.grp-head { display: flex; gap: 10px; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.grp-head .thumb { width: 36px; height: 44px; }
+.crop { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.7; color: var(--fg); }
+.crop mark { background: var(--warn-soft); color: var(--warn); padding: 0 2px; border-radius: 3px; }
+.dow-pick { display: flex; gap: 6px; }
+.dow-pick span { flex: 1; text-align: center; padding: 8px 0; border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 13px; cursor: pointer; }
+.dow-pick span.on { background: var(--accent); color: var(--accent-fg); font-weight: 500; }
+.sticky-foot { position: sticky; bottom: 0; background: var(--surface); padding: 10px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+.sheet.tall { max-height: 88%; overflow-y: auto; }
+.progress { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; width: 100%; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 1.4s ease; }
 </style>
 </head>
 <body>
@@ -183,6 +213,7 @@ body {
   <div class="role-switch">
     <button id="role-parent" class="on">父母视角</button>
     <button id="role-gp">奶奶视角</button>
+    <button id="role-new">新家庭</button>
   </div>
 </div>
 
@@ -294,6 +325,10 @@ body {
   <section class="screen" id="scr-daka" hidden>
     <div class="app-head"><h1>打卡</h1><span class="sub">今日任务</span></div>
     <div class="body" id="daka-list">
+      <div class="card tappable" id="task-template-entry">
+        <div class="rowline"><span>任务模板</span><span class="v">阅读 / 跳绳 / 练琴</span></div>
+        <div class="muted">一次勾选多个常见任务，统一设置孩子、频次和责任家长。</div>
+      </div>
       <div class="group-label">乐乐 · 三年级</div>
       <div class="card task" data-task="阅读 20 分钟" data-child="乐乐"><div class="dot"></div><div class="ev-main"><div class="ev-title">阅读 20 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div></div><span class="chip gray">去打卡</span></div>
       <div class="card task" data-task="跳绳 100 个" data-child="乐乐"><div class="dot"></div><div class="ev-main"><div class="ev-title">跳绳 100 个</div><div class="ev-meta">每天 · 责任：爸爸</div></div><span class="chip gray">去打卡</span></div>
@@ -371,6 +406,188 @@ body {
         <div class="seg" id="task-owner"><button class="on">妈妈</button><button>爸爸</button><button>奶奶</button></div>
       </div>
       <button class="btn" id="btn-task-save">创建</button>
+    </div>
+  </section>
+
+  <!-- 新家庭：空日历 + 拍照导入引导 -->
+  <section class="screen" id="scr-week-empty" hidden>
+    <div class="app-head"><h1>日历</h1><span class="sub">乐乐家 · 刚组建</span></div>
+    <div class="body">
+      <div class="week" style="opacity:.45">
+        <div class="slot"></div><div class="dow">一</div><div class="dow">二</div><div class="dow">三</div><div class="dow">四</div><div class="dow">五</div><div class="dow">六</div><div class="dow">日</div>
+        <div class="slot">16-18</div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+        <div class="slot">18-20</div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+      </div>
+      <div class="muted" style="text-align:center">本周暂无日程，点右下角 ＋ 添加</div>
+    </div>
+  </section>
+
+  <!-- 拍照导入 ①：选图 + 标孩子 -->
+  <section class="screen" id="scr-import" hidden>
+    <div class="app-head"><button class="back">‹ 返回</button><h1>拍照导入日程</h1></div>
+    <div class="body">
+      <div class="methods">
+        <button id="imp-camera">📷 拍照</button>
+        <button id="imp-album">🖼 相册</button>
+      </div>
+      <div class="muted">支持课表、作息表、群通知截图（群里的图片先长按保存到相册）。</div>
+      <div class="card" id="imp-list">
+        <div class="ev-title">已选 3 张 · 这是谁的安排？</div>
+        <div class="img-row">
+          <div class="thumb"></div>
+          <div class="ev-main"><div class="ev-title" style="font-size:14px">音悦琴行 秋季课表.jpg</div>
+            <div class="mini-chips"><span class="chip on">乐乐</span><span class="chip">果果</span><span class="chip">都有 / 识别</span></div></div>
+          <button class="x">×</button>
+        </div>
+        <div class="img-row">
+          <div class="thumb"></div>
+          <div class="ev-main"><div class="ev-title" style="font-size:14px">三年级(2)班 作息时间.png</div>
+            <div class="mini-chips"><span class="chip on">乐乐</span><span class="chip">果果</span><span class="chip">都有 / 识别</span></div></div>
+          <button class="x">×</button>
+        </div>
+        <div class="img-row">
+          <div class="thumb"></div>
+          <div class="ev-main"><div class="ev-title" style="font-size:14px">群聊截图 · 游泳/思维课通知</div>
+            <div class="mini-chips"><span class="chip">乐乐</span><span class="chip">果果</span><span class="chip on">都有 / 识别</span></div></div>
+          <button class="x">×</button>
+        </div>
+      </div>
+      <button class="btn" id="btn-imp-start">开始识别（3 张）</button>
+      <div class="note">图片仅用于识别，识别完成后立即删除</div>
+    </div>
+  </section>
+
+  <!-- 拍照导入 ②：识别中 -->
+  <section class="screen" id="scr-scan" hidden>
+    <div class="app-head"><button class="back">‹ 返回</button><h1>正在识别</h1></div>
+    <div class="body">
+      <div class="scan-box">
+        <div class="scan-ring"></div>
+        <div class="ev-title" id="scan-step">正在读第 1 / 3 张…</div>
+        <div class="progress" style="max-width:240px"><i id="scan-bar"></i></div>
+        <div class="muted">通常 10–30 秒。可以先离开，识别好了会提醒你确认。</div>
+      </div>
+      <button class="btn ghost" id="btn-scan-leave">先去忙，好了叫我</button>
+    </div>
+  </section>
+
+  <!-- 拍照导入 ③：草稿确认 -->
+  <section class="screen" id="scr-scan-confirm" hidden>
+    <div class="app-head"><button class="back">‹ 返回</button><h1>识别到 8 项安排</h1><span class="sub">核对后入库</span></div>
+    <div class="body">
+      <div class="banner" style="background:var(--accent-soft);color:var(--fg)">
+        <div><b style="color:var(--accent)">2 项需要你看一眼</b> · 已标黄；游泳与乐理同时段，指派时会帮你避开。其余可直接确认。</div>
+      </div>
+
+      <div class="card">
+        <div class="grp-head"><div class="thumb"></div><div class="ev-main"><div class="ev-title">音悦琴行 秋季课表</div><div class="ev-meta">乐乐 · 3 项 · 课程到 2027-01-17</div></div></div>
+        <div class="draft"><input type="checkbox" checked>
+          <div class="main" data-edit="钢琴课"><div class="l1">钢琴课 · 每周三 17:30–18:30</div><div class="l2">音悦琴行 3 楼 · 带琴谱</div>
+            <div class="l3"><span class="chip">每周重复</span><span class="chip gray" data-owner>责任人：待指派</span></div></div>
+          <span class="edit" data-edit="钢琴课">改</span></div>
+        <div class="draft"><input type="checkbox" checked>
+          <div class="main" data-edit="乐理"><div class="l1">乐理 · 每周六 09:00–10:00</div><div class="l2">音悦琴行 2 楼</div>
+            <div class="l3"><span class="chip">每周重复</span><span class="chip gray" data-owner>责任人：待指派</span></div></div>
+          <span class="edit" data-edit="乐理">改</span></div>
+        <div class="draft"><input type="checkbox" checked>
+          <div class="main" data-edit="钢琴考级"><div class="l1">钢琴考级 · 12月20日 周日 10:00</div><div class="l2">市文化馆 · 单次</div>
+            <div class="l3"><span class="chip gray">单次</span><span class="chip gray" data-owner>责任人：待指派</span></div></div>
+          <span class="edit" data-edit="钢琴考级">改</span></div>
+      </div>
+
+      <div class="card">
+        <div class="grp-head"><div class="thumb"></div><div class="ev-main"><div class="ev-title">三年级(2)班 作息时间</div><div class="ev-meta">乐乐 · 识别为学校作息，已合并为整块</div></div></div>
+        <div class="draft"><input type="checkbox" checked>
+          <div class="main" data-edit="在校"><div class="l1">在校 · 周一至周五 08:00–16:30</div><div class="l2">实验二小 · 已合并 7 节课，<a href="#" style="color:var(--accent)">展开逐节</a></div>
+            <div class="l3"><span class="chip">每周重复</span><span class="chip gray">不需要责任人</span></div></div>
+          <span class="edit" data-edit="在校">改</span></div>
+        <div class="draft"><input type="checkbox" checked>
+          <div class="main" data-edit="接乐乐放学"><div class="l1">接乐乐放学 · 周一至周五 16:30</div><div class="l2">实验二小 东门 · 由放学时间自动生成</div>
+            <div class="l3"><span class="chip">接送</span><span class="chip gray" data-owner>责任人：待指派</span></div></div>
+          <span class="edit" data-edit="接乐乐放学">改</span></div>
+      </div>
+
+      <div class="card">
+        <div class="grp-head"><div class="thumb"></div><div class="ev-main"><div class="ev-title">群聊截图 · 游泳/思维课</div><div class="ev-meta">按文字识别孩子：果果</div></div></div>
+        <div class="draft"><input type="checkbox" checked>
+          <div class="main" data-edit="游泳"><div class="l1">游泳 · 每周六 09:30–10:30</div><div class="l2">蓝旗游泳馆 · 果果</div>
+            <div class="l3"><span class="chip">每周重复</span><span class="chip gray" data-owner>责任人：待指派</span><span class="chip warn">⚠ 与乐乐乐理同时段，别指派同一人</span></div></div>
+          <span class="edit" data-edit="游泳">改</span></div>
+        <div class="draft low"><input type="checkbox" checked>
+          <div class="main" data-edit="思维课"><div class="l1">思维课 · 每周日 14:00 <span class="chip warn">时间不确定</span></div><div class="l2">线上 · 果果 · 原文“周日下午两点或三点”</div>
+            <div class="l3"><span class="chip gray" data-owner>责任人：待指派</span></div></div>
+          <span class="edit" data-edit="思维课">改</span></div>
+        <div class="draft low"><input type="checkbox">
+          <div class="main" data-edit="未识别"><div class="l1">一行没看清 <span class="chip warn">需手动补</span></div><div class="l2">原文“周□ 18:□0 书法 墨池□院”</div></div>
+          <span class="edit" data-edit="未识别">补</span></div>
+      </div>
+
+      <div class="sticky-foot">
+        <button class="btn ghost" id="btn-bulk-owner">批量指派责任人（6 项待指派）</button>
+        <button class="btn" id="btn-add-all">确认加入日历（7 项）</button>
+        <div class="note">AI 只生成草稿，确认后才进日历并通知责任人；重复课以后每周自动出现</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 拍照导入 ④：单条修改（对照原图） -->
+  <section class="screen" id="scr-draft-edit" hidden>
+    <div class="app-head"><button class="back">‹ 返回</button><h1 id="de-title">思维课</h1><span class="sub">对照原图修改</span></div>
+    <div class="body">
+      <div class="field"><label>原图对应位置</label>
+        <div class="crop">… 果果 思维课 线上<br>时间：<mark>周日下午两点或三点</mark>（以老师通知为准）…</div>
+      </div>
+      <div class="field"><label>事项</label><input id="de-name" value="思维课"></div>
+      <div class="field"><label>重复</label>
+        <div class="seg" id="de-rep"><button class="on">每周</button><button>单次</button></div></div>
+      <div class="field"><label>星期（可多选）</label>
+        <div class="dow-pick" id="de-dow"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span class="on">日</span></div></div>
+      <div class="row" style="gap:12px">
+        <div class="field" style="flex:1"><label>开始</label><input value="14:00"></div>
+        <div class="field" style="flex:1"><label>结束</label><input value="15:00"></div>
+      </div>
+      <div class="row" style="gap:12px">
+        <div class="field" style="flex:1"><label>孩子</label><select><option>果果</option><option>乐乐</option></select></div>
+        <div class="field" style="flex:1"><label>责任人</label><select><option>待指派</option><option>妈妈</option><option>爸爸</option><option>奶奶</option></select></div>
+      </div>
+      <div class="field"><label>地点 / 备注</label><input value="线上"></div>
+      <div class="field"><label>持续到</label><input value="学期末 2027-01-17（图上识别）"></div>
+      <button class="btn" id="btn-de-save">保存这一条</button>
+      <button class="btn danger" id="btn-de-del">不要这一条</button>
+    </div>
+  </section>
+
+  <!-- 导入完成 -->
+  <section class="screen" id="scr-import-done" hidden>
+    <div class="app-head"><h1>已导入</h1></div>
+    <div class="body">
+      <div class="done-hero">
+        <div class="ok">✅</div>
+        <div class="t">7 项安排已排进日历</div>
+        <div class="s">6 项每周重复 · 1 项单次 · 已通知 3 位责任人</div>
+      </div>
+      <button class="btn" id="btn-imp-view">看看这一周</button>
+      <button class="btn ghost" id="btn-imp-more">再导入一张</button>
+      <div class="note">以后课表变了，再拍一次新课表即可，系统会提示哪些是新增/变更</div>
+    </div>
+  </section>
+
+  <!-- 批量添加打卡模板 -->
+  <section class="screen" id="scr-task-template" hidden>
+    <div class="app-head"><button class="back">‹ 返回</button><h1>任务模板</h1></div>
+    <div class="body">
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">选择任务模板</div>
+        <div class="scan-item"><input type="checkbox" checked id="tt1"><label for="tt1"><b>阅读</b> · 20 分钟<br><span class="muted">适合每天 / 工作日</span></label></div>
+        <div class="scan-item"><input type="checkbox" checked id="tt2"><label for="tt2"><b>跳绳</b> · 100 个<br><span class="muted">适合每天</span></label></div>
+        <div class="scan-item"><input type="checkbox" checked id="tt3"><label for="tt3"><b>练琴</b> · 30 分钟<br><span class="muted">适合每周 N 次</span></label></div>
+        <div class="scan-item"><input type="checkbox" id="tt4"><label for="tt4"><b>英语</b> · 15 分钟<br><span class="muted">适合工作日</span></label></div>
+      </div>
+      <div class="field"><label>孩子</label><div class="seg" id="task-template-child"><button class="on">乐乐</button><button>果果</button></div></div>
+      <div class="field"><label>频次</label><div class="seg" id="task-template-freq"><button class="on">每天</button><button>工作日</button><button>每周 3 次</button></div></div>
+      <div class="field"><label>责任家长</label><div class="seg" id="task-template-owner"><button class="on">妈妈</button><button>爸爸</button><button>奶奶</button></div></div>
+      <button class="btn" id="btn-task-template-save">启用所选模板</button>
+      <div class="muted">验收目标：批量启用 5 个模板任务 ≤30 秒；非管理员不可进入。</div>
     </div>
   </section>
 
@@ -483,8 +700,8 @@ body {
         <div class="rowline"><span>📚 绘本共读（果果）</span><span class="v">6/7</span></div>
       </div>
       <div class="card"><div class="ev-title">🎉 本周里程碑</div><div class="ev-meta">果果游泳课可以独立游 10 米了</div></div>
-      <button class="btn" id="btn-share-report">转发到微信</button>
-      <div class="note">周报经服务号推送给全家，可转发——它是家庭的“社交货币”，也是 V3 圈子的预热</div>
+      <button class="btn" id="btn-share-report">转发给家人</button>
+      <div class="note">周报只基于家庭内事实记录生成；分享卡不展示排名、PK 或跨家庭对比。</div>
     </div>
   </section>
 
@@ -534,11 +751,6 @@ body {
   <section class="screen" id="scr-create" hidden>
     <div class="app-head"><button class="back">‹ 返回</button><h1>安排一件事</h1></div>
     <div class="body">
-      <div class="seg" id="create-seg">
-        <button class="on" data-mode="manual">手动填写</button>
-        <button data-mode="scan">拍照识别课表</button>
-        <button data-mode="wechat">从微信导入</button>
-      </div>
       <div id="create-manual" style="display:flex;flex-direction:column;gap:12px">
         <div class="field"><label>事项</label><input value="钢琴课" id="f-name"></div>
         <div class="row" style="gap:12px">
@@ -552,35 +764,6 @@ body {
         <div class="field"><label>地点 / 备注</label><input value="音悦琴行 3 楼 · 带琴谱" id="f-loc"></div>
         <button class="btn" id="btn-save">保存</button>
       </div>
-      <div id="create-wechat" hidden style="display:flex;flex-direction:column;gap:12px">
-        <div class="card"><div class="ev-title">从聊天记录选课表</div><div class="ev-meta">直接选取群聊里的课表图片或机构通知文件，不用先存相册</div></div>
-        <button class="btn" id="btn-pick">选择聊天记录中的文件</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- 识别中 -->
-  <section class="screen" id="scr-scan" hidden>
-    <div class="app-head"><h1>拍照识别课表</h1></div>
-    <div class="body">
-      <div class="scan-box"><div class="scan-ring"></div><div class="muted">正在识别课表，请稍候…</div></div>
-    </div>
-  </section>
-
-  <!-- 识别确认 -->
-  <section class="screen" id="scr-scan-confirm" hidden>
-    <div class="app-head"><button class="back">‹ 返回</button><h1>识别到 5 项课程安排</h1></div>
-    <div class="body">
-      <div class="card">
-        <div class="scan-item"><input type="checkbox" checked id="si1"><label for="si1"><b>钢琴</b> · 周三 17:30<br><span class="muted">音悦琴行 · 乐乐</span></label></div>
-        <div class="scan-item"><input type="checkbox" checked id="si2"><label for="si2"><b>英语</b> · 周二/四 19:00<br><span class="muted">线上 · 乐乐</span></label></div>
-        <div class="scan-item"><input type="checkbox" checked id="si3"><label for="si3"><b>书法</b> · 周五 18:00<br><span class="muted">墨池书院 · 乐乐</span></label></div>
-        <div class="scan-item"><input type="checkbox" checked id="si4"><label for="si4"><b>游泳</b> · 周六 10:00<br><span class="muted">蓝旗游泳 · 果果 · 需接送</span></label></div>
-        <div class="scan-item"><input type="checkbox" checked id="si5"><label for="si5"><b>思维课</b> · 周日 14:00<br><span class="muted">线上 · 果果</span></label></div>
-        <div class="scan-item"><input type="checkbox" id="si6"><label for="si6" class="muted">一行未识别 · <span style="color:var(--accent)">手动补</span></label></div>
-      </div>
-      <div class="muted">AI 只生成草稿，确认后才会进入日历。</div>
-      <button class="btn" id="btn-add-all">全部加入日历</button>
     </div>
   </section>
 
@@ -598,6 +781,7 @@ body {
     <div class="sheet">
       <button class="opt" id="opt-event"><b>安排一件事</b><span>课程、接送、活动——有固定时间和地点，进日历</span></button>
       <button class="opt" id="opt-task"><b>创建打卡任务</b><span>阅读、跳绳——重复的目标行为，进打卡</span></button>
+      <button class="opt" id="opt-import"><b>📷 拍照导入日程</b><span>拍课表、作息表、群通知截图——自动识别成日程草稿，确认后入库</span></button>
       <button class="btn ghost" id="sheet-cancel">取消</button>
     </div>
   </div>
@@ -610,6 +794,21 @@ body {
       <button class="opt" data-pick="妈妈"><b>妈妈</b><span>17:30 无安排，可送</span></button>
       <button class="opt" data-pick="爸爸"><b>爸爸</b><span>17:30 无安排，可送</span></button>
       <button class="btn ghost" id="reassign-cancel">取消</button>
+    </div>
+  </div>
+
+  <!-- 动作面板：批量指派责任人 -->
+  <div class="sheet-mask" id="sheet-bulk" hidden>
+    <div class="sheet tall">
+      <div class="ev-title">批量指派责任人</div>
+      <div class="muted">点头像即指派；冲突的组合会置灰。</div>
+      <div class="rowline"><span>钢琴课 · 周三 17:30</span><span class="mini-chips" data-bulk><span class="chip">妈妈</span><span class="chip">爸爸</span><span class="chip on">奶奶</span></span></div>
+      <div class="rowline"><span>乐理 · 周六 09:00</span><span class="mini-chips" data-bulk><span class="chip on">妈妈</span><span class="chip">爸爸</span><span class="chip">奶奶</span></span></div>
+      <div class="rowline"><span>游泳 · 周六 09:30</span><span class="mini-chips" data-bulk><span class="chip" style="opacity:.4">妈妈</span><span class="chip on">爸爸</span><span class="chip">奶奶</span></span></div>
+      <div class="rowline"><span>钢琴考级 · 12/20</span><span class="mini-chips" data-bulk><span class="chip on">妈妈</span><span class="chip">爸爸</span><span class="chip">奶奶</span></span></div>
+      <div class="rowline"><span>接放学 · 周一至五</span><span class="mini-chips" data-bulk><span class="chip">妈妈</span><span class="chip">爸爸</span><span class="chip on">奶奶</span></span></div>
+      <div class="rowline"><span>思维课 · 周日 14:00</span><span class="mini-chips" data-bulk><span class="chip on">妈妈</span><span class="chip">爸爸</span><span class="chip">奶奶</span></span></div>
+      <button class="btn" id="bulk-ok">完成指派</button>
     </div>
   </div>
 
@@ -630,9 +829,11 @@ body {
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { toastEl.hidden = true; }, 2000);
   }
+  var newFamily = false;
   function render(id) {
+    if (newFamily && id === 'scr-week') id = 'scr-week-empty';
     screens.forEach(function (s) { s.hidden = s.id !== id; });
-    tabs.forEach(function (t) { t.classList.toggle('on', t.dataset.tab === id); });
+    tabs.forEach(function (t) { t.classList.toggle('on', t.dataset.tab === id || (id === 'scr-week-empty' && t.dataset.tab === 'scr-week')); });
   }
   function nav(id) { navStack.push(id); render(id); }
   function back() { navStack.pop(); render(navStack[navStack.length - 1] || 'scr-today'); }
@@ -640,15 +841,18 @@ body {
 
   // 角色切换
   function setRole(r) {
+    newFamily = r === 'new';
     document.getElementById('role-parent').classList.toggle('on', r === 'parent');
     document.getElementById('role-gp').classList.toggle('on', r === 'gp');
+    document.getElementById('role-new').classList.toggle('on', r === 'new');
     phone.classList.toggle('gp', r === 'gp');
     var pb = document.getElementById('preview-bar'); if (pb) pb.hidden = true;
-    navStack = [r === 'gp' ? 'scr-gp' : 'scr-today'];
+    navStack = [r === 'gp' ? 'scr-gp' : (r === 'new' ? 'scr-week' : 'scr-today')];
     render(navStack[0]);
   }
   document.getElementById('role-parent').addEventListener('click', function () { setRole('parent'); });
   document.getElementById('role-gp').addEventListener('click', function () { setRole('gp'); });
+  document.getElementById('role-new').addEventListener('click', function () { setRole('new'); });
 
   tabs.forEach(function (t) { t.addEventListener('click', function () { navTab(t.dataset.tab); }); });
   Array.prototype.forEach.call(document.querySelectorAll('.back'), function (b) {
@@ -783,7 +987,7 @@ body {
       });
     });
   }
-  segWire('task-goal'); segWire('task-freq'); segWire('task-owner');
+  segWire('task-goal'); segWire('task-freq'); segWire('task-owner'); segWire('task-template-child'); segWire('task-template-freq'); segWire('task-template-owner');
   function chipWire(id) {
     var box = document.getElementById(id);
     Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (c) {
@@ -835,29 +1039,93 @@ body {
   document.getElementById('sheet-cancel').addEventListener('click', function () { sheet.hidden = true; });
   sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.hidden = true; });
   document.getElementById('opt-event').addEventListener('click', function () { sheet.hidden = true; nav('scr-create'); });
+  document.getElementById('opt-import').addEventListener('click', function () { sheet.hidden = true; nav('scr-import'); });
   document.getElementById('opt-task').addEventListener('click', function () { sheet.hidden = true; nav('scr-task-create'); });
+  document.getElementById('task-template-entry').addEventListener('click', function () { nav('scr-task-template'); });
+  document.getElementById('btn-task-template-save').addEventListener('click', function () {
+    navTab('scr-daka'); toast('已启用 3 个打卡任务模板');
+  });
 
-  // 创建页通道切换
-  var seg = document.getElementById('create-seg');
-  var manual = document.getElementById('create-manual');
-  var wechat = document.getElementById('create-wechat');
-  Array.prototype.forEach.call(seg.querySelectorAll('button'), function (b) {
-    b.addEventListener('click', function () {
-      Array.prototype.forEach.call(seg.children, function (x) { x.classList.remove('on'); });
-      b.classList.add('on');
-      if (b.dataset.mode === 'manual') { manual.hidden = false; wechat.hidden = true; }
-      else if (b.dataset.mode === 'wechat') { manual.hidden = true; wechat.hidden = false; }
-      else { nav('scr-scan'); setTimeout(function () { nav('scr-scan-confirm'); }, 1400); }
+  // 拍照导入
+  ['imp-camera', 'imp-album'].forEach(function (id) {
+    document.getElementById(id).addEventListener('click', function () { toast('原型演示：调起' + this.textContent.slice(2) + '，已选 3 张'); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#imp-list .mini-chips'), function (box) {
+    Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (c) {
+      c.addEventListener('click', function () {
+        Array.prototype.forEach.call(box.children, function (x) { x.classList.remove('on'); });
+        c.classList.add('on');
+      });
     });
   });
+  Array.prototype.forEach.call(document.querySelectorAll('#imp-list .x'), function (b) {
+    b.addEventListener('click', function () { b.parentNode.remove(); });
+  });
+  var scanTimer = null;
+  function startScan() {
+    nav('scr-scan');
+    var bar = document.getElementById('scan-bar'), step = document.getElementById('scan-step');
+    bar.style.width = '0'; step.textContent = '正在读第 1 / 3 张…';
+    setTimeout(function () { bar.style.width = '100%'; }, 30);
+    setTimeout(function () { step.textContent = '正在读第 3 / 3 张，整理成日程…'; }, 800);
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(function () {
+      if (navStack[navStack.length - 1] === 'scr-scan') { navStack.pop(); nav('scr-scan-confirm'); }
+    }, 1600);
+  }
+  document.getElementById('btn-imp-start').addEventListener('click', startScan);
+  document.getElementById('btn-scan-leave').addEventListener('click', function () {
+    clearTimeout(scanTimer);
+    navTab('scr-today');
+    toast('识别完成后会通过服务号提醒你确认');
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.draft input'), function (cb) {
+    cb.addEventListener('change', function () { cb.parentNode.classList.toggle('off', !cb.checked); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function (el) {
+    el.addEventListener('click', function (e) {
+      if (e.target.tagName === 'A') { e.preventDefault(); toast('原型演示：展开为 7 节课程'); return; }
+      document.getElementById('de-title').textContent = el.dataset.edit === '未识别' ? '手动补一条' : el.dataset.edit;
+      document.getElementById('de-name').value = el.dataset.edit === '未识别' ? '书法' : el.dataset.edit;
+      nav('scr-draft-edit');
+    });
+  });
+  segWire('de-rep');
+  Array.prototype.forEach.call(document.querySelectorAll('#de-dow span'), function (s) {
+    s.addEventListener('click', function () { s.classList.toggle('on'); });
+  });
+  document.getElementById('btn-de-save').addEventListener('click', function () { back(); toast('已更新这一条'); });
+  document.getElementById('btn-de-del').addEventListener('click', function () { back(); toast('已移除这一条'); });
+  var sheetBulk = document.getElementById('sheet-bulk');
+  document.getElementById('btn-bulk-owner').addEventListener('click', function () { sheetBulk.hidden = false; });
+  sheetBulk.addEventListener('click', function (e) { if (e.target === sheetBulk) sheetBulk.hidden = true; });
+  Array.prototype.forEach.call(sheetBulk.querySelectorAll('[data-bulk]'), function (box) {
+    Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (c) {
+      c.addEventListener('click', function () {
+        if (c.style.opacity) { toast('妈妈同一时间要送乐乐上乐理'); return; }
+        Array.prototype.forEach.call(box.children, function (x) { x.classList.remove('on'); });
+        c.classList.add('on');
+      });
+    });
+  });
+  document.getElementById('bulk-ok').addEventListener('click', function () {
+    sheetBulk.hidden = true;
+    var names = ['奶奶', '妈妈', '妈妈', '奶奶', '爸爸', '妈妈'];
+    Array.prototype.forEach.call(document.querySelectorAll('[data-owner]'), function (c, i) {
+      c.textContent = '责任人：' + (names[i] || '妈妈'); c.className = 'chip';
+    });
+    document.getElementById('btn-bulk-owner').textContent = '已全部指派 · 点此调整';
+    toast('已指派 6 项');
+  });
+  document.getElementById('btn-add-all').addEventListener('click', function () { navTab('scr-import-done'); });
+  document.getElementById('btn-imp-view').addEventListener('click', function () {
+    newFamily = false; navTab('scr-week');
+  });
+  document.getElementById('btn-imp-more').addEventListener('click', function () { navTab('scr-import'); });
+
+  // 日程详情编辑（保留）
   document.getElementById('btn-save').addEventListener('click', function () {
     navTab('scr-week'); toast('已保存，并通知责任人「' + document.getElementById('f-owner').value + '」');
-  });
-  document.getElementById('btn-pick').addEventListener('click', function () {
-    nav('scr-scan'); setTimeout(function () { nav('scr-scan-confirm'); }, 1400);
-  });
-  document.getElementById('btn-add-all').addEventListener('click', function () {
-    navTab('scr-week'); toast('已加入 5 项安排');
   });
 
   // 家庭相关

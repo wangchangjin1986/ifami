@@ -1,0 +1,10 @@
+/* 拍照导入：对齐 prototype scr-import / scr-scan */
+.img-row { display: flex; gap: 24rpx; align-items: flex-start; padding: 20rpx 0; border-bottom: 2rpx solid var(--line); }
+.img-row:last-child { border-bottom: 0; }
+.thumb { width: 104rpx; height: 128rpx; border-radius: 16rpx; flex-shrink: 0; background: var(--surface-2); border: 2rpx solid var(--line); }
+.ev-title.small { font-size: 28rpx; display: flex; gap: 12rpx; align-items: center; flex-wrap: wrap; }
+.mini-chips { display: flex; gap: 12rpx; flex-wrap: wrap; margin-top: 12rpx; }
+.mini-chips .chip.off { background: var(--surface-2); color: var(--muted); }
+.x { color: var(--muted); font-size: 40rpx; padding: 0 8rpx; }
+.progress { width: 480rpx; height: 12rpx; border-radius: 999rpx; background: var(--surface-2); overflow: hidden; }
+.progress .bar { height: 100%; background: var(--accent); transition: width .4s; }

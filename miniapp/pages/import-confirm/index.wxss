@@ -1,0 +1,27 @@
+/* 草稿确认屏：对齐 prototype scr-scan-confirm / sheet-bulk */
+.banner.soft { background: var(--accent-soft); color: var(--fg); }
+.banner .hl { color: var(--accent); font-weight: 700; }
+.grp-head { padding-bottom: 16rpx; border-bottom: 2rpx solid var(--line); }
+.draft { display: flex; gap: 20rpx; align-items: flex-start; padding: 22rpx 0; border-bottom: 2rpx solid var(--line); }
+.draft:last-child { border-bottom: 0; }
+.draft.low { background: var(--warn-soft); margin: 0 -20rpx; padding: 22rpx 20rpx; border-radius: 20rpx; border-bottom: 0; }
+.draft.off .main { opacity: .5; }
+.draft .main { flex: 1; min-width: 0; }
+.draft .l1 { font-size: 30rpx; font-weight: 500; display: flex; gap: 12rpx; align-items: center; flex-wrap: wrap; }
+.draft .l2 { font-size: 26rpx; color: var(--muted); margin-top: 4rpx; line-height: 1.5; }
+.draft .l3 { display: flex; gap: 12rpx; flex-wrap: wrap; margin-top: 12rpx; align-items: center; }
+.draft .edit { color: var(--accent); font-size: 26rpx; flex-shrink: 0; padding: 4rpx 0 0 8rpx; }
+.link { color: var(--accent); font-size: 24rpx; }
+.check {
+  width: 40rpx; height: 40rpx; border-radius: 8rpx; border: 3rpx solid var(--accent);
+  display: flex; align-items: center; justify-content: center; color: var(--accent);
+  font-size: 26rpx; font-weight: 700; flex-shrink: 0; margin-top: 2rpx;
+}
+.foot { position: sticky; bottom: 0; background: var(--bg); padding: 16rpx 0 8rpx; display: flex; flex-direction: column; gap: 16rpx; }
+.sheet.tall { max-height: 80vh; overflow-y: auto; }
+.bulk-row { display: flex; flex-direction: column; gap: 10rpx; padding: 18rpx 0; border-bottom: 2rpx solid var(--line); }
+.bulk-label { font-size: 28rpx; }
+.mini-chips { display: flex; gap: 12rpx; flex-wrap: wrap; }
+.mini-chips .chip { padding: 10rpx 24rpx; font-size: 26rpx; }
+.mini-chips .chip.off { background: var(--surface-2); color: var(--muted); }
+.mini-chips .chip.busy { opacity: .4; }

@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm"
 
 	"ifami/internal/identity"
+	"ifami/internal/ingest"
 	"ifami/internal/notify"
 	"ifami/internal/pkg/auth"
 	"ifami/internal/pkg/config"
@@ -65,7 +66,7 @@ func usage() {
 }
 
 // initCore 初始化 API 与 Worker 共用的核心依赖（DB/Redis/微信/加密/会话/identity）。
-func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStore) {
+func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStore, *crypto.FieldCipher) {
 	gdb, err := db.Open(cfg.RDSDSN)
 	if err != nil {
 		logx.Fatalf("连接数据库失败: %v", err)
@@ -87,7 +88,48 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 		identity.NewStore(gdb), wx, cfg.WXMiniAppID,
 		sessions, field, cfg.InviteSecret,
 	)
-	return gdb, idSvc, sessions
+	return gdb, idSvc, sessions, field
+}
+
+// scheduleCreator 把 schedule.Service 适配成 ingest 消费方定义的 ScheduleCreator 接口。
+type scheduleCreator struct{ svc *schedule.Service }
+
+func (a scheduleCreator) CreateBatch(ctx context.Context, userID, familyID uint64, items []ingest.ScheduleItem, force bool) ([]uint64, error) {
+	inputs := make([]schedule.ScheduleInput, 0, len(items))
+	for _, it := range items {
+		inputs = append(inputs, schedule.ScheduleInput{
+			Title: it.Title, Type: it.Type, ChildMemberID: it.ChildMemberID, StartDate: it.StartDate,
+			RRule: it.RRule, StartTime: it.StartTime, EndTime: it.EndTime,
+			Location: it.Location, Note: it.Note, OwnerMemberID: it.OwnerMemberID,
+		})
+	}
+	res, err := a.svc.CreateSchedulesBatch(ctx, userID, familyID, inputs, force)
+	if err != nil {
+		return nil, err
+	}
+	return res.ScheduleIDs, nil
+}
+
+type ingestNotifier struct{ svc *notify.Service }
+
+func (a ingestNotifier) CreateJob(ctx context.Context, in ingest.NotifyInput) (uint64, error) {
+	return a.svc.CreateJob(ctx, &notify.CreateJobInput{
+		FamilyID: in.FamilyID, TargetUserID: in.TargetUserID, Level: in.Level,
+		Payload: in.Payload, BusinessKey: in.BusinessKey,
+	})
+}
+
+// newIngest 组装 ingest 模块。INGEST_DIR 不可用时直接退出（拍照导入必需）；方舟未配置只告警，start 时识别失败。
+func newIngest(cfg *config.Config, gdb *gorm.DB, idSvc *identity.Service, schedSvc *schedule.Service, notifSvc *notify.Service, field *crypto.FieldCipher) *ingest.Service {
+	imgs, err := ingest.NewLocalImageStore(cfg.IngestDir)
+	if err != nil {
+		logx.Fatalf("拍照导入临时目录不可用: %v", err)
+	}
+	ark := ingest.NewArkClient(cfg.ArkBaseURL, cfg.ArkAPIKey, cfg.ArkModel)
+	if !ark.Configured() {
+		logx.Warnf("ARK_API_KEY / ARK_MODEL 未配置，拍照导入识别将失败")
+	}
+	return ingest.NewService(ingest.NewStore(gdb), imgs, ark, idSvc, scheduleCreator{schedSvc}, ingestNotifier{notifSvc}, field)
 }
 
 // notifyAdapter 把 notify.Service 适配成 schedule/task 消费方定义的 Notifier 接口。
@@ -113,19 +155,22 @@ func (a taskNotifier) CreateJob(ctx context.Context, in task.NotifyInput) (uint6
 // serveAPI 启动 HTTP 服务（Hertz）。依赖注入见此处。
 func serveAPI() {
 	cfg := config.Load()
-	gdb, idSvc, sessions := initCore(cfg)
+	gdb, idSvc, sessions, field := initCore(cfg)
 
 	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, notify.MockSubscribe{})
 	schedSvc := schedule.NewService(schedule.NewStore(gdb), idSvc, scheduleNotifier{notifSvc})
 	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc})
+	ingestSvc := newIngest(cfg, gdb, idSvc, schedSvc, notifSvc, field)
 
-	h := server.Default(server.WithHostPorts(cfg.APIAddr))
+	// 拍照导入单张图 ≤5MB，multipart 开销留余量，请求体上限调到 10MB（默认 4MB）。
+	h := server.Default(server.WithHostPorts(cfg.APIAddr), server.WithMaxRequestBodySize(10<<20))
 	h.GET("/healthz", healthz)
 	v1 := h.Group("/v1")
 	identity.NewHandler(idSvc).Register(v1)
 	schedule.NewHandler(schedSvc, sessions).Register(v1)
 	task.NewHandler(taskSvc, sessions).Register(v1)
 	notify.NewHandler(notifSvc, sessions).Register(v1)
+	ingest.NewHandler(ingestSvc, sessions).Register(v1)
 
 	logx.Infof("api 监听 %s", cfg.APIAddr)
 	h.Spin()
@@ -135,15 +180,19 @@ func healthz(ctx context.Context, c *app.RequestContext) {
 	c.JSON(200, map[string]string{"status": "ok"})
 }
 
-// serveWorker 异步 Worker：触达任务轮询与升级状态机（30s 粒度，ADR-002）+ 打卡提醒扫描（R3.3）。
+// serveWorker 异步 Worker（30s 粒度）：触达轮询与升级（ADR-002）、打卡提醒（R3.3）、
+// 拍照导入任务接管与残留原图清理（§5.5）；重复日程实例每日续展（ADR-003）。
 func serveWorker() {
 	cfg := config.Load()
-	gdb, idSvc, _ := initCore(cfg)
+	gdb, idSvc, _, field := initCore(cfg)
 	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, notify.MockSubscribe{})
+	schedSvc := schedule.NewService(schedule.NewStore(gdb), idSvc, scheduleNotifier{notifSvc})
 	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc})
+	ingestSvc := newIngest(cfg, gdb, idSvc, schedSvc, notifSvc, field)
 
-	logx.Infof("worker 启动，触达扫描 + 打卡提醒扫描间隔 30s")
+	logx.Infof("worker 启动，扫描间隔 30s")
 	ctx := context.Background()
+	lastExtend := ""
 	scan := func() {
 		now := time.Now().UTC()
 		if err := notifSvc.ProcessDue(ctx); err != nil {
@@ -151,6 +200,20 @@ func serveWorker() {
 		}
 		if err := taskSvc.RemindDue(ctx, now); err != nil {
 			logx.Errorf("worker 打卡提醒扫描失败: %v", err)
+		}
+		if err := ingestSvc.RecoverStale(ctx); err != nil {
+			logx.Errorf("worker 拍照导入接管失败: %v", err)
+		}
+		ingestSvc.CleanupOrphans()
+		// 续展每天一次（进程启动后首轮即执行一次）。
+		if day := now.Format("2006-01-02"); day != lastExtend {
+			n, err := schedSvc.ExtendInstances(ctx, now)
+			if err != nil {
+				logx.Errorf("worker 日程实例续展失败: %v", err)
+			} else {
+				lastExtend = day
+				logx.Infof("worker 日程实例续展完成，新增 %d 条", n)
+			}
 		}
 	}
 	scan()

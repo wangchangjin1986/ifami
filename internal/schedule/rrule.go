@@ -93,17 +93,33 @@ func occurrences(r *RRule, start, today time.Time, windowDays int) []time.Time {
 	if begin.Before(today) {
 		begin = today
 	}
-	end := today.AddDate(0, 0, windowDays)
+	all := occurrencesBetween(r, start, start, today.AddDate(0, 0, windowDays))
+	out := make([]time.Time, 0, len(all))
+	for _, d := range all {
+		if !d.Before(begin) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// occurrencesBetween 从规则起点 start 开始计数（COUNT 语义），返回 [from, to] 内的发生日期。
+func occurrencesBetween(r *RRule, start, from, to time.Time) []time.Time {
+	end := to
 	if r.Until != nil && r.Until.Before(end) {
 		end = *r.Until
 	}
 	var out []time.Time
-	for d := begin; !d.After(end); d = d.AddDate(0, 0, 1) {
+	n := 0
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		if !containsWeekday(r.ByDay, d.Weekday()) {
 			continue
 		}
-		out = append(out, d)
-		if r.Count != nil && len(out) >= *r.Count {
+		n++
+		if !d.Before(from) {
+			out = append(out, d)
+		}
+		if r.Count != nil && n >= *r.Count {
 			break
 		}
 	}

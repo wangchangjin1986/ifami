@@ -30,6 +30,11 @@ const FREQS = [
 
 const ROLE_LABEL = { admin: '管理员', parent: '家长', grandparent: '祖辈', child: '孩子' }
 
+function withGoalLabel(t) {
+  const unit = t.goal_type === 'count' ? '个' : '分钟'
+  return Object.assign({}, t, { goalLabel: t.goal_value + ' ' + unit })
+}
+
 Page({
   data: {
     templates: TEMPLATES,
@@ -46,15 +51,21 @@ Page({
     customGoal: '',
     weeklyTarget: '',
     goalUnit: '分钟',
+    batchMode: false,
+    batchTemplates: TEMPLATES.filter((t) => t.name !== '自定义').map((t) => Object.assign(withGoalLabel(t), { selected: true })),
+    batchFreqs: FREQS,
+    batchFreqIndex: 0,
+    batchWeeklyTarget: '',
     submitting: false
   },
 
-  onLoad() {
+  onLoad(options = {}) {
     if (!app.globalData.isAdmin) {
       wx.showToast({ title: '只有管理员才能录入', icon: 'none' })
       setTimeout(() => wx.navigateBack(), 500)
       return
     }
+    this.setData({ batchMode: options.batch === '1' })
     this.loadMembers()
   },
 
@@ -112,8 +123,15 @@ Page({
 
   selectGoal(e) { this.setData({ goalIndex: Number(e.currentTarget.dataset.i) }) },
   selectFreq(e) { this.setData({ freqIndex: Number(e.currentTarget.dataset.i) }) },
+  selectBatchFreq(e) { this.setData({ batchFreqIndex: Number(e.currentTarget.dataset.i) }) },
   selectOwner(e) { this.setData({ ownerIndex: Number(e.currentTarget.dataset.i) }) },
   onChild(e) { this.setData({ childIndex: Number(e.detail.value) }) },
+  toggleBatchTemplate(e) {
+    const i = Number(e.currentTarget.dataset.i)
+    const list = this.data.batchTemplates.slice()
+    list[i].selected = !list[i].selected
+    this.setData({ batchTemplates: list })
+  },
 
   submit() {
     if (this.data.submitting) return
@@ -156,6 +174,45 @@ Page({
         this.setData({ submitting: false })
         if (e.code === 4001) { app.logout(); wx.navigateBack() }
         else wx.showToast({ title: e.message || '创建失败', icon: 'none' })
+      })
+  },
+
+  submitBatch() {
+    if (this.data.submitting) return
+    const child = this.data.children[this.data.childIndex]
+    const owner = this.data.owners[this.data.ownerIndex]
+    if (!child) return wx.showToast({ title: '请先到「家庭」页添加孩子', icon: 'none' })
+    if (!owner) return wx.showToast({ title: '请选择责任人', icon: 'none' })
+    const selected = this.data.batchTemplates.filter((t) => t.selected)
+    if (selected.length === 0) return wx.showToast({ title: '请至少选择一个模板', icon: 'none' })
+    const freq = this.data.batchFreqs[this.data.batchFreqIndex].value
+    let weeklyTarget = 0
+    if (freq === 'weekly') {
+      weeklyTarget = parseInt(this.data.batchWeeklyTarget, 10)
+      if (!weeklyTarget || weeklyTarget <= 0) return wx.showToast({ title: '请输入每周次数', icon: 'none' })
+    }
+    this.setData({ submitting: true })
+    Promise.all(selected.map((t) => app.request('/v1/tasks', {
+      method: 'POST',
+      data: {
+        name: t.name,
+        goal_type: t.goal_type,
+        goal_value: t.goal_value,
+        freq,
+        weekly_target: weeklyTarget,
+        child_member_id: child.member_id,
+        owner_member_id: owner.member_id,
+        remind_time: ''
+      }
+    })))
+      .then(() => {
+        wx.showToast({ title: '已启用模板', icon: 'success' })
+        setTimeout(() => wx.navigateBack(), 600)
+      })
+      .catch((e) => {
+        this.setData({ submitting: false })
+        if (e.code === 4001) { app.logout(); wx.navigateBack() }
+        else wx.showToast({ title: e.message || '启用失败', icon: 'none' })
       })
   },
 

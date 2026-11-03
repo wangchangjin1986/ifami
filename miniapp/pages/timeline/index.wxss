@@ -1,0 +1,16 @@
+/* 成长时间线：按孩子筛选 + 时间轴。 */
+.intro-card { gap: 8rpx; }
+.timeline-list { display: flex; flex-direction: column; gap: 0; }
+.tl { display: flex; gap: 20rpx; }
+.tl-date {
+  width: 76rpx; flex-shrink: 0; color: var(--muted); font-size: 24rpx;
+  padding-top: 6rpx; text-align: right; font-variant-numeric: tabular-nums;
+}
+.tl-body {
+  flex: 1; min-width: 0; border-left: 4rpx solid var(--line);
+  padding-left: 22rpx; padding-bottom: 28rpx; position: relative;
+}
+.tl-body::before {
+  content: ""; position: absolute; left: -10rpx; top: 10rpx;
+  width: 16rpx; height: 16rpx; border-radius: 50%; background: var(--accent);
+}

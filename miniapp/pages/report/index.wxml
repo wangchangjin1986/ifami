@@ -1,0 +1,88 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">家庭周报</text>
+    <text class="sub">{{weekLabel}}</text>
+  </view>
+
+  <view class="body">
+    <view wx:if="{{loading}}" class="empty">正在生成周报…</view>
+    <view wx:elif="{{!logged}}" class="empty">请先到「家庭」页登录</view>
+    <view wx:elif="{{!hasFamily}}" class="empty">请先在「家庭」页创建家庭</view>
+    <block wx:else>
+      <view class="filters">
+        <text class="chip {{childFilter === 0 ? 'on' : ''}}" bindtap="selectChild" data-id="0">全部</text>
+        <text
+          class="chip {{childFilter === item.member_id ? 'on' : ''}}"
+          wx:for="{{children}}"
+          wx:key="member_id"
+          bindtap="selectChild"
+          data-id="{{item.member_id}}"
+        >{{item.name}}</text>
+      </view>
+
+      <view wx:if="{{!enoughData}}" class="card empty-card">
+        <view class="ev-title">这周还没有足够数据生成周报</view>
+        <view class="muted">完成打卡、安排日程后，周报会自动汇总本周事实记录；不会编造总结，也不会做排名或打榜。</view>
+        <view class="row report-actions">
+          <button class="btn ghost sm" bindtap="goTaskTemplates">任务模板</button>
+        </view>
+      </view>
+
+      <block wx:else>
+        <view class="kpis">
+          <view class="kpi"><text class="num">{{summary.completionRate}}</text><text>打卡完成率</text></view>
+          <view class="kpi"><text class="num">{{summary.checkinDone}}</text><text>本周打卡</text></view>
+          <view class="kpi"><text class="num">{{summary.pastScheduleText}}</text><text>本周安排</text></view>
+        </view>
+
+        <view class="card">
+          <view class="ev-title">坚持事实</view>
+          <block wx:if="{{taskRows.length === 0}}">
+            <view class="muted">还没有打卡任务；可先从任务模板批量启用阅读、跳绳、练琴等任务。</view>
+          </block>
+          <block wx:else>
+            <view class="rowline" wx:for="{{taskRows}}" wx:key="id">
+              <view class="row-main">
+                <view>{{item.title}}</view>
+                <view class="ev-meta">{{item.childName}} · {{item.meta}}</view>
+              </view>
+              <text class="v">{{item.progress}}</text>
+            </view>
+          </block>
+        </view>
+
+        <view class="card">
+          <view class="ev-title">本周片段</view>
+          <block wx:if="{{childHighlights.length === 0}}">
+            <view class="muted">暂无可展示片段。</view>
+          </block>
+          <block wx:else>
+            <view class="highlight" wx:for="{{childHighlights}}" wx:key="id">
+              <view class="ev-title">{{item.title}}</view>
+              <view class="ev-meta">{{item.childName}} · {{item.meta}}</view>
+            </view>
+          </block>
+        </view>
+
+        <view class="card">
+          <view class="ev-title">下周提醒</view>
+          <block wx:if="{{nextWeekItems.length === 0}}">
+            <view class="muted">下周暂未安排日程；可点 ＋ 安排一件事，或拍照导入课表。</view>
+          </block>
+          <block wx:else>
+            <view class="rowline" wx:for="{{nextWeekItems}}" wx:key="id">
+              <view class="row-main">
+                <view>{{item.title}}</view>
+                <view class="ev-meta">{{item.meta}}</view>
+              </view>
+            </view>
+          </block>
+        </view>
+
+        <button class="btn" open-type="share">转发给家人</button>
+        <view class="note">周报只基于家庭内事实记录生成；分享卡不展示排名、PK 或跨家庭对比。</view>
+      </block>
+    </block>
+  </view>
+</view>

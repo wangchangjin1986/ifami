@@ -20,6 +20,7 @@
   - 日程实例：`(family_id, occur_date)`、`(owner_member_id, occur_date)`
   - 触达轮询：`(status, next_check_at)`
   - 打卡：`(task_id, created_at)`、`(family_id, created_at)`
+  - 拍照导入：`ingest_jobs (family_id, created_at)`、`(status, heartbeat_at)`（Worker 接管扫描）
 - 新查询模式进代码前先确认有索引支撑，没有就同 PR 加迁移。
 
 ## 数据边界

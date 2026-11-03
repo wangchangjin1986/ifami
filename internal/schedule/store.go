@@ -31,6 +31,27 @@ func (s *Store) CreateSchedule(ctx context.Context, sch *Schedule, instances []S
 	})
 }
 
+// CreateSchedules 事务批量创建模板 + 物化实例，用于模板化录入确认入库。
+func (s *Store) CreateSchedules(ctx context.Context, schedules []*Schedule, instances [][]ScheduleInstance) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i, sch := range schedules {
+			if err := tx.Create(sch).Error; err != nil {
+				return err
+			}
+			insts := instances[i]
+			for j := range insts {
+				insts[j].ScheduleID = sch.ScheduleID
+			}
+			if len(insts) > 0 {
+				if err := tx.Create(&insts).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
 // FindSchedule 查 active 模板，未找到返回 (nil, nil)。
 func (s *Store) FindSchedule(ctx context.Context, familyID, scheduleID uint64) (*Schedule, error) {
 	var sch Schedule
@@ -136,15 +157,60 @@ func (s *Store) UpdateInstance(ctx context.Context, instanceID, familyID uint64,
 
 // FindConflicts 冲突检测：同孩子或同责任人时间重叠的 active 实例（排除指定模板）。
 // 时间重叠：对方 start_at < endAt 且 COALESCE(对方 end_at, 对方 start_at) > startAt。
+// ownerMemberID=0（在校块）时只按孩子判定，避免把其他孩子的在校块误判为同责任人。
 func (s *Store) FindConflicts(ctx context.Context, familyID, childMemberID, ownerMemberID uint64, startAt, endAt time.Time, excludeScheduleID uint64) ([]ScheduleInstance, error) {
 	q := s.db.WithContext(ctx).
 		Where("family_id = ? AND status = ?", familyID, StatusActive).
-		Where("start_at < ? AND COALESCE(end_at, start_at) > ?", endAt, startAt).
-		Where("(child_member_id = ? OR owner_member_id = ?)", childMemberID, ownerMemberID)
+		Where("start_at < ? AND COALESCE(end_at, start_at) > ?", endAt, startAt)
+	if ownerMemberID == 0 {
+		q = q.Where("child_member_id = ?", childMemberID)
+	} else {
+		q = q.Where("(child_member_id = ? OR owner_member_id = ?)", childMemberID, ownerMemberID)
+	}
 	if excludeScheduleID != 0 {
 		q = q.Where("schedule_id <> ?", excludeScheduleID)
 	}
 	var rows []ScheduleInstance
 	err := q.Order("start_at ASC").Find(&rows).Error
 	return rows, err
+}
+
+// ListRecurringSchedules 列全部 active 且带重复规则的模板（Worker 续展用，跨家庭扫描）。
+func (s *Store) ListRecurringSchedules(ctx context.Context) ([]Schedule, error) {
+	var rows []Schedule
+	err := s.db.WithContext(ctx).
+		Where("status = ? AND rrule IS NOT NULL AND rrule <> ''", StatusActive).
+		Find(&rows).Error
+	return rows, err
+}
+
+// MaxOccurDates 返回各模板已物化的最后一个发生日期；无实例的模板不在结果中。
+func (s *Store) MaxOccurDates(ctx context.Context, scheduleIDs []uint64) (map[uint64]*time.Time, error) {
+	type row struct {
+		ScheduleID uint64
+		Last       time.Time
+	}
+	var rows []row
+	err := s.db.WithContext(ctx).Model(&ScheduleInstance{}).
+		Select("schedule_id, MAX(occur_date) AS last").
+		Where("schedule_id IN ?", scheduleIDs).
+		Group("schedule_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint64]*time.Time, len(rows))
+	for i := range rows {
+		t := rows[i].Last
+		out[rows[i].ScheduleID] = &t
+	}
+	return out, nil
+}
+
+// InsertInstances 批量写入续展实例。
+func (s *Store) InsertInstances(ctx context.Context, instances []ScheduleInstance) error {
+	if len(instances) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).CreateInBatches(&instances, 200).Error
 }
