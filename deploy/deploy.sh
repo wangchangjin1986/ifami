@@ -44,8 +44,9 @@ if ! cmp -s deploy/Caddyfile /etc/caddy/Caddyfile; then
   echo "Caddyfile 已更新并重载"
 fi
 
-# 启动委托 service.sh（起停逻辑单一入口）；caddy 配置有变化时已在上面 reload
-bash deploy/service.sh start api worker
+# 启动委托 service.sh（起停逻辑单一入口）。
+# 日常发布也顺手确保 caddy 处于运行态，否则 api 本机健康但公网/真机仍然连不到。
+bash deploy/service.sh start api worker caddy
 
 # 重启后 Hertz 需要一点时间绑定端口，轮询等待而非立即检查
 ok=0
@@ -53,5 +54,12 @@ for _ in $(seq 1 15); do
   curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1 && { ok=1; break; }
   sleep 1
 done
-[[ $ok -eq 1 ]] || { echo "健康检查未通过，排查：bash deploy/service.sh logs api" >&2; exit 1; }
-echo "部署完成，/healthz 通过"
+[[ $ok -eq 1 ]] || { echo "本机健康检查未通过，排查：bash deploy/service.sh logs api" >&2; exit 1; }
+echo "本机 /healthz 通过"
+
+PUBLIC_IP="${PUBLIC_IP:-118.196.79.193}"
+if curl -fsS --max-time 5 "http://${PUBLIC_IP}/healthz" >/dev/null 2>&1; then
+  echo "公网 /healthz 通过：http://${PUBLIC_IP}/healthz"
+else
+  echo "公网 http://${PUBLIC_IP}/healthz 不通：请检查 caddy 状态、本机防火墙和云安全组 80 端口；真机调试会因此连不到后端" >&2
+fi
