@@ -192,25 +192,28 @@ func accessLog() app.HandlerFunc {
 			reqID = newRequestID()
 		}
 		c.Header("X-Request-Id", reqID)
-
-		c.Next(ctx)
-
 		if path == "/healthz" {
+			c.Next(ctx)
 			return
 		}
-		status := c.Response.StatusCode()
-		elapsed := time.Since(started)
 		familyID := string(c.GetHeader("X-Family-Id"))
 		ua := string(c.GetHeader("User-Agent"))
 		if query != "" {
 			path += "?" + query
 		}
+		logx.Infof("request_in request_id=%s method=%s path=%s client_ip=%s family_id=%s ua=%q",
+			reqID, method, path, c.ClientIP(), familyID, ua)
+
+		c.Next(ctx)
+
+		status := c.Response.StatusCode()
+		elapsed := time.Since(started)
 		logf := logx.Infof
 		if status >= 500 || elapsed > time.Second {
 			logf = logx.Warnf
 		}
-		logf("http_request request_id=%s method=%s path=%s status=%d cost_ms=%.1f client_ip=%s family_id=%s ua=%q",
-			reqID, method, path, status, float64(elapsed.Microseconds())/1000.0, c.ClientIP(), familyID, ua)
+		logf("response_out request_id=%s method=%s path=%s status=%d cost_ms=%.3f client_ip=%s family_id=%s ua=%q",
+			reqID, method, path, status, float64(elapsed.Nanoseconds())/1e6, c.ClientIP(), familyID, ua)
 	}
 }
 
