@@ -111,7 +111,7 @@ Page({
         this._weekSchedules = weekSchedules || []
         this._nextSchedules = nextSchedules || []
         this.setData({ children })
-        return this.loadCheckins(tasks || [])
+        return this.loadCheckins()
       })
       .then((checkinGroups) => {
         this._checkinGroups = checkinGroups || []
@@ -120,9 +120,8 @@ Page({
       })
   },
 
-  loadCheckins(tasks) {
-    if (!tasks.length) return Promise.resolve([])
-    return Promise.all(tasks.map((t) => app.request(`/v1/tasks/${t.task_id}/checkins`).then((rows) => ({ task: t, rows: rows || [] }))))
+  loadCheckins() {
+    return app.request(`/v1/checkins?start=${this._weekStart}&end=${this._weekEnd}`).then((rows) => rows || [])
   },
 
   buildReport(childFilter) {
@@ -135,9 +134,13 @@ Page({
     const elapsedDays = Math.max(1, Math.floor((this._scopeEndDate - new Date(weekStart + 'T00:00:00')) / 86400000) + 1)
     const elapsedWeekdays = countWeekdays(new Date(weekStart + 'T00:00:00'), this._scopeEndDate)
 
+    const taskMap = {}
+    ;(this._tasks || []).forEach((t) => { taskMap[t.task_id] = t })
     const checkinsByTask = {}
-    ;(this._checkinGroups || []).forEach((g) => {
-      checkinsByTask[g.task.task_id] = (g.rows || []).filter((c) => inRange(dateOnly(c.created_at), weekStart, weekEndExclusive))
+    ;(this._checkinGroups || []).forEach((c) => {
+      const t = taskMap[c.task_id]
+      if (!t || !inRange(dateOnly(c.created_at), weekStart, weekEndExclusive)) return
+      ;(checkinsByTask[c.task_id] = checkinsByTask[c.task_id] || []).push(c)
     })
 
     let totalExpected = 0
@@ -188,8 +191,6 @@ Page({
   },
 
   buildHighlights(childFilter, checkinsByTask, schedules, nameMap) {
-    const taskMap = {}
-    ;(this._tasks || []).forEach((t) => { taskMap[t.task_id] = t })
     const out = []
     Object.keys(checkinsByTask).forEach((id) => {
       const t = taskMap[id]

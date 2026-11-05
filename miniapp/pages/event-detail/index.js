@@ -9,6 +9,21 @@ function dateLabel(dateStr) {
   return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + WEEK_CN[d.getDay()]
 }
 
+function decodeQueryText(v, fallback = '') {
+  let s = v || fallback
+  for (let i = 0; i < 2; i++) {
+    if (!/%[0-9a-fA-F]{2}/.test(s)) break
+    try {
+      const decoded = decodeURIComponent(s)
+      if (decoded === s) break
+      s = decoded
+    } catch (e) {
+      break
+    }
+  }
+  return s
+}
+
 Page({
   data: {
     canManage: false,
@@ -26,10 +41,10 @@ Page({
     this._inst = options
     this.setData({
       canManage: !!app.globalData.isAdmin,
-      title: options.title || '',
+      title: decodeQueryText(options.title),
       time: dateLabel(options.occur_date) + ' ' + hhmm(options.start_at) + (options.end_at ? '–' + hhmm(options.end_at) : ''),
-      location: options.location || '',
-      note: options.note || ''
+      location: decodeQueryText(options.location),
+      note: decodeQueryText(options.note)
     })
     this.loadMembers()
   },

@@ -301,6 +301,25 @@ func (s *Service) ListCheckinsByTask(ctx context.Context, userID, familyID, task
 	return views, nil
 }
 
+// ListCheckinsByFamily 按时间窗口批量列家庭打卡记录，供周报/时间线聚合使用，避免按任务逐个查询。
+func (s *Service) ListCheckinsByFamily(ctx context.Context, userID, familyID uint64, start, end time.Time, childID uint64) ([]CheckinView, error) {
+	if _, _, err := s.id.RequireActive(ctx, userID, familyID); err != nil {
+		return nil, err
+	}
+	if !end.After(start) {
+		return nil, ErrBadParam
+	}
+	rows, err := s.store.ListCheckinsByFamily(ctx, familyID, start, end, childID)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]CheckinView, 0, len(rows))
+	for i := range rows {
+		views = append(views, toCheckinView(&rows[i]))
+	}
+	return views, nil
+}
+
 // ---- 内部辅助 ----
 
 // RemindDue 打卡提醒扫描（R3.3，Worker 每 30s 调用）：到点未完成的任务给责任父母发中等触达。
