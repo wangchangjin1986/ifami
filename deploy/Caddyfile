@@ -1,6 +1,6 @@
-# 备案完成前：公网 IP 直连，纯 HTTP（118.196.79.193:80）
-# 备案完成后：把 :80 改成 api.ifami.site，Caddy 自动签发 HTTPS
-:80 {
+# 备案已通过：api.ifami.site 由 Caddy 自动签发 HTTPS 证书。
+# DNS 需配置 A 记录到 118.196.79.193，安全组需放通 80/443。
+api.ifami.site {
     handle /h5/* {
         root * /opt/ifami/h5
         file_server

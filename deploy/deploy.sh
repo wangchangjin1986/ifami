@@ -57,9 +57,9 @@ done
 [[ $ok -eq 1 ]] || { echo "本机健康检查未通过，排查：bash deploy/service.sh logs api" >&2; exit 1; }
 echo "本机 /healthz 通过"
 
-PUBLIC_IP="${PUBLIC_IP:-118.196.79.193}"
-if curl -fsS --max-time 5 "http://${PUBLIC_IP}/healthz" >/dev/null 2>&1; then
-  echo "公网 /healthz 通过：http://${PUBLIC_IP}/healthz"
+PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://api.ifami.site/healthz}"
+if curl -fsS --max-time 10 "$PUBLIC_HEALTH_URL" >/dev/null 2>&1; then
+  echo "公网 /healthz 通过：${PUBLIC_HEALTH_URL}"
 else
-  echo "公网 http://${PUBLIC_IP}/healthz 不通：请检查 caddy 状态、本机防火墙和云安全组 80 端口；真机调试会因此连不到后端" >&2
+  echo "公网 ${PUBLIC_HEALTH_URL} 不通：请检查 DNS A 记录、caddy 证书、本机防火墙和云安全组 80/443 端口；真机/正式小程序会因此连不到后端" >&2
 fi
