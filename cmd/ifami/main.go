@@ -73,9 +73,7 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 	}
 	rdb := redisx.New(cfg.RedisAddr)
 	wx := wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret)
-	// 临时调试：打印微信凭据以定位 code2session 40125（invalid appsecret）。
-	// %q 会把尾随空格/换行等隐藏字符显式转义出来；定位后请删除本行并轮转日志，避免凭据长期留存。
-	logx.Infof("微信小程序凭据: appid=%s appsecret=%q len=%d", cfg.WXMiniAppID, cfg.WXMiniSecret, len(cfg.WXMiniSecret))
+	logx.Infof("微信小程序配置: appid_set=%t appsecret_set=%t appsecret_len=%d", cfg.WXMiniAppID != "", cfg.WXMiniSecret != "", len(cfg.WXMiniSecret))
 
 	// 字段级加密是合规铁律（手机号/孩子姓名），密钥必须配置。
 	field, err := crypto.NewFieldCipher(cfg.FieldEncKey)
@@ -194,6 +192,7 @@ func serveWorker() {
 	ctx := context.Background()
 	lastExtend := ""
 	scan := func() {
+		started := time.Now()
 		now := time.Now().UTC()
 		if err := notifSvc.ProcessDue(ctx); err != nil {
 			logx.Errorf("worker 触达扫描失败: %v", err)
@@ -214,6 +213,9 @@ func serveWorker() {
 				lastExtend = day
 				logx.Infof("worker 日程实例续展完成，新增 %d 条", n)
 			}
+		}
+		if elapsed := time.Since(started); elapsed > 5*time.Second {
+			logx.Warnf("worker 单轮扫描较慢: %.1fms", float64(elapsed.Microseconds())/1000.0)
 		}
 	}
 	scan()
