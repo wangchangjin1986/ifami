@@ -207,12 +207,13 @@ func accessLog() app.HandlerFunc {
 		c.Next(ctx)
 
 		status := c.Response.StatusCode()
+		// 从请求进入中间件开始，到业务 handler 写完响应为止的总处理耗时。
 		elapsed := time.Since(started)
 		logf := logx.Infof
 		if status >= 500 || elapsed > time.Second {
 			logf = logx.Warnf
 		}
-		logf("response_out request_id=%s method=%s path=%s status=%d cost_ms=%.3f client_ip=%s family_id=%s ua=%q",
+		logf("request_out request_id=%s method=%s path=%s status=%d cost_ms=%.3f client_ip=%s family_id=%s ua=%q",
 			reqID, method, path, status, float64(elapsed.Nanoseconds())/1e6, c.ClientIP(), familyID, ua)
 	}
 }

@@ -3,6 +3,7 @@ const app = getApp()
 const { fmt, mondayOf, addDays, hhmm } = require('../../utils/date')
 
 const FREQ_LABEL = { daily: '每天', weekdays: '工作日', weekly: '每周' }
+const OPTIONAL_TIMEOUT_MS = 5000
 
 function goalSuffix(t) {
   if (t.goal_type === 'timer') return t.goal_value + ' 分钟'
@@ -35,6 +36,30 @@ function scheduleIcon(type) {
   return '⏰'
 }
 
+function withTimeout(promise, fallback, ms = OPTIONAL_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    let done = false
+    const timer = setTimeout(() => {
+      if (done) return
+      done = true
+      resolve(fallback)
+    }, ms)
+    promise
+      .then((res) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        resolve(res)
+      })
+      .catch(() => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        resolve(fallback)
+      })
+  })
+}
+
 Page({
   data: {
     logged: false,
@@ -60,7 +85,7 @@ Page({
       return Promise.resolve()
     }
     this.setData({ loading: true })
-    return app.refreshMe()
+    return app.maybeRefreshMe()
       .then(() => this.loadReport())
       .catch((e) => {
         this.setData({ loading: false })
@@ -93,12 +118,12 @@ Page({
     this.setData({ hasFamily: true, weekLabel: weekStart.slice(5).replace('-', '/') + ' – ' + weekEnd.slice(5).replace('-', '/') })
 
     return Promise.all([
-      app.request(`/v1/families/${fid}/members`),
-      app.request('/v1/tasks'),
-      app.request(`/v1/schedules/instances?start=${weekStart}&end=${weekEnd}`),
-      app.request(`/v1/schedules/instances?start=${this._nextStart}&end=${this._nextEnd}`)
+      withTimeout(app.request(`/v1/families/${fid}/members`), []),
+      withTimeout(app.request('/v1/tasks'), []),
+      withTimeout(app.request(`/v1/schedules/instances?start=${weekStart}&end=${weekEnd}`), []),
+      withTimeout(this.loadCheckins(), [])
     ])
-      .then(([members, tasks, weekSchedules, nextSchedules]) => {
+      .then(([members, tasks, weekSchedules, checkinGroups]) => {
         const nameMap = {}
         const children = []
         ;(members || []).forEach((m) => {
@@ -109,19 +134,26 @@ Page({
         this._nameMap = nameMap
         this._tasks = tasks || []
         this._weekSchedules = weekSchedules || []
-        this._nextSchedules = nextSchedules || []
-        this.setData({ children })
-        return this.loadCheckins()
-      })
-      .then((checkinGroups) => {
+        this._nextSchedules = []
         this._checkinGroups = checkinGroups || []
+        this.setData({ children })
         this.applyFilter(this.data.childFilter)
         this.setData({ loading: false })
+        this.loadNextWeekItems()
       })
   },
 
   loadCheckins() {
     return app.request(`/v1/checkins?start=${this._weekStart}&end=${this._weekEnd}`).then((rows) => rows || [])
+  },
+
+  loadNextWeekItems() {
+    return withTimeout(app.request(`/v1/schedules/instances?start=${this._nextStart}&end=${this._nextEnd}`), [])
+      .then((rows) => {
+        this._nextSchedules = rows || []
+        const report = this.buildReport(this.data.childFilter)
+        this.setData({ nextWeekItems: report.nextWeekItems })
+      })
   },
 
   buildReport(childFilter) {
@@ -166,7 +198,7 @@ Page({
     const checkinDone = Object.keys(checkinsByTask).reduce((n, id) => n + checkinsByTask[id].length, 0)
     const rate = totalExpected > 0 ? Math.round((totalDone / totalExpected) * 100) : 0
     const pastScheduleCount = schedules.filter((i) => i.occur_date <= fmt(new Date())).length
-    const childHighlights = this.buildHighlights(childFilter, checkinsByTask, schedules, nameMap)
+    const childHighlights = this.buildHighlights(childFilter, checkinsByTask, schedules, nameMap, taskMap)
     const nextWeekItems = nextSchedules
       .sort((a, b) => (a.start_at < b.start_at ? -1 : 1))
       .slice(0, 5)
@@ -190,7 +222,7 @@ Page({
     }
   },
 
-  buildHighlights(childFilter, checkinsByTask, schedules, nameMap) {
+  buildHighlights(childFilter, checkinsByTask, schedules, nameMap, taskMap) {
     const out = []
     Object.keys(checkinsByTask).forEach((id) => {
       const t = taskMap[id]
