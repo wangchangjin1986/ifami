@@ -50,3 +50,43 @@ func TestWeekStart(t *testing.T) {
 		}
 	}
 }
+
+func TestCalcStreakTodayAndYesterday(t *testing.T) {
+	now := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name  string
+		dates map[string]bool
+		want  int
+	}{
+		{
+			name: "今天已打卡从今天连续计算",
+			dates: map[string]bool{
+				"2026-11-05": true,
+				"2026-11-04": true,
+				"2026-11-03": true,
+			},
+			want: 3,
+		},
+		{
+			name: "今天未打卡从昨天连续计算",
+			dates: map[string]bool{
+				"2026-11-04": true,
+				"2026-11-03": true,
+			},
+			want: 2,
+		},
+		{
+			name: "断档后停止",
+			dates: map[string]bool{
+				"2026-11-05": true,
+				"2026-11-03": true,
+			},
+			want: 1,
+		},
+	}
+	for _, c := range cases {
+		if got := calcStreak(c.dates, now); got != c.want {
+			t.Errorf("%s: calcStreak() = %d，want %d", c.name, got, c.want)
+		}
+	}
+}

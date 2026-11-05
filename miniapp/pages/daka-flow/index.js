@@ -43,6 +43,7 @@ Page({
   },
 
   selectMethod(e) {
+    if (this.data.submitting) return
     this.setData({ methodIndex: Number(e.currentTarget.dataset.i) })
   },
 
@@ -59,19 +60,33 @@ Page({
 
     const payload = m.key === 'count' ? { count: n } : { seconds: n * 60 }
     this.setData({ submitting: true })
+    wx.showLoading({ title: '保存中…', mask: true })
     app.request(`/v1/tasks/${this.data.taskId}/checkins`, {
       method: 'POST',
       data: { payload, submit_member_id: 0 },
       header: { 'Idempotency-Key': genKey() }
     })
       .then((r) => {
+        wx.hideLoading()
+        this.syncPreviousPage()
         this.setData({ submitting: false, done: true, streakDays: r.streak_days || 0 })
+        wx.showToast({ title: '已保存', icon: 'success' })
       })
       .catch((e) => {
+        wx.hideLoading()
         this.setData({ submitting: false })
         if (e.code === 4001) { app.logout(); wx.navigateBack() }
         else wx.showToast({ title: e.message || '提交失败', icon: 'none' })
       })
+  },
+
+  // 提交成功后先把上一页任务置为“已完成”，返回时不再等待一次完整刷新，降低体感耗时。
+  syncPreviousPage() {
+    const pages = getCurrentPages()
+    const prev = pages[pages.length - 2]
+    if (prev && typeof prev.markTaskChecked === 'function') {
+      prev.markTaskChecked(this.data.taskId)
+    }
   },
 
   // 再打一个：回到填写态（同任务再记一次）

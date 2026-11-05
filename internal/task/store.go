@@ -125,6 +125,17 @@ func (s *Store) ListCheckinsByTask(ctx context.Context, familyID, taskID uint64)
 	return rows, err
 }
 
+// ListCheckinDatesByTask 仅拉取 streak 计算需要的日期列，避免打卡提交后为算连续天数读取全部 payload 历史。
+func (s *Store) ListCheckinDatesByTask(ctx context.Context, familyID, taskID uint64, start, end time.Time) ([]time.Time, error) {
+	var rows []time.Time
+	err := s.db.WithContext(ctx).
+		Model(&Checkin{}).
+		Where("family_id = ? AND task_id = ? AND created_at >= ? AND created_at < ?", familyID, taskID, start, end).
+		Order("created_at DESC").
+		Pluck("created_at", &rows).Error
+	return rows, err
+}
+
 // ListCheckinsByFamily 列家庭打卡时间线；[start, end) 半开区间，可按孩子筛选。
 func (s *Store) ListCheckinsByFamily(ctx context.Context, familyID uint64, start, end time.Time, childID uint64) ([]Checkin, error) {
 	q := s.db.WithContext(ctx).
