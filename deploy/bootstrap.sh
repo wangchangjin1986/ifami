@@ -224,26 +224,23 @@ else
   warn "/healthz 未能通过，请排查：journalctl -u ifami-api -e"
 fi
 
-# 公网链路验证（Caddy :80 → api），安全组需放通 80
-if curl -fsS --max-time 5 "http://${PUBLIC_IP}/healthz" >/dev/null 2>&1; then
-  log "公网链路正常：http://${PUBLIC_IP}/healthz"
+# 公网链路验证（HTTPS 域名 → Caddy → api），安全组需放通 80/443
+PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://api.ifami.site/healthz}"
+if curl -fsS --max-time 10 "${PUBLIC_HEALTH_URL}" >/dev/null 2>&1; then
+  log "公网链路正常：${PUBLIC_HEALTH_URL}"
 else
-  warn "公网 http://${PUBLIC_IP}/healthz 不通，请检查安全组是否放通 80 端口"
+  warn "公网 ${PUBLIC_HEALTH_URL} 不通，请检查 DNS A 记录是否指向 ${PUBLIC_IP}、安全组是否放通 80/443、Caddy 证书是否签发成功"
 fi
 
 cat <<EOF
 
-后续步骤（备案完成前，IP 直连阶段）：
- 1. 安全组：放通 80/22（22 限办公网 IP），不放 3306/6379
- 2. 小程序：开发者工具勾选「不校验合法域名」，apiBase 已指向 http://${PUBLIC_IP}
- 3. 备份：crontab -e 加一行  \`0 3 * * * ${REPO_DIR}/deploy/backup.sh\`
- 4. 密钥都在 ${REPO_DIR}/deploy/.env，务必另行备份（尤其 FIELD_ENC_KEY / MYSQL_ROOT_PASSWORD / INVITE_SECRET）
- 5. 日常发布：本机执行 bash ${REPO_DIR}/deploy/deploy.sh
- 6. 拍照导入日程：deploy/.env 需配置 ARK_API_KEY / ARK_MODEL（火山方舟控制台开通豆包视觉模型并创建推理接入点）；
+后续步骤（备案已完成，HTTPS 域名阶段）：
+ 1. DNS：api.ifami.site 的 A 记录指向 ${PUBLIC_IP}
+ 2. 安全组：放通 80/443/22（22 限办公网 IP），不放 3306/6379
+ 3. 微信后台：配置 request / uploadFile / downloadFile 合法域名为 https://api.ifami.site
+ 4. 备份：crontab -e 加一行  \`0 3 * * * ${REPO_DIR}/deploy/backup.sh\`
+ 5. 密钥都在 ${REPO_DIR}/deploy/.env，务必另行备份（尤其 FIELD_ENC_KEY / MYSQL_ROOT_PASSWORD / INVITE_SECRET）
+ 6. 日常发布：本机执行 bash ${REPO_DIR}/deploy/deploy.sh
+ 7. 拍照导入日程：deploy/.env 需配置 ARK_API_KEY / ARK_MODEL（火山方舟控制台开通豆包视觉模型并创建推理接入点）；
     识别原图临时存于 ${INGEST_DIR}，识别完成即删，不进 MySQL 备份
-
-域名备案完成后：
- 1. api.ifami.site 的 A 记录指向 ${PUBLIC_IP}，Caddyfile 把 :80 改成 api.ifami.site（自动 HTTPS）
- 2. miniapp/app.js 的 apiBase 改为 https://api.ifami.site
- 3. 微信后台配置 request / uploadFile / downloadFile 合法域名（拍照导入走 uploadFile）
 EOF

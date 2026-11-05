@@ -18,9 +18,8 @@ function normalizeMemberships(list) {
 
 App({
   globalData: {
-    // 默认指向 Phase 0 服务器（备案完成前 IP 直连 HTTP，开发者工具需勾选「不校验合法域名」）；
-    // 本地联调改回 http://127.0.0.1:8080；备案完成后改为 https://api.ifami.site。
-    apiBase: 'http://118.196.79.193',
+    // 默认指向备案后的 HTTPS 域名；本地联调改回 http://127.0.0.1:8080。
+    apiBase: 'https://api.ifami.site',
     token: '',
     user: null,        // {user_id, nick, avatar}
     memberships: [],   // [{family_id, role, is_admin}]
