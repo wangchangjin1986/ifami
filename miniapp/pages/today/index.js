@@ -32,12 +32,21 @@ Page({
       this.setData({ logged: false, hasFamily: false, items: [], empty: true, familyName: '' })
       return
     }
-    app.refreshMe()
-      .then(() => this.loadToday())
-      .catch((e) => {
-        if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, items: [], empty: true }) }
-        else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
-      })
+    const handleErr = (e, silent = false) => {
+      if (e.code === 4001) {
+        app.logout()
+        this.setData({ logged: false, hasFamily: false, items: [], empty: true })
+        return
+      }
+      if (!silent) wx.showToast({ title: e.message || '加载失败', icon: 'none' })
+    }
+    const ready = app.globalData.familyId && (app.globalData.memberships || []).length > 0
+    if (!ready) {
+      app.ensureLogin().then(() => this.loadToday()).catch((e) => handleErr(e))
+      return
+    }
+    this.loadToday().catch((e) => handleErr(e))
+    app.maybeRefreshMe().catch((e) => handleErr(e, true))
   },
 
   loadToday() {

@@ -16,6 +16,8 @@ function normalizeMemberships(list) {
   }))
 }
 
+const ME_REFRESH_TTL_MS = 5 * 60 * 1000
+
 App({
   globalData: {
     // 默认指向备案后的 HTTPS 域名；本地联调改回 http://127.0.0.1:8080。
@@ -26,7 +28,8 @@ App({
     memberships: [],   // [{family_id, role, is_admin}]
     familyId: null,    // 当前家庭（默认第一个）
     role: null,        // parent|grandparent|child
-    isAdmin: false
+    isAdmin: false,
+    meRefreshAt: 0     // 最近一次 /v1/me 成功时间，用于避免切 Tab 时反复校验
   },
 
   onLaunch() {
@@ -36,6 +39,23 @@ App({
     this.globalData.familyId = wx.getStorageSync('familyId') || null
     this.globalData.role = wx.getStorageSync('role') || null
     this.globalData.isAdmin = !!wx.getStorageSync('isAdmin')
+    this.globalData.meRefreshAt = Number(wx.getStorageSync('meRefreshAt') || 0)
+  },
+
+  onShow(options) {
+    this.routeUnauthedEntry(options)
+  },
+
+  // 冷启动无会话时，默认落到「家庭」Tab，避免首屏停在今日/日历/打卡的“请先登录”空态。
+  routeUnauthedEntry(options = {}) {
+    if (this._routedUnauthedEntry) return
+    if (this.globalData.token && this.globalData.user) return
+    const path = options.path || 'pages/today/index'
+    if (path === 'pages/family/index' || path === 'pages/invite/index') return
+    const tabPages = ['pages/today/index', 'pages/week/index', 'pages/daka/index']
+    if (!tabPages.includes(path)) return
+    this._routedUnauthedEntry = true
+    setTimeout(() => wx.switchTab({ url: '/pages/family/index' }), 0)
   },
 
   // 统一请求：Promise 化 wx.request，注入鉴权头，解析 {code, data, message}。
@@ -99,6 +119,7 @@ App({
     this.globalData.token = data.token || ''
     this.globalData.user = data.user || null
     this.globalData.memberships = normalizeMemberships(data.memberships)
+    this.markMeFresh()
     wx.setStorageSync('token', this.globalData.token)
     wx.setStorageSync('user', this.globalData.user)
     wx.setStorageSync('memberships', this.globalData.memberships)
@@ -126,11 +147,17 @@ App({
     wx.setStorageSync('isAdmin', this.globalData.isAdmin)
   },
 
+  markMeFresh() {
+    this.globalData.meRefreshAt = Date.now()
+    wx.setStorageSync('meRefreshAt', this.globalData.meRefreshAt)
+  },
+
   // 刷新当前用户与家庭列表（创建/加入家庭后调用，重新拉 memberships）。
   refreshMe() {
     return this.request('/v1/me').then((data) => {
       this.globalData.user = data.user || null
       this.globalData.memberships = normalizeMemberships(data.memberships)
+      this.markMeFresh()
       wx.setStorageSync('user', this.globalData.user)
       wx.setStorageSync('memberships', this.globalData.memberships)
       const list = this.globalData.memberships
@@ -145,12 +172,21 @@ App({
     })
   },
 
+  // 带 TTL 的会话校验：短时间内切 Tab/回前台不重复阻塞在 /v1/me。
+  maybeRefreshMe({ force = false } = {}) {
+    if (!this.globalData.token || !this.globalData.user) return this.login()
+    const fresh = Date.now() - (this.globalData.meRefreshAt || 0) < ME_REFRESH_TTL_MS
+    if (!force && fresh) {
+      return Promise.resolve({ user: this.globalData.user, memberships: this.globalData.memberships })
+    }
+    return this.refreshMe()
+  },
+
   // 确保已登录（页面 onShow 调用）；token 失效时会重新登录。
   ensureLogin() {
     if (this.globalData.token && this.globalData.user) {
-      // 每次进入页面都刷新 /v1/me，避免小程序本地缓存仍是旧 memberships（缺少 is_admin）时，
-      // 管理员被误判为普通成员，导致家庭成员编辑入口消失。
-      return this.refreshMe().catch((e) => {
+      // /v1/me 带 TTL，避免每次切页面都串行请求；创建/加入/成员变更后仍会显式 refreshMe。
+      return this.maybeRefreshMe().catch((e) => {
         if (e.code === 4001) {
           this.logout()
           return this.login()
@@ -170,6 +206,7 @@ App({
     wx.removeStorageSync('user')
     wx.removeStorageSync('memberships')
     wx.removeStorageSync('isAdmin')
+    wx.removeStorageSync('meRefreshAt')
     this.setFamily(null)
   }
 })

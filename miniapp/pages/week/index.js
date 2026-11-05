@@ -55,12 +55,21 @@ Page({
       this.setData({ logged: false, hasFamily: false, weekSlots: [], monthCells: [] })
       return Promise.resolve()
     }
-    return app.refreshMe()
-      .then(() => this.loadCalendar())
-      .catch((e) => {
-        if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, weekSlots: [], monthCells: [] }) }
-        else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
-      })
+    const handleErr = (e, silent = false) => {
+      if (e.code === 4001) {
+        app.logout()
+        this.setData({ logged: false, hasFamily: false, weekSlots: [], monthCells: [] })
+        return
+      }
+      if (!silent) wx.showToast({ title: e.message || '加载失败', icon: 'none' })
+    }
+    const ready = app.globalData.familyId && (app.globalData.memberships || []).length > 0
+    if (!ready) {
+      return app.ensureLogin().then(() => this.loadCalendar()).catch((e) => handleErr(e))
+    }
+    const load = this.loadCalendar().catch((e) => handleErr(e))
+    app.maybeRefreshMe().catch((e) => handleErr(e, true))
+    return load
   },
 
   loadCalendar() {
