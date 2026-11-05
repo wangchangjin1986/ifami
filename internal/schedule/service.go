@@ -164,6 +164,7 @@ func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uin
 	schedules := make([]*Schedule, 0, len(inputs))
 	instances := make([][]ScheduleInstance, 0, len(inputs))
 	conflicts := make([]BatchConflict, 0)
+	specs := make([]conflictSpec, 0, len(inputs))
 	for i := range inputs {
 		sch, err := s.buildSchedule(ctx, familyID, &inputs[i])
 		if err != nil {
@@ -173,16 +174,15 @@ func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uin
 		if err != nil {
 			return nil, err
 		}
-		hits, err := s.conflicts(ctx, familyID, sch.ChildMemberID, sch.OwnerMemberID, insts, 0)
-		if err != nil {
-			return nil, err
-		}
-		for j := range hits {
-			conflicts = append(conflicts, BatchConflict{Index: i, Instance: &hits[j]})
-		}
 		schedules = append(schedules, sch)
 		instances = append(instances, insts)
+		specs = append(specs, conflictSpec{ChildID: sch.ChildMemberID, OwnerID: sch.OwnerMemberID, Instances: insts})
 	}
+	storedConflicts, err := s.batchConflicts(ctx, familyID, specs, 0)
+	if err != nil {
+		return nil, err
+	}
+	conflicts = append(conflicts, storedConflicts...)
 	conflicts = append(conflicts, intraBatchConflicts(schedules, instances)...)
 	if len(conflicts) > 0 && !force {
 		return nil, &httpx.Err{Code: 2005, Message: "存在时间冲突", HTTP: 400, Data: map[string]any{"conflicts": conflicts}}
@@ -562,16 +562,143 @@ func newInstance(sch *Schedule, d time.Time) ScheduleInstance {
 	}
 }
 
-// conflicts 逐个新实例查时间重叠，按 instance_id 去重返回冲突视图。
+// conflicts 批量拉取候选后在内存中检测时间重叠，按 instance_id 去重返回冲突视图。
 func (s *Service) conflicts(ctx context.Context, familyID, childID, ownerID uint64, instances []ScheduleInstance, excludeScheduleID uint64) ([]InstanceView, error) {
+	return s.conflictsForSpecs(ctx, familyID, []conflictSpec{{ChildID: childID, OwnerID: ownerID, Instances: instances}}, excludeScheduleID)
+}
+
+type conflictSpec struct {
+	ChildID   uint64
+	OwnerID   uint64
+	Instances []ScheduleInstance
+}
+
+// conflictsForSpecs 批量冲突检测：先用一次 SQL 拉出本批实例时间窗内的候选，再在内存中做精确匹配。
+// 这样拍照导入确认的 50 条×90 天实例不会退化成数千次 SQL。
+func (s *Service) conflictsForSpecs(ctx context.Context, familyID uint64, specs []conflictSpec, excludeScheduleID uint64) ([]InstanceView, error) {
+	minStart, maxEnd, ok := conflictWindow(specs)
+	if !ok {
+		return nil, nil
+	}
+	children := uniqueChildren(specs)
+	owners := uniqueOwners(specs)
+	candidates, err := s.store.FindConflictCandidates(ctx, familyID, children, owners, minStart, maxEnd, excludeScheduleID)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[uint64]bool{}
+	var out []InstanceView
+	for _, spec := range specs {
+		for _, inst := range spec.Instances {
+			for i := range candidates {
+				cand := &candidates[i]
+				if seen[cand.InstanceID] || !sameConflictScope(spec.ChildID, spec.OwnerID, cand) || !timeOverlap(inst, *cand) {
+					continue
+				}
+				seen[cand.InstanceID] = true
+				out = append(out, toInstanceView(cand))
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *Service) batchConflicts(ctx context.Context, familyID uint64, specs []conflictSpec, excludeScheduleID uint64) ([]BatchConflict, error) {
+	minStart, maxEnd, ok := conflictWindow(specs)
+	if !ok {
+		return nil, nil
+	}
+	candidates, err := s.store.FindConflictCandidates(ctx, familyID, uniqueChildren(specs), uniqueOwners(specs), minStart, maxEnd, excludeScheduleID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BatchConflict, 0)
+	for idx, spec := range specs {
+		seen := map[uint64]bool{}
+		for _, inst := range spec.Instances {
+			for i := range candidates {
+				cand := &candidates[i]
+				if seen[cand.InstanceID] || !sameConflictScope(spec.ChildID, spec.OwnerID, cand) || !timeOverlap(inst, *cand) {
+					continue
+				}
+				seen[cand.InstanceID] = true
+				view := toInstanceView(cand)
+				out = append(out, BatchConflict{Index: idx, Instance: &view})
+			}
+		}
+	}
+	return out, nil
+}
+
+func conflictWindow(specs []conflictSpec) (time.Time, time.Time, bool) {
+	var minStart, maxEnd time.Time
+	ok := false
+	for _, spec := range specs {
+		for _, inst := range spec.Instances {
+			endAt := effectiveEnd(inst)
+			if !ok || inst.StartAt.Before(minStart) {
+				minStart = inst.StartAt
+			}
+			if !ok || endAt.After(maxEnd) {
+				maxEnd = endAt
+			}
+			ok = true
+		}
+	}
+	return minStart, maxEnd, ok
+}
+
+func uniqueChildren(specs []conflictSpec) []uint64 {
+	seen := map[uint64]bool{}
+	out := make([]uint64, 0, len(specs))
+	for _, spec := range specs {
+		if spec.ChildID == 0 || seen[spec.ChildID] {
+			continue
+		}
+		seen[spec.ChildID] = true
+		out = append(out, spec.ChildID)
+	}
+	return out
+}
+
+func uniqueOwners(specs []conflictSpec) []uint64 {
+	seen := map[uint64]bool{}
+	out := make([]uint64, 0, len(specs))
+	for _, spec := range specs {
+		if spec.OwnerID == 0 || seen[spec.OwnerID] {
+			continue
+		}
+		seen[spec.OwnerID] = true
+		out = append(out, spec.OwnerID)
+	}
+	return out
+}
+
+func sameConflictScope(childID, ownerID uint64, cand *ScheduleInstance) bool {
+	if cand.ChildMemberID == childID {
+		return true
+	}
+	return ownerID != 0 && cand.OwnerMemberID == ownerID
+}
+
+func timeOverlap(a, b ScheduleInstance) bool {
+	ae, be := effectiveEnd(a), effectiveEnd(b)
+	return b.StartAt.Before(ae) && be.After(a.StartAt) || a.StartAt.Equal(b.StartAt)
+}
+
+func effectiveEnd(inst ScheduleInstance) time.Time {
+	if inst.EndAt != nil {
+		return *inst.EndAt
+	}
+	return inst.StartAt
+}
+
+// legacyConflicts 保留逐实例冲突检测实现，便于必要时回退/对照测试。
+func (s *Service) legacyConflicts(ctx context.Context, familyID, childID, ownerID uint64, instances []ScheduleInstance, excludeScheduleID uint64) ([]InstanceView, error) {
 	seen := map[uint64]bool{}
 	var out []InstanceView
 	for _, inst := range instances {
-		endAt := inst.StartAt
-		if inst.EndAt != nil {
-			endAt = *inst.EndAt
-		}
-		hits, err := s.store.FindConflicts(ctx, familyID, childID, ownerID, inst.StartAt, endAt, excludeScheduleID)
+		hits, err := s.store.FindConflicts(ctx, familyID, childID, ownerID, inst.StartAt, effectiveEnd(inst), excludeScheduleID)
 		if err != nil {
 			return nil, err
 		}

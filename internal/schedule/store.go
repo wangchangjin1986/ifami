@@ -175,6 +175,29 @@ func (s *Store) FindConflicts(ctx context.Context, familyID, childMemberID, owne
 	return rows, err
 }
 
+// FindConflictCandidates 批量拉取冲突候选实例。调用方再在内存中按 child/owner 与精确时间区间过滤。
+// 使用 <= / >= 是为了把零时长提醒（end_at=NULL）同一时间点也纳入候选；相邻非重叠会在内存过滤掉。
+func (s *Store) FindConflictCandidates(ctx context.Context, familyID uint64, childMemberIDs, ownerMemberIDs []uint64, minStart, maxEnd time.Time, excludeScheduleID uint64) ([]ScheduleInstance, error) {
+	q := s.db.WithContext(ctx).
+		Where("family_id = ? AND status = ?", familyID, StatusActive).
+		Where("start_at <= ? AND COALESCE(end_at, start_at) >= ?", maxEnd, minStart)
+	if len(childMemberIDs) > 0 && len(ownerMemberIDs) > 0 {
+		q = q.Where("(child_member_id IN ? OR owner_member_id IN ?)", childMemberIDs, ownerMemberIDs)
+	} else if len(childMemberIDs) > 0 {
+		q = q.Where("child_member_id IN ?", childMemberIDs)
+	} else if len(ownerMemberIDs) > 0 {
+		q = q.Where("owner_member_id IN ?", ownerMemberIDs)
+	} else {
+		return nil, nil
+	}
+	if excludeScheduleID != 0 {
+		q = q.Where("schedule_id <> ?", excludeScheduleID)
+	}
+	var rows []ScheduleInstance
+	err := q.Order("start_at ASC").Find(&rows).Error
+	return rows, err
+}
+
 // ListRecurringSchedules 列全部 active 且带重复规则的模板（Worker 续展用，跨家庭扫描）。
 func (s *Store) ListRecurringSchedules(ctx context.Context) ([]Schedule, error) {
 	var rows []Schedule

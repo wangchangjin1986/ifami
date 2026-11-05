@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"time"
 )
 
 const code2SessionURL = "https://api.weixin.qq.com/sns/jscode2session"
+const defaultTimeout = 5 * time.Second
 
 // MiniClient 小程序服务端客户端。
 type MiniClient struct {
@@ -26,7 +29,15 @@ func NewMiniClient(appid, secret string) *MiniClient {
 	if v := os.Getenv("WX_CODE2SESSION_URL"); v != "" {
 		base = v
 	}
-	return &MiniClient{appid: appid, secret: secret, http: &http.Client{}, baseURL: base}
+	return &MiniClient{appid: appid, secret: secret, http: &http.Client{Timeout: envTimeout()}, baseURL: base}
+}
+
+func envTimeout() time.Duration {
+	v, err := strconv.Atoi(os.Getenv("WX_HTTP_TIMEOUT_SECONDS"))
+	if err != nil || v <= 0 {
+		return defaultTimeout
+	}
+	return time.Duration(v) * time.Second
 }
 
 // Session 是 code2session 的返回。Phase 0 只依赖 OpenID；

@@ -20,6 +20,7 @@ App({
   globalData: {
     // 默认指向备案后的 HTTPS 域名；本地联调改回 http://127.0.0.1:8080。
     apiBase: 'https://api.ifami.site',
+    requestTimeout: 15000,
     token: '',
     user: null,        // {user_id, nick, avatar}
     memberships: [],   // [{family_id, role, is_admin}]
@@ -44,13 +45,15 @@ App({
     if (this.globalData.token) header.Authorization = 'Bearer ' + this.globalData.token
     const fid = familyId !== null ? familyId : this.globalData.familyId
     if (fid) header['X-Family-Id'] = String(fid)
+    const url = this.globalData.apiBase + path
 
     return new Promise((resolve, reject) => {
       wx.request({
-        url: this.globalData.apiBase + path,
+        url,
         method,
         data,
         header,
+        timeout: this.globalData.requestTimeout,
         success(res) {
           const body = res.data || {}
           if (res.statusCode === 200 && body.code === 0) {
@@ -64,8 +67,11 @@ App({
           reject(err)
         },
         fail(err) {
-          err.message = '网络请求失败（本地联调请确认后端已启动）'
-          reject(err)
+          const detail = err && err.errMsg ? `：${err.errMsg}` : ''
+          const e = new Error(`网络请求失败，请检查小程序合法域名或后端 HTTPS 状态${detail}`)
+          e.cause = err
+          e.url = url
+          reject(e)
         }
       })
     })

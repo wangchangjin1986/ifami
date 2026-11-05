@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+var dueJobBatchSize = envInt("NOTIFY_DUE_JOB_BATCH_SIZE", 200)
 
 // Store 是 notify 模块的 DB 访问层，只读写本模块的表（notify_jobs）。
 type Store struct {
@@ -54,9 +58,18 @@ func (s *Store) ListDueJobs(ctx context.Context, status string, before time.Time
 	var rows []NotifyJob
 	err := s.db.WithContext(ctx).
 		Where("status = ? AND next_check_at <= ?", status, before).
-		Order("job_id ASC").
+		Order("next_check_at ASC, job_id ASC").
+		Limit(dueJobBatchSize).
 		Find(&rows).Error
 	return rows, err
+}
+
+func envInt(key string, def int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || v <= 0 {
+		return def
+	}
+	return v
 }
 
 // UpdateJob 更新任务（状态/通道状态/下次检查时间）。

@@ -18,25 +18,28 @@
         <view class="rowline"><text>任务模板</text><text class="v">阅读 / 跳绳 / 练琴</text></view>
         <view class="muted">一次勾选多个常见任务，统一设置孩子、频次和责任家长。</view>
       </view>
-      <view wx:if="{{groups.length === 0}}" class="empty">暂无打卡任务，点右下角 ＋ 新建</view>
+      <view wx:if="{{loading}}" class="empty">正在加载今日任务…</view>
+      <view wx:elif="{{groups.length === 0}}" class="empty">暂无打卡任务，点右下角 ＋ 新建</view>
 
-      <block wx:for="{{groups}}" wx:for-item="g" wx:key="childId">
-        <view class="group-label">{{g.childName}}</view>
-        <view
-          class="card task {{t.today_checked ? 'done' : ''}}"
-          wx:for="{{g.tasks}}"
-          wx:for-item="t"
-          wx:key="task_id"
-          bindtap="tapTask"
-          data-task="{{t}}"
-        >
-          <view class="dot">{{t.today_checked ? '✓' : ''}}</view>
-          <view class="ev-main">
-            <view class="ev-title">{{t.title}}</view>
-            <view class="ev-meta">{{t.meta}}</view>
+      <block wx:else>
+        <block wx:for="{{groups}}" wx:for-item="g" wx:key="childId">
+          <view class="group-label">{{g.childName}}</view>
+          <view
+            class="card task {{t.today_checked ? 'done' : ''}}"
+            wx:for="{{g.tasks}}"
+            wx:for-item="t"
+            wx:key="task_id"
+            bindtap="tapTask"
+            data-task="{{t}}"
+          >
+            <view class="dot">{{t.today_checked ? '✓' : ''}}</view>
+            <view class="ev-main">
+              <view class="ev-title">{{t.title}}</view>
+              <view class="ev-meta">{{t.meta}}</view>
+            </view>
+            <text wx:if="{{!t.today_checked}}" class="chip gray">去打卡</text>
           </view>
-          <text wx:if="{{!t.today_checked}}" class="chip gray">去打卡</text>
-        </view>
+        </block>
       </block>
     </view>
 

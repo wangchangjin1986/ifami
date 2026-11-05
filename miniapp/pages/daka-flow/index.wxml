@@ -13,17 +13,17 @@
     <view class="field">
       <text class="label">打卡方式</text>
       <view class="methods">
-        <button class="{{methodIndex === mi ? 'on' : ''}}" wx:for="{{methods}}" wx:for-index="mi" wx:key="key" bindtap="selectMethod" data-i="{{mi}}">{{item.label}}</button>
+        <button class="{{methodIndex === mi ? 'on' : ''}}" wx:for="{{methods}}" wx:for-index="mi" wx:key="key" bindtap="selectMethod" data-i="{{mi}}" disabled="{{submitting}}">{{item.label}}</button>
       </view>
     </view>
 
     <view wx:if="{{methods[methodIndex].key !== 'photo'}}" class="field">
       <text class="label">本次{{goalUnit}}数</text>
-      <input class="input" type="number" placeholder="{{goalUnit === '个' ? '本次数量' : '本次分钟数'}}" model:value="{{amount}}" />
+      <input class="input" type="number" placeholder="{{goalUnit === '个' ? '本次数量' : '本次分钟数'}}" model:value="{{amount}}" disabled="{{submitting}}" />
     </view>
 
     <view class="muted">孩子没有账号，在父母设备上切换身份提交；也可由家长代打。</view>
-    <button class="btn" bindtap="submit" disabled="{{submitting}}">完成打卡</button>
+    <button class="btn {{submitting ? 'loading' : ''}}" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">{{submitting ? '保存中…' : '完成打卡'}}</button>
   </view>
 
   <view class="body" wx:else>

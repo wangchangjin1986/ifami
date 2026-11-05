@@ -222,7 +222,7 @@ func (s *Service) SubmitCheckin(ctx context.Context, userID, familyID, taskID ui
 		if existing, err := s.store.FindCheckinByIdempotency(ctx, familyID, idempotencyKey); err != nil {
 			return nil, err
 		} else if existing != nil {
-			streak, _ := s.streakDays(ctx, familyID, taskID)
+			streak, _ := s.streakDays(ctx, familyID, existing.TaskID)
 			return &SubmitResult{CheckinID: existing.CheckinID, StreakDays: streak}, nil
 		}
 	}
@@ -259,7 +259,7 @@ func (s *Service) SubmitCheckin(ctx context.Context, userID, familyID, taskID ui
 		// 并发重复提交：唯一键冲突，回查已有记录返回。
 		if errors.Is(err, gorm.ErrDuplicatedKey) && idempotencyKey != "" {
 			if existing, e2 := s.store.FindCheckinByIdempotency(ctx, familyID, idempotencyKey); e2 == nil && existing != nil {
-				streak, _ := s.streakDays(ctx, familyID, taskID)
+				streak, _ := s.streakDays(ctx, familyID, existing.TaskID)
 				return &SubmitResult{CheckinID: existing.CheckinID, StreakDays: streak}, nil
 			}
 		}
@@ -422,15 +422,18 @@ func (s *Service) buildTask(ctx context.Context, familyID uint64, in *TaskInput)
 
 // streakDays 计算任务当前连续打卡天数。
 func (s *Service) streakDays(ctx context.Context, familyID, taskID uint64) (int, error) {
-	rows, err := s.store.ListCheckinsByTask(ctx, familyID, taskID)
+	now := time.Now().UTC()
+	start := dateOnly(now).AddDate(0, 0, -streakWindowDays)
+	end := dateOnly(now).AddDate(0, 0, 1)
+	rows, err := s.store.ListCheckinDatesByTask(ctx, familyID, taskID, start, end)
 	if err != nil {
 		return 0, err
 	}
 	dates := map[string]bool{}
 	for i := range rows {
-		dates[rows[i].CreatedAt.UTC().Format("2006-01-02")] = true
+		dates[rows[i].UTC().Format("2006-01-02")] = true
 	}
-	return calcStreak(dates, time.Now().UTC()), nil
+	return calcStreak(dates, now), nil
 }
 
 // calcStreak 从今天起向前数连续有打卡的天数；今天未打卡不算断签。

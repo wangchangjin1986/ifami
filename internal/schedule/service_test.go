@@ -175,6 +175,50 @@ func TestIntraBatchConflicts_SchoolOnlyByChild(t *testing.T) {
 	}
 }
 
+func TestBatchConflictsMatchesScopeAndOverlap(t *testing.T) {
+	now := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	base := ScheduleInstance{FamilyID: 100, ScheduleID: 1, ChildMemberID: 10, OwnerMemberID: 20, Status: StatusActive}
+	newInst := base
+	newInst.StartAt = now.Add(9 * time.Hour)
+	end := now.Add(10 * time.Hour)
+	newInst.EndAt = &end
+
+	cases := []struct {
+		name string
+		cand ScheduleInstance
+		want bool
+	}{
+		{"同孩子重叠", withTime(base, 9, 30, 10, 30), true},
+		{"同责任人重叠", withTime(ScheduleInstance{FamilyID: 100, ScheduleID: 2, ChildMemberID: 11, OwnerMemberID: 20, Status: StatusActive}, 9, 30, 10, 30), true},
+		{"不同孩子不同责任人", withTime(ScheduleInstance{FamilyID: 100, ScheduleID: 3, ChildMemberID: 11, OwnerMemberID: 21, Status: StatusActive}, 9, 30, 10, 30), false},
+		{"首尾相接", withTime(base, 10, 0, 11, 0), false},
+		{"同一时间点提醒", withPoint(base, 9, 0), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sameConflictScope(newInst.ChildMemberID, newInst.OwnerMemberID, &c.cand) && timeOverlap(newInst, c.cand)
+			if got != c.want {
+				t.Fatalf("conflict match = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func withTime(inst ScheduleInstance, sh, sm, eh, em int) ScheduleInstance {
+	day := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	inst.StartAt = time.Date(day.Year(), day.Month(), day.Day(), sh, sm, 0, 0, time.UTC)
+	end := time.Date(day.Year(), day.Month(), day.Day(), eh, em, 0, 0, time.UTC)
+	inst.EndAt = &end
+	return inst
+}
+
+func withPoint(inst ScheduleInstance, h, m int) ScheduleInstance {
+	day := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	inst.StartAt = time.Date(day.Year(), day.Month(), day.Day(), h, m, 0, 0, time.UTC)
+	inst.EndAt = nil
+	return inst
+}
+
 func TestExtensionInstances(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	sch := &Schedule{ScheduleID: 7, FamilyID: 100, Title: "钢琴", StartDate: start, RRule: "FREQ=WEEKLY;BYDAY=WE", StartTime: "17:30"}

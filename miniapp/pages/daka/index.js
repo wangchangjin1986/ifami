@@ -21,27 +21,37 @@ Page({
     hasFamily: false,
     groups: [],
     isAdmin: false,
-    sheetOpen: false
+    sheetOpen: false,
+    loading: false,
+    skipNextRefresh: false
   },
 
   onShow() {
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 2 })
     }
+    if (this.data.skipNextRefresh) {
+      this.setData({ skipNextRefresh: false })
+      return
+    }
     this.refresh()
   },
 
   refresh() {
     if (!app.globalData.token) {
-      this.setData({ logged: false, hasFamily: false, groups: [] })
-      return
+      this.setData({ logged: false, hasFamily: false, groups: [], loading: false })
+      return Promise.resolve()
     }
-    app.refreshMe()
+    this.setData({ loading: this.data.groups.length === 0 })
+    const ready = app.globalData.familyId && (app.globalData.memberships || []).length > 0
+    const ensureSession = ready ? Promise.resolve() : app.refreshMe()
+    return ensureSession
       .then(() => this.loadTasks())
       .catch((e) => {
         if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, groups: [] }) }
         else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
       })
+      .finally(() => this.setData({ loading: false }))
   },
 
   loadTasks() {
@@ -49,7 +59,7 @@ Page({
     this.setData({ logged: true })
     if (!fid) {
       this.setData({ hasFamily: false, groups: [] })
-      return
+      return Promise.resolve()
     }
     this.setData({ hasFamily: true, isAdmin: !!app.globalData.isAdmin })
 
@@ -84,6 +94,17 @@ Page({
 
         this.setData({ groups })
       })
+  },
+
+  markTaskChecked(taskId) {
+    const groups = (this.data.groups || []).map((g) => Object.assign({}, g, {
+      tasks: (g.tasks || []).map((t) => {
+        if (String(t.task_id) !== String(taskId)) return t
+        const baseMeta = (t.meta || '').replace(/ · 已完成/g, '')
+        return Object.assign({}, t, { today_checked: true, meta: baseMeta + ' · 已完成' })
+      })
+    }))
+    this.setData({ groups, skipNextRefresh: true })
   },
 
   tapTask(e) {
@@ -127,6 +148,6 @@ Page({
 
   onPullDownRefresh() {
     this.refresh()
-    wx.stopPullDownRefresh()
+      .finally(() => wx.stopPullDownRefresh())
   }
 })
