@@ -17,6 +17,84 @@ function normalizeMemberships(list) {
 }
 
 const ME_REFRESH_TTL_MS = 5 * 60 * 1000
+const REQUEST_RETRY_DELAY_MS = 600
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function normalizeMethod(method) {
+  return String(method || 'GET').toUpperCase()
+}
+
+function networkCategory(errMsg) {
+  const msg = String(errMsg || '').toLowerCase()
+  if (msg.includes('url not in domain list') || msg.includes('domain list')) return 'domain'
+  if (msg.includes('ssl') || msg.includes('tls') || msg.includes('certificate') || msg.includes('handshake')) return 'tls'
+  if (msg.includes('timeout') || msg.includes('timed out')) return 'timeout'
+  if (msg.includes('interrupted') || msg.includes('abort')) return 'interrupted'
+  if (msg.includes('fail') || msg.includes('connect') || msg.includes('refused') || msg.includes('reset')) return 'connect'
+  return 'unknown'
+}
+
+function networkMessage(category) {
+  if (category === 'domain') return '当前版本未配置后端合法域名，请更新体验版或检查小程序后台配置'
+  if (category === 'tls') return '后端 HTTPS 证书异常，请稍后再试'
+  if (category === 'timeout') return '网络请求超时，请稍后重试'
+  if (category === 'connect') return '后端服务暂时不可用，请稍后重试'
+  if (category === 'interrupted') return '网络请求已中断，请重试'
+  return '网络异常，请稍后重试'
+}
+
+function retryableStatus(statusCode) {
+  return statusCode === 502 || statusCode === 503 || statusCode === 504
+}
+
+function newClientRequestId() {
+  return 'mp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
+}
+
+function makeNetworkError({ path, url, method, requestId, err, startedAt, attempt, maxAttempts }) {
+  const errMsg = err && err.errMsg ? err.errMsg : ''
+  const category = networkCategory(errMsg)
+  const e = new Error(networkMessage(category))
+  e.code = 'NETWORK_FAIL'
+  e.networkCategory = category
+  e.errMsg = errMsg
+  e.cause = err
+  e.url = url
+  e.path = path
+  e.method = method
+  e.requestId = requestId
+  e.duration = Date.now() - startedAt
+  e.attempt = attempt
+  e.maxAttempts = maxAttempts
+  e.retryable = method === 'GET' && attempt < maxAttempts && category !== 'domain' && category !== 'tls'
+  return e
+}
+
+function logRequestFailure(err) {
+  const payload = {
+    requestId: err.requestId,
+    path: err.path,
+    method: err.method,
+    statusCode: err.statusCode,
+    code: err.code,
+    category: err.networkCategory,
+    errMsg: err.errMsg,
+    duration: err.duration,
+    attempt: err.attempt,
+    maxAttempts: err.maxAttempts
+  }
+  if (typeof wx !== 'undefined' && wx.getNetworkType) {
+    wx.getNetworkType({
+      success: (res) => console.warn('[ifami] request failed', Object.assign(payload, { networkType: res.networkType })),
+      fail: () => console.warn('[ifami] request failed', payload)
+    })
+    return
+  }
+  console.warn('[ifami] request failed', payload)
+}
 
 App({
   globalData: {
@@ -60,21 +138,25 @@ App({
 
   // 统一请求：Promise 化 wx.request，注入鉴权头，解析 {code, data, message}。
   // extraHeader 用于业务自定义头（如打卡提交的 Idempotency-Key）。
-  request(path, { method = 'GET', data = {}, familyId = null, header: extraHeader = {} } = {}) {
+  request(path, { method = 'GET', data = {}, familyId = null, header: extraHeader = {}, retry = null } = {}) {
+    method = normalizeMethod(method)
     const header = Object.assign({ 'Content-Type': 'application/json' }, extraHeader)
+    if (!header['X-Request-Id']) header['X-Request-Id'] = newClientRequestId()
     if (this.globalData.token) header.Authorization = 'Bearer ' + this.globalData.token
     const fid = familyId !== null ? familyId : this.globalData.familyId
     if (fid) header['X-Family-Id'] = String(fid)
     const url = this.globalData.apiBase + path
+    const maxAttempts = retry === null ? (method === 'GET' ? 2 : 1) : (retry ? 2 : 1)
 
-    return new Promise((resolve, reject) => {
+    const once = (attempt) => new Promise((resolve, reject) => {
+      const startedAt = Date.now()
       wx.request({
         url,
         method,
         data,
         header,
         timeout: this.globalData.requestTimeout,
-        success(res) {
+        success: (res) => {
           const body = res.data || {}
           if (res.statusCode === 200 && body.code === 0) {
             resolve(body.data)
@@ -84,17 +166,34 @@ App({
           err.code = body.code
           err.statusCode = res.statusCode
           err.data = body.data
+          err.url = url
+          err.path = path
+          err.method = method
+          err.requestId = header['X-Request-Id']
+          err.duration = Date.now() - startedAt
+          err.attempt = attempt
+          err.maxAttempts = maxAttempts
+          if (method === 'GET' && retryableStatus(res.statusCode) && attempt < maxAttempts) {
+            sleep(REQUEST_RETRY_DELAY_MS * attempt).then(() => once(attempt + 1).then(resolve).catch(reject))
+            return
+          }
+          if (res.statusCode >= 500) logRequestFailure(err)
           reject(err)
         },
-        fail(err) {
-          const detail = err && err.errMsg ? `：${err.errMsg}` : ''
-          const e = new Error(`网络请求失败，请检查小程序合法域名或后端 HTTPS 状态${detail}`)
-          e.cause = err
-          e.url = url
+        fail: (err) => {
+          const e = makeNetworkError({ path, url, method, requestId: header['X-Request-Id'], err, startedAt, attempt, maxAttempts })
+          if (e.retryable) {
+            logRequestFailure(e)
+            sleep(REQUEST_RETRY_DELAY_MS * attempt).then(() => once(attempt + 1).then(resolve).catch(reject))
+            return
+          }
+          logRequestFailure(e)
           reject(e)
         }
       })
     })
+
+    return once(1)
   },
 
   // 登录：wx.login → code → POST /v1/auth/login，返回 token/user/memberships。

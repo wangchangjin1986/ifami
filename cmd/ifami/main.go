@@ -4,7 +4,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -162,6 +164,7 @@ func serveAPI() {
 
 	// 拍照导入单张图 ≤5MB，multipart 开销留余量，请求体上限调到 10MB（默认 4MB）。
 	h := server.Default(server.WithHostPorts(cfg.APIAddr), server.WithMaxRequestBodySize(10<<20))
+	h.Use(accessLog())
 	h.GET("/healthz", healthz)
 	v1 := h.Group("/v1")
 	identity.NewHandler(idSvc).Register(v1)
@@ -176,6 +179,47 @@ func serveAPI() {
 
 func healthz(ctx context.Context, c *app.RequestContext) {
 	c.JSON(200, map[string]string{"status": "ok"})
+}
+
+func accessLog() app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		started := time.Now()
+		method := string(c.Request.Method())
+		path := string(c.URI().Path())
+		query := string(c.URI().QueryString())
+		reqID := string(c.GetHeader("X-Request-Id"))
+		if reqID == "" {
+			reqID = newRequestID()
+		}
+		c.Header("X-Request-Id", reqID)
+
+		c.Next(ctx)
+
+		if path == "/healthz" {
+			return
+		}
+		status := c.Response.StatusCode()
+		elapsed := time.Since(started)
+		familyID := string(c.GetHeader("X-Family-Id"))
+		ua := string(c.GetHeader("User-Agent"))
+		if query != "" {
+			path += "?" + query
+		}
+		logf := logx.Infof
+		if status >= 500 || elapsed > time.Second {
+			logf = logx.Warnf
+		}
+		logf("http_request request_id=%s method=%s path=%s status=%d cost_ms=%.1f client_ip=%s family_id=%s ua=%q",
+			reqID, method, path, status, float64(elapsed.Microseconds())/1000.0, c.ClientIP(), familyID, ua)
+	}
+}
+
+func newRequestID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("req-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
 
 // serveWorker 异步 Worker（30s 粒度）：触达轮询与升级（ADR-002）、打卡提醒（R3.3）、
