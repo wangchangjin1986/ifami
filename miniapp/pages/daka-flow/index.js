@@ -11,6 +11,21 @@ function genKey() {
   return Date.now() + '-' + Math.random().toString(36).slice(2)
 }
 
+function decodeQueryText(v, fallback = '') {
+  let s = v || fallback
+  for (let i = 0; i < 2; i++) {
+    if (!/%[0-9a-fA-F]{2}/.test(s)) break
+    try {
+      const decoded = decodeURIComponent(s)
+      if (decoded === s) break
+      s = decoded
+    } catch (e) {
+      break
+    }
+  }
+  return s
+}
+
 Page({
   data: {
     taskId: '',
@@ -33,8 +48,8 @@ Page({
     const key = goalType === 'photo' ? 'photo' : (goalType === 'count' ? 'count' : 'timer')
     this.setData({
       taskId: options.task_id || '',
-      title: options.title ? decodeURIComponent(options.title) : '打卡',
-      childName: options.child ? decodeURIComponent(options.child) : '孩子',
+      title: decodeQueryText(options.title, '打卡'),
+      childName: decodeQueryText(options.child, '孩子'),
       goalType,
       goalValue,
       goalUnit: goalType === 'count' ? '个' : '分钟',

@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/route"
@@ -29,6 +30,7 @@ func (h *Handler) Register(g *route.RouterGroup) {
 	authed.PATCH("/tasks/:tid", h.UpdateTask)
 	authed.DELETE("/tasks/:tid", h.DeleteTask)
 	authed.POST("/tasks/:tid/checkins", h.SubmitCheckin)
+	authed.GET("/checkins", h.ListCheckinsByFamily)
 	authed.GET("/tasks/:tid/checkins", h.ListCheckins)
 }
 
@@ -150,10 +152,58 @@ func (h *Handler) ListCheckins(ctx context.Context, c *app.RequestContext) {
 	httpx.OK(c, views)
 }
 
+func (h *Handler) ListCheckinsByFamily(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	start, end, err := parseDateRange(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	childID := uint64(0)
+	if s := c.Query("child_id"); s != "" {
+		childID, err = strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			httpx.Fail(c, ErrBadParam)
+			return
+		}
+	}
+	views, err := h.svc.ListCheckinsByFamily(ctx, auth.UserID(ctx), fid, start, end, childID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, views)
+}
+
 func familyID(c *app.RequestContext) (uint64, error) {
 	return strconv.ParseUint(string(c.GetHeader("X-Family-Id")), 10, 64)
 }
 
 func taskIDParam(c *app.RequestContext) (uint64, error) {
 	return strconv.ParseUint(c.Param("tid"), 10, 64)
+}
+
+func parseDateRange(c *app.RequestContext) (time.Time, time.Time, error) {
+	now := time.Now().UTC()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 0, 1)
+	if s := c.Query("start"); s != "" {
+		t, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			return start, end, err
+		}
+		start = t
+	}
+	if s := c.Query("end"); s != "" {
+		t, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			return start, end, err
+		}
+		end = t.AddDate(0, 0, 1)
+	}
+	return start, end, nil
 }
