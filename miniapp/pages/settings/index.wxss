@@ -1,0 +1,7 @@
+.time-range { display: flex; align-items: center; gap: 12rpx; }
+.accent { color: var(--accent) !important; }
+.danger { color: var(--warn) !important; }
+.tappable:active { opacity: .72; }
+.large-text { font-size: 34rpx; }
+.large-text .ev-title, .large-text .rowline { font-size: 34rpx; }
+.large-text .muted, .large-text .v, .large-text .note { font-size: 30rpx; }

@@ -13,6 +13,7 @@
     "pages/import-edit/index",
     "pages/timeline/index",
     "pages/report/index",
+    "pages/settings/index",
     "pages/daka-flow/index",
     "pages/invite/index",
     "pages/manage/index"
