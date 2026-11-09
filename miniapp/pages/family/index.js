@@ -319,7 +319,7 @@ Page({
   },
   goReport() { wx.navigateTo({ url: '/pages/report/index' }) },
   goTimeline() { wx.navigateTo({ url: '/pages/timeline/index' }) },
-  goSettings() { wx.showToast({ title: '设置页开发中', icon: 'none' }) },
+  goSettings() { wx.navigateTo({ url: '/pages/settings/index' }) },
 
   onPullDownRefresh() {
     this.refresh().then(() => wx.stopPullDownRefresh())
