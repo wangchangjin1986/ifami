@@ -1,0 +1,36 @@
+<view class="page">
+  <view class="app-head">
+    <text class="back" bindtap="goBack">‹ 返回</text>
+    <text class="title">{{title}}</text>
+  </view>
+
+  <view class="body">
+    <view class="card">
+      <view class="rowline"><text>孩子</text><text class="v">{{childName || '—'}}</text></view>
+      <view class="rowline"><text>目标</text><text class="v">{{freqLabel}} · {{goalLabel}}</text></view>
+      <view class="rowline"><text>责任人</text><text class="v">{{ownerName || '—'}}</text></view>
+      <view class="rowline"><text>提醒</text><text class="v">{{remindLabel}}</text></view>
+    </view>
+
+    <view class="row">
+      <button class="btn row-btn" bindtap="editTask">编辑任务</button>
+      <button class="btn ghost row-btn" bindtap="pauseTask">暂停提醒</button>
+    </view>
+    <button class="btn danger" bindtap="archiveTask">归档任务</button>
+    <view class="note">归档后不再出现在今日打卡和提醒中；历史打卡保留在周报和时间线里。</view>
+
+    <view class="group-label">最近打卡记录</view>
+    <view wx:if="{{loading}}" class="empty">加载中…</view>
+    <view wx:elif="{{checkins.length === 0}}" class="empty">暂无打卡记录</view>
+    <view wx:else class="card">
+      <view class="rowline" wx:for="{{checkins}}" wx:key="checkin_id">
+        <view>
+          <view>{{item.timeLabel}} · {{item.submitName}}提交</view>
+          <view class="muted">{{item.amountLabel}}</view>
+        </view>
+        <text class="link-action danger" bindtap="deleteCheckin" data-id="{{item.checkin_id}}">删除</text>
+      </view>
+    </view>
+    <view class="muted">错打卡先删除后重新打卡；删除会影响连续天数、周报和成长时间线统计。</view>
+  </view>
+</view>

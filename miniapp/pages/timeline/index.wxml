@@ -32,6 +32,9 @@
           <view class="tl-body">
             <view class="ev-title">{{item.title}}</view>
             <view class="ev-meta">{{item.meta}}</view>
+            <view wx:if="{{isAdmin && item.kind === 'checkin'}}" class="entry-actions">
+              <text class="link-action danger" bindtap="deleteCheckin" data-id="{{item.checkinId}}">删除打卡</text>
+            </view>
           </view>
         </view>
       </view>

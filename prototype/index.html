@@ -108,6 +108,10 @@ body {
 .btn.ghost { background: var(--surface-2); color: var(--fg); }
 .btn.danger { background: var(--warn-soft); color: var(--warn); }
 .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 9px; }
+.inline-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.link-action { color: var(--accent); font-size: 13px; cursor: pointer; }
+.link-action.danger { color: var(--warn); }
+.link-action.muted { color: var(--muted); }
 .task { display: flex; align-items: center; gap: 12px; cursor: pointer; }
 .task .dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
 .task.done .dot { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
@@ -330,11 +334,11 @@ body {
         <div class="muted">一次勾选多个常见任务，统一设置孩子、频次和责任家长。</div>
       </div>
       <div class="group-label">乐乐 · 三年级</div>
-      <div class="card task" data-task="阅读 20 分钟" data-child="乐乐"><div class="dot"></div><div class="ev-main"><div class="ev-title">阅读 20 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div></div><span class="chip gray">去打卡</span></div>
-      <div class="card task" data-task="跳绳 100 个" data-child="乐乐"><div class="dot"></div><div class="ev-main"><div class="ev-title">跳绳 100 个</div><div class="ev-meta">每天 · 责任：爸爸</div></div><span class="chip gray">去打卡</span></div>
+      <div class="card task" data-task="阅读 20 分钟" data-child="乐乐" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">阅读 20 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div><div class="inline-actions"><span class="link-action" data-open-task-detail="阅读 20 分钟">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
+      <div class="card task" data-task="跳绳 100 个" data-child="乐乐" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">跳绳 100 个</div><div class="ev-meta">每天 · 责任：爸爸</div><div class="inline-actions"><span class="link-action" data-open-task-detail="跳绳 100 个">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
       <div class="card task done" data-hist="练琴 30 分钟"><div class="dot">✓</div><div class="ev-main"><div class="ev-title">练琴 30 分钟</div><div class="ev-meta">每天 · 妈妈代打 18:20 · 点我看月历</div></div></div>
       <div class="group-label">果果 · 幼儿园大班</div>
-      <div class="card task" data-task="绘本共读 15 分钟" data-child="果果"><div class="dot"></div><div class="ev-main"><div class="ev-title">绘本共读 15 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div></div><span class="chip gray">去打卡</span></div>
+      <div class="card task" data-task="绘本共读 15 分钟" data-child="果果" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">绘本共读 15 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div><div class="inline-actions"><span class="link-action" data-open-task-detail="绘本共读 15 分钟">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
     </div>
   </section>
 
@@ -384,9 +388,9 @@ body {
     </div>
   </section>
 
-  <!-- 新建打卡任务 -->
+  <!-- 新建/编辑打卡任务 -->
   <section class="screen" id="scr-task-create" hidden>
-    <div class="app-head"><button class="back">‹ 返回</button><h1>创建打卡任务</h1></div>
+    <div class="app-head"><button class="back">‹ 返回</button><h1 id="task-form-title">创建打卡任务</h1></div>
     <div class="body">
       <div class="field"><label>模板</label>
         <div class="filters" id="task-tpl">
@@ -406,6 +410,33 @@ body {
         <div class="seg" id="task-owner"><button class="on">妈妈</button><button>爸爸</button><button>奶奶</button></div>
       </div>
       <button class="btn" id="btn-task-save">创建</button>
+      <div class="note" id="task-form-note">管理员可创建和编辑；祖辈/其他成员只查看，不进入录入链路。</div>
+    </div>
+  </section>
+
+  <!-- 打卡任务详情：编辑/暂停/归档 + 纠错删除打卡 -->
+  <section class="screen" id="scr-task-detail" hidden>
+    <div class="app-head"><button class="back">‹ 返回</button><h1 id="task-detail-title">阅读 20 分钟</h1></div>
+    <div class="body">
+      <div class="card">
+        <div class="rowline"><span>孩子</span><span class="v">乐乐</span></div>
+        <div class="rowline"><span>目标</span><span class="v" id="task-detail-goal">每天 · 20 分钟</span></div>
+        <div class="rowline"><span>责任人</span><span class="v">妈妈</span></div>
+        <div class="rowline"><span>提醒</span><span class="v">20:00 未完成提醒</span></div>
+      </div>
+      <div class="row" style="gap:10px">
+        <button class="btn" style="flex:1" id="btn-task-edit">编辑任务</button>
+        <button class="btn ghost" style="flex:1" id="btn-task-pause">暂停提醒</button>
+      </div>
+      <button class="btn danger" id="btn-task-archive">归档任务</button>
+      <div class="note">归档后不再出现在今日打卡和提醒中；历史打卡保留在周报和时间线里。</div>
+      <div class="group-label">最近打卡记录</div>
+      <div class="card">
+        <div class="rowline"><span>今天 20:12 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="今天 20:12">删除</button></span></div>
+        <div class="rowline"><span>昨天 19:50 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="昨天 19:50">删除</button></span></div>
+        <div class="rowline"><span>10/24 20:05 · 爸爸提交</span><span class="v"><button class="link-action danger" data-del-checkin="10/24 20:05">删除</button></span></div>
+      </div>
+      <div class="muted">错打卡先删除后重新打卡；删除会影响连续天数、周报和成长时间线统计。</div>
     </div>
   </section>
 
@@ -649,6 +680,7 @@ body {
       <button class="btn" id="btn-save-member">保存</button>
       <button class="btn" id="btn-preview">预览 Ta 的视图</button>
       <button class="btn danger" id="btn-remove-member">移除成员</button>
+      <div class="note" id="member-remove-note">移除真实成员后 Ta 不能再查看这个家庭；孩子档案不会因此删除。</div>
     </div>
   </section>
 
@@ -675,10 +707,10 @@ body {
     <div class="body">
       <div class="filters" id="manage-filter"><span class="chip on">按孩子</span><span class="chip">按机构</span><span class="chip">已暂停</span></div>
       <div class="group-label">乐乐</div>
-      <div class="card tappable" data-event="钢琴"><div class="ev-title">🎹 钢琴 · 每周三 17:30</div><div class="ev-meta">音悦琴行 · 接送：奶奶</div></div>
-      <div class="card tappable" data-event="英语"><div class="ev-title">🔤 英语 · 每周二/四 19:00</div><div class="ev-meta">线上 · 责任：妈妈</div></div>
-      <div class="card"><div class="ev-title">📖 阅读 · 每天 20 分钟 <span class="chip gray">打卡任务</span></div><div class="ev-meta">责任：妈妈 · 连续 5 天</div></div>
-      <div class="card"><div class="ev-title">🤸 跳绳 · 每天 100 个 <span class="chip gray">打卡任务</span></div><div class="ev-meta">责任：爸爸</div></div>
+      <div class="card tappable" data-event="钢琴"><div class="ev-title">🎹 钢琴 · 每周三 17:30</div><div class="ev-meta">音悦琴行 · 接送：奶奶</div><div class="inline-actions"><span class="link-action">编辑</span><span class="link-action muted">暂停</span><span class="link-action danger">归档</span></div></div>
+      <div class="card tappable" data-event="英语"><div class="ev-title">🔤 英语 · 每周二/四 19:00</div><div class="ev-meta">线上 · 责任：妈妈</div><div class="inline-actions"><span class="link-action">编辑</span><span class="link-action muted">暂停</span><span class="link-action danger">归档</span></div></div>
+      <div class="card tappable" data-open-task-detail="阅读 20 分钟"><div class="ev-title">📖 阅读 · 每天 20 分钟 <span class="chip gray">打卡任务</span></div><div class="ev-meta">责任：妈妈 · 连续 5 天</div><div class="inline-actions"><span class="link-action">编辑</span><span class="link-action muted">暂停提醒</span><span class="link-action danger">归档</span></div></div>
+      <div class="card tappable" data-open-task-detail="跳绳 100 个"><div class="ev-title">🤸 跳绳 · 每天 100 个 <span class="chip gray">打卡任务</span></div><div class="ev-meta">责任：爸爸</div><div class="inline-actions"><span class="link-action">编辑</span><span class="link-action muted">暂停提醒</span><span class="link-action danger">归档</span></div></div>
       <div class="group-label">果果</div>
       <div class="card"><div class="ev-title">🏊 游泳 · 每周六 10:00</div><div class="ev-meta">蓝旗游泳 · 责任：爸爸</div></div>
     </div>
@@ -710,12 +742,12 @@ body {
     <div class="app-head"><button class="back">‹ 返回</button><h1>成长时间线</h1></div>
     <div class="body">
       <div class="filters" id="tl-filter"><span class="chip on">全部</span><span class="chip">乐乐</span><span class="chip">果果</span></div>
-      <div class="tl"><div class="tl-date">10/26</div><div class="tl-body"><div class="ev-title">📖 阅读打卡 20 分钟</div><div class="ev-meta">乐乐 · 连续 5 天</div></div></div>
+      <div class="tl"><div class="tl-date">10/26</div><div class="tl-body"><div class="ev-title">📖 阅读打卡 20 分钟</div><div class="ev-meta">乐乐 · 连续 5 天</div><div class="inline-actions"><span class="link-action danger" data-del-checkin="阅读打卡 20 分钟">删除打卡</span></div></div></div>
       <div class="tl"><div class="tl-date">10/25</div><div class="tl-body"><div class="ev-title">🏊 里程碑：独立游 10 米</div><div class="ev-meta">果果 · 游泳课第 8 节</div></div></div>
       <div class="tl"><div class="tl-date">10/24</div><div class="tl-body"><div class="ev-title">🎹 钢琴课出勤</div><div class="ev-meta">乐乐 · 奶奶送</div></div></div>
       <div class="tl"><div class="tl-date">10/22</div><div class="tl-body"><div class="ev-title">🤸 里程碑：跳绳首次连续 100 个</div><div class="ev-meta">乐乐</div></div></div>
       <div class="tl"><div class="tl-date">10/20</div><div class="tl-body"><div class="ev-title">📷 周末香山出游</div><div class="ev-meta">全家 · 12 张照片</div></div></div>
-      <div class="muted">打卡、里程碑、照片自动沉淀，无需手动整理。</div>
+      <div class="muted">打卡、里程碑、照片自动沉淀，无需手动整理；源记录删除后会同步从时间线和周报统计中消失。</div>
     </div>
   </section>
 
@@ -1009,6 +1041,26 @@ body {
   customToggle('task-tpl', 'task-tpl-custom', '自定义');
   customToggle('task-goal', 'task-goal-custom', '自定义');
   customToggle('task-freq', 'task-freq-custom', '每周 N 次');
+  var taskEditMode = false;
+  function openTaskForm(edit, title) {
+    taskEditMode = !!edit;
+    document.getElementById('task-form-title').textContent = edit ? '编辑打卡任务' : '创建打卡任务';
+    document.getElementById('btn-task-save').textContent = edit ? '保存' : '创建';
+    document.getElementById('task-form-note').textContent = edit
+      ? '保存后立即影响今日任务、提醒与后续统计；历史打卡记录不改名。'
+      : '管理员可创建和编辑；祖辈/其他成员只查看，不进入录入链路。';
+    if (edit) {
+      Array.prototype.forEach.call(document.querySelectorAll('#task-tpl .chip'), function (x) { x.classList.toggle('on', x.textContent === '自定义'); });
+      document.querySelector('#task-tpl-custom').hidden = false;
+      document.querySelector('#task-tpl-custom').value = title || '阅读';
+    }
+    nav('scr-task-create');
+  }
+  function openTaskDetail(title) {
+    document.getElementById('task-detail-title').textContent = title || '阅读 20 分钟';
+    document.getElementById('task-detail-goal').textContent = (title && title.indexOf('跳绳') >= 0) ? '每天 · 100 个' : '每天 · 20 分钟';
+    nav('scr-task-detail');
+  }
   document.getElementById('btn-task-save').addEventListener('click', function () {
     var tplChip = document.querySelector('#task-tpl .chip.on');
     var tpl = tplChip.textContent === '自定义'
@@ -1030,7 +1082,7 @@ body {
     list.appendChild(card);
     bindTasks();
     navTab('scr-daka');
-    toast('任务已创建：' + tpl + ' ' + goal);
+    toast((taskEditMode ? '任务已保存：' : '任务已创建：') + tpl + ' ' + goal);
   });
 
   // 动作面板：新建
@@ -1040,10 +1092,25 @@ body {
   sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.hidden = true; });
   document.getElementById('opt-event').addEventListener('click', function () { sheet.hidden = true; nav('scr-create'); });
   document.getElementById('opt-import').addEventListener('click', function () { sheet.hidden = true; nav('scr-import'); });
-  document.getElementById('opt-task').addEventListener('click', function () { sheet.hidden = true; nav('scr-task-create'); });
+  document.getElementById('opt-task').addEventListener('click', function () { sheet.hidden = true; openTaskForm(false); });
   document.getElementById('task-template-entry').addEventListener('click', function () { nav('scr-task-template'); });
   document.getElementById('btn-task-template-save').addEventListener('click', function () {
     navTab('scr-daka'); toast('已启用 3 个打卡任务模板');
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-open-task-detail]'), function (el) {
+    el.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openTaskDetail(el.getAttribute('data-open-task-detail'));
+    });
+  });
+  document.getElementById('btn-task-edit').addEventListener('click', function () { openTaskForm(true, document.getElementById('task-detail-title').textContent); });
+  document.getElementById('btn-task-pause').addEventListener('click', function () { toast('已暂停提醒，任务仍可手动打卡（原型演示）'); });
+  document.getElementById('btn-task-archive').addEventListener('click', function () { toast('已归档任务；历史打卡保留（原型演示）'); });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-del-checkin]'), function (el) {
+    el.addEventListener('click', function (e) {
+      e.stopPropagation();
+      toast('已删除打卡；连续天数、周报和时间线将重新统计（原型演示）');
+    });
   });
 
   // 拍照导入
@@ -1211,6 +1278,9 @@ body {
     toast('已保存' + (isChild ? '孩子档案' : '成员设置') + '：「' + name + '」（原型演示）');
   });
   document.getElementById('btn-remove-member').addEventListener('click', function () { toast('原型演示：移除不影响孩子档案'); });
+  document.getElementById('member-admin-toggle').addEventListener('click', function () {
+    if (currentMember === '妈妈') toast('末位管理员不可取消');
+  });
   Array.prototype.forEach.call(document.querySelectorAll('.toggle'), function (t) {
     t.addEventListener('click', function () { t.classList.toggle('on'); });
   });

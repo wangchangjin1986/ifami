@@ -35,6 +35,26 @@ function withGoalLabel(t) {
   return Object.assign({}, t, { goalLabel: t.goal_value + ' ' + unit })
 }
 
+function decodeQueryText(v, fallback = '') {
+  let s = v || fallback
+  for (let i = 0; i < 2; i++) {
+    if (!/%[0-9a-fA-F]{2}/.test(s)) break
+    try {
+      const decoded = decodeURIComponent(s)
+      if (decoded === s) break
+      s = decoded
+    } catch (e) {
+      break
+    }
+  }
+  return s
+}
+
+function indexByValue(list, value, fallback = 0) {
+  const i = list.findIndex((x) => x.value === value)
+  return i >= 0 ? i : fallback
+}
+
 Page({
   data: {
     templates: TEMPLATES,
@@ -56,6 +76,9 @@ Page({
     batchFreqs: FREQS,
     batchFreqIndex: 0,
     batchWeeklyTarget: '',
+    editMode: false,
+    editTaskId: '',
+    editTask: null,
     submitting: false
   },
 
@@ -65,7 +88,19 @@ Page({
       setTimeout(() => wx.navigateBack(), 500)
       return
     }
-    this.setData({ batchMode: options.batch === '1' })
+    const editMode = options.edit === '1'
+    const editTask = editMode ? {
+      task_id: options.task_id || '',
+      name: decodeQueryText(options.name, ''),
+      goal_type: options.goal_type || 'timer',
+      goal_value: parseInt(options.goal_value, 10) || 0,
+      freq: options.freq || 'daily',
+      weekly_target: parseInt(options.weekly_target, 10) || 0,
+      child_member_id: parseInt(options.child_member_id, 10) || 0,
+      owner_member_id: parseInt(options.owner_member_id, 10) || 0,
+      remind_time: decodeQueryText(options.remind_time, '')
+    } : null
+    this.setData({ batchMode: !editMode && options.batch === '1', editMode, editTaskId: editTask ? editTask.task_id : '', editTask })
     this.loadMembers()
   },
 
@@ -103,21 +138,47 @@ Page({
             })
           }
         })
-        this.setData({ children, owners, ownerIndex })
+        const next = { children, owners, ownerIndex }
+        if (this.data.editMode && this.data.editTask) {
+          Object.assign(next, this.buildEditState(this.data.editTask, children, owners))
+        }
+        this.setData(next)
       })
       .catch((e) => {
         if (e.code !== 4001) wx.showToast({ title: e.message || '加载成员失败', icon: 'none' })
       })
   },
 
+  buildEditState(task, children, owners) {
+    const templateIndex = this.data.templates.findIndex((t) => t.name === task.name && t.goal_type === task.goal_type)
+    const useTemplate = templateIndex >= 0
+    const goalOptions = GOAL_PRESETS[task.goal_type] || GOAL_PRESETS.timer
+    const goalIndex = goalOptions.findIndex((g) => !g.custom && g.value === task.goal_value)
+    const childIndex = Math.max(0, children.findIndex((c) => c.member_id === task.child_member_id))
+    const ownerIndex = Math.max(0, owners.findIndex((o) => o.member_id === task.owner_member_id))
+    return {
+      templateIndex: useTemplate ? templateIndex : this.data.templates.findIndex((t) => t.name === '自定义'),
+      goalOptions,
+      goalIndex: goalIndex >= 0 ? goalIndex : Math.max(0, goalOptions.findIndex((g) => g.custom)),
+      freqIndex: indexByValue(this.data.freqs, task.freq),
+      childIndex,
+      ownerIndex,
+      customName: useTemplate ? '' : task.name,
+      customGoal: goalIndex >= 0 ? '' : String(task.goal_value || ''),
+      weeklyTarget: task.freq === 'weekly' ? String(task.weekly_target || '') : '',
+      goalUnit: task.goal_type === 'count' ? '个' : '分钟'
+    }
+  },
+
   selectTemplate(e) {
     const i = Number(e.currentTarget.dataset.i)
     const t = this.data.templates[i]
+    const goalType = this.data.editMode && t.name === '自定义' && this.data.editTask ? this.data.editTask.goal_type : t.goal_type
     this.setData({
       templateIndex: i,
-      goalOptions: GOAL_PRESETS[t.goal_type] || GOAL_PRESETS.timer,
+      goalOptions: GOAL_PRESETS[goalType] || GOAL_PRESETS.timer,
       goalIndex: 0,
-      goalUnit: t.goal_type === 'count' ? '个' : '分钟'
+      goalUnit: goalType === 'count' ? '个' : '分钟'
     })
   },
 
@@ -126,6 +187,7 @@ Page({
   selectBatchFreq(e) { this.setData({ batchFreqIndex: Number(e.currentTarget.dataset.i) }) },
   selectOwner(e) { this.setData({ ownerIndex: Number(e.currentTarget.dataset.i) }) },
   onChild(e) { this.setData({ childIndex: Number(e.detail.value) }) },
+
   toggleBatchTemplate(e) {
     const i = Number(e.currentTarget.dataset.i)
     const list = this.data.batchTemplates.slice()
@@ -156,24 +218,26 @@ Page({
 
     const payload = {
       name,
-      goal_type: t.goal_type,
+      goal_type: this.data.editMode && t.name === '自定义' && this.data.editTask ? this.data.editTask.goal_type : t.goal_type,
       goal_value: goalValue,
       freq,
       weekly_target: weeklyTarget,
       child_member_id: child.member_id,
       owner_member_id: owner.member_id,
-      remind_time: ''
+      remind_time: this.data.editMode && this.data.editTask ? (this.data.editTask.remind_time || '') : ''
     }
     this.setData({ submitting: true })
-    app.request('/v1/tasks', { method: 'POST', data: payload })
+    const method = this.data.editMode ? 'PATCH' : 'POST'
+    const path = this.data.editMode ? `/v1/tasks/${this.data.editTaskId}` : '/v1/tasks'
+    app.request(path, { method, data: payload })
       .then(() => {
-        wx.showToast({ title: '已创建', icon: 'success' })
+        wx.showToast({ title: this.data.editMode ? '已保存' : '已创建', icon: 'success' })
         setTimeout(() => wx.navigateBack(), 600)
       })
       .catch((e) => {
         this.setData({ submitting: false })
         if (e.code === 4001) { app.logout(); wx.navigateBack() }
-        else wx.showToast({ title: e.message || '创建失败', icon: 'none' })
+        else wx.showToast({ title: e.message || (this.data.editMode ? '保存失败' : '创建失败'), icon: 'none' })
       })
   },
 

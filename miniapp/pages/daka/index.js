@@ -107,6 +107,40 @@ Page({
     this.setData({ groups, skipNextRefresh: true })
   },
 
+  openTaskDetail(e) {
+    const t = e.currentTarget.dataset.task
+    if (!this.data.isAdmin || !t) return
+    wx.navigateTo({
+      url: '/pages/task-detail/index?task_id=' + t.task_id +
+        '&name=' + encodeURIComponent(t.name || '') +
+        '&title=' + encodeURIComponent(t.title || '') +
+        '&goal_type=' + (t.goal_type || '') +
+        '&goal_value=' + (t.goal_value || 0) +
+        '&freq=' + (t.freq || 'daily') +
+        '&weekly_target=' + (t.weekly_target || 0) +
+        '&child_member_id=' + (t.child_member_id || 0) +
+        '&owner_member_id=' + (t.owner_member_id || 0) +
+        '&remind_time=' + encodeURIComponent(t.remind_time || '')
+    })
+  },
+
+  editTask(e) {
+    const t = e.currentTarget.dataset.task
+    if (!this.data.isAdmin || !t) return
+    wx.navigateTo({
+      url: '/pages/task/index?edit=1' +
+        '&task_id=' + t.task_id +
+        '&name=' + encodeURIComponent(t.name || '') +
+        '&goal_type=' + (t.goal_type || '') +
+        '&goal_value=' + (t.goal_value || 0) +
+        '&freq=' + (t.freq || 'daily') +
+        '&weekly_target=' + (t.weekly_target || 0) +
+        '&child_member_id=' + (t.child_member_id || 0) +
+        '&owner_member_id=' + (t.owner_member_id || 0) +
+        '&remind_time=' + encodeURIComponent(t.remind_time || '')
+    })
+  },
+
   tapTask(e) {
     const t = e.currentTarget.dataset.task
     if (t.today_checked) {

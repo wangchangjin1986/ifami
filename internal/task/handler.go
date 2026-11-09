@@ -31,6 +31,7 @@ func (h *Handler) Register(g *route.RouterGroup) {
 	authed.DELETE("/tasks/:tid", h.DeleteTask)
 	authed.POST("/tasks/:tid/checkins", h.SubmitCheckin)
 	authed.GET("/checkins", h.ListCheckinsByFamily)
+	authed.DELETE("/checkins/:cid", h.DeleteCheckin)
 	authed.GET("/tasks/:tid/checkins", h.ListCheckins)
 }
 
@@ -179,12 +180,34 @@ func (h *Handler) ListCheckinsByFamily(ctx context.Context, c *app.RequestContex
 	httpx.OK(c, views)
 }
 
+func (h *Handler) DeleteCheckin(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	cid, err := checkinIDParam(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	if err := h.svc.DeleteCheckin(ctx, auth.UserID(ctx), fid, cid); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
 func familyID(c *app.RequestContext) (uint64, error) {
 	return strconv.ParseUint(string(c.GetHeader("X-Family-Id")), 10, 64)
 }
 
 func taskIDParam(c *app.RequestContext) (uint64, error) {
 	return strconv.ParseUint(c.Param("tid"), 10, 64)
+}
+
+func checkinIDParam(c *app.RequestContext) (uint64, error) {
+	return strconv.ParseUint(c.Param("cid"), 10, 64)
 }
 
 func parseDateRange(c *app.RequestContext) (time.Time, time.Time, error) {

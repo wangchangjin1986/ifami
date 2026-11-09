@@ -1,7 +1,7 @@
 <view class="page">
   <view class="app-head">
     <text class="back" bindtap="goBack">‹ 返回</text>
-    <text class="title">{{batchMode ? '任务模板' : '创建打卡任务'}}</text>
+    <text class="title">{{editMode ? '编辑打卡任务' : (batchMode ? '任务模板' : '创建打卡任务')}}</text>
   </view>
 
   <view class="body">
@@ -89,7 +89,7 @@
       </view>
     </view>
 
-    <button class="btn" bindtap="submit" disabled="{{submitting}}">创建</button>
+    <button class="btn" bindtap="submit" disabled="{{submitting}}">{{editMode ? '保存' : '创建'}}</button>
     </block>
   </view>
 </view>

@@ -34,9 +34,10 @@ const (
 
 // 事件流类型（ADR-004：V1 只写不消费，千人千面激励预留钩子）。
 const (
-	EventCheckinDone = "checkin_done"
-	EventGoalHit     = "goal_hit"
-	EventStreak      = "streak"
+	EventCheckinDone    = "checkin_done"
+	EventCheckinDeleted = "checkin_deleted"
+	EventGoalHit        = "goal_hit"
+	EventStreak         = "streak"
 )
 
 // Task 打卡任务（重复性目标行为：阅读/跳绳…），进打卡。
@@ -60,15 +61,18 @@ func (Task) TableName() string { return "tasks" }
 // Checkin 打卡记录（任务的一次提交，可由父母/祖辈代打）。
 // Payload 存计时/计数，照片走 media_tos_key（TOS 对象存储 key）。
 type Checkin struct {
-	CheckinID      uint64         `gorm:"column:checkin_id;primaryKey"`
-	TaskID         uint64         `gorm:"column:task_id"`
-	FamilyID       uint64         `gorm:"column:family_id"`
-	ChildMemberID  uint64         `gorm:"column:child_member_id"`
-	SubmitMemberID uint64         `gorm:"column:submit_member_id"`
-	Payload        map[string]any `gorm:"column:payload;type:json;serializer:json"`
-	MediaTosKey    string         `gorm:"column:media_tos_key"`
-	IdempotencyKey string         `gorm:"column:idempotency_key"`
-	CreatedAt      time.Time      `gorm:"column:created_at"`
+	CheckinID         uint64         `gorm:"column:checkin_id;primaryKey"`
+	TaskID            uint64         `gorm:"column:task_id"`
+	FamilyID          uint64         `gorm:"column:family_id"`
+	ChildMemberID     uint64         `gorm:"column:child_member_id"`
+	SubmitMemberID    uint64         `gorm:"column:submit_member_id"`
+	Payload           map[string]any `gorm:"column:payload;type:json;serializer:json"`
+	MediaTosKey       string         `gorm:"column:media_tos_key"`
+	IdempotencyKey    string         `gorm:"column:idempotency_key"`
+	Status            string         `gorm:"column:status"`
+	DeletedAt         *time.Time     `gorm:"column:deleted_at"`
+	DeletedByMemberID *uint64        `gorm:"column:deleted_by_member_id"`
+	CreatedAt         time.Time      `gorm:"column:created_at"`
 }
 
 func (Checkin) TableName() string { return "checkins" }

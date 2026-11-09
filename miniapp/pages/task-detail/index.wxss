@@ -1,0 +1,5 @@
+/* 打卡任务详情：样式复用全局组件，补充行内动作样式。 */
+.entry-actions { display: flex; gap: 24rpx; margin-top: 10rpx; }
+.link-action { color: var(--accent); font-size: 24rpx; }
+.link-action.danger { color: var(--warn); }
+.row-btn { flex: 1; }

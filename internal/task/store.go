@@ -104,7 +104,7 @@ func (s *Store) CreateEvents(ctx context.Context, events []Event) error {
 func (s *Store) FindCheckinByIdempotency(ctx context.Context, familyID uint64, key string) (*Checkin, error) {
 	var c Checkin
 	err := s.db.WithContext(ctx).
-		Where("family_id = ? AND idempotency_key = ?", familyID, key).
+		Where("family_id = ? AND idempotency_key = ? AND status = ?", familyID, key, StatusActive).
 		First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -119,7 +119,7 @@ func (s *Store) FindCheckinByIdempotency(ctx context.Context, familyID uint64, k
 func (s *Store) ListCheckinsByTask(ctx context.Context, familyID, taskID uint64) ([]Checkin, error) {
 	var rows []Checkin
 	err := s.db.WithContext(ctx).
-		Where("family_id = ? AND task_id = ?", familyID, taskID).
+		Where("family_id = ? AND task_id = ? AND status = ?", familyID, taskID, StatusActive).
 		Order("created_at ASC").
 		Find(&rows).Error
 	return rows, err
@@ -130,7 +130,7 @@ func (s *Store) ListCheckinDatesByTask(ctx context.Context, familyID, taskID uin
 	var rows []time.Time
 	err := s.db.WithContext(ctx).
 		Model(&Checkin{}).
-		Where("family_id = ? AND task_id = ? AND created_at >= ? AND created_at < ?", familyID, taskID, start, end).
+		Where("family_id = ? AND task_id = ? AND status = ? AND created_at >= ? AND created_at < ?", familyID, taskID, StatusActive, start, end).
 		Order("created_at DESC").
 		Pluck("created_at", &rows).Error
 	return rows, err
@@ -139,7 +139,7 @@ func (s *Store) ListCheckinDatesByTask(ctx context.Context, familyID, taskID uin
 // ListCheckinsByFamily 列家庭打卡时间线；[start, end) 半开区间，可按孩子筛选。
 func (s *Store) ListCheckinsByFamily(ctx context.Context, familyID uint64, start, end time.Time, childID uint64) ([]Checkin, error) {
 	q := s.db.WithContext(ctx).
-		Where("family_id = ? AND created_at >= ? AND created_at < ?", familyID, start, end)
+		Where("family_id = ? AND status = ? AND created_at >= ? AND created_at < ?", familyID, StatusActive, start, end)
 	if childID != 0 {
 		q = q.Where("child_member_id = ?", childID)
 	}
@@ -161,7 +161,7 @@ func (s *Store) ListRemindableTasks(ctx context.Context) ([]Task, error) {
 func (s *Store) CountCheckinsSince(ctx context.Context, familyID, taskID uint64, since time.Time) (int64, error) {
 	var n int64
 	err := s.db.WithContext(ctx).Model(&Checkin{}).
-		Where("family_id = ? AND task_id = ? AND created_at >= ?", familyID, taskID, since).
+		Where("family_id = ? AND task_id = ? AND status = ? AND created_at >= ?", familyID, taskID, StatusActive, since).
 		Count(&n).Error
 	return n, err
 }
@@ -170,7 +170,44 @@ func (s *Store) CountCheckinsSince(ctx context.Context, familyID, taskID uint64,
 func (s *Store) HasCheckinOn(ctx context.Context, familyID, taskID uint64, day time.Time) (bool, error) {
 	var n int64
 	err := s.db.WithContext(ctx).Model(&Checkin{}).
-		Where("family_id = ? AND task_id = ? AND created_at >= ? AND created_at < ?", familyID, taskID, day, day.AddDate(0, 0, 1)).
+		Where("family_id = ? AND task_id = ? AND status = ? AND created_at >= ? AND created_at < ?", familyID, taskID, StatusActive, day, day.AddDate(0, 0, 1)).
 		Count(&n).Error
 	return n > 0, err
+}
+
+// FindCheckin 查 active 打卡记录，未找到返回 (nil, nil)。
+func (s *Store) FindCheckin(ctx context.Context, familyID, checkinID uint64) (*Checkin, error) {
+	var c Checkin
+	err := s.db.WithContext(ctx).
+		Where("family_id = ? AND checkin_id = ? AND status = ?", familyID, checkinID, StatusActive).
+		First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// RemoveCheckinWithEvent 软删打卡记录并写删除事件，供统计/后续事件回放保持语义完整。
+func (s *Store) RemoveCheckinWithEvent(ctx context.Context, familyID, checkinID, deletedByMemberID uint64) error {
+	now := time.Now().UTC()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&Checkin{}).
+			Where("family_id = ? AND checkin_id = ? AND status = ?", familyID, checkinID, StatusActive).
+			Updates(map[string]any{
+				"status":               StatusRemoved,
+				"deleted_at":           now,
+				"deleted_by_member_id": deletedByMemberID,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrCheckinNotFound
+		}
+		ref := checkinID
+		return tx.Create(&Event{FamilyID: familyID, Type: EventCheckinDeleted, RefID: &ref}).Error
+	})
 }

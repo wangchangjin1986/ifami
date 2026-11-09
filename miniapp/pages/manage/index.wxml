@@ -17,9 +17,10 @@
     <block wx:else>
       <block wx:for="{{groups}}" wx:for-item="g" wx:key="childId">
         <view class="group-label">{{g.childName}}</view>
-        <view class="card tappable" wx:for="{{g.items}}" wx:for-item="it" wx:key="id">
+        <view class="card tappable" wx:for="{{g.items}}" wx:for-item="it" wx:key="id" bindtap="openItem" data-item="{{it}}">
           <view class="ev-title">{{it.title}} <text wx:if="{{it.isTask}}" class="chip gray">打卡任务</text></view>
           <view class="ev-meta">{{it.meta}}</view>
+          <view class="muted">{{it.isTask ? '点我进入详情，可编辑 / 暂停提醒 / 归档' : '日程编辑请从日历详情进入'}}</view>
         </view>
       </block>
     </block>

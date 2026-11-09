@@ -36,6 +36,9 @@
             <view class="ev-main">
               <view class="ev-title">{{t.title}}</view>
               <view class="ev-meta">{{t.meta}}</view>
+              <view wx:if="{{isAdmin}}" class="task-actions" catchtap="noop">
+                <text class="link-action" bindtap="openTaskDetail" data-task="{{t}}">详情/编辑</text>
+              </view>
             </view>
             <text wx:if="{{!t.today_checked}}" class="chip gray">去打卡</text>
           </view>
