@@ -250,6 +250,7 @@ func (s *Service) SubmitCheckin(ctx context.Context, userID, familyID, taskID ui
 		Payload:        in.Payload,
 		MediaTosKey:    in.MediaTosKey,
 		IdempotencyKey: idempotencyKey,
+		Status:         StatusActive,
 	}
 	events := []Event{{Type: EventCheckinDone}}
 	if hit {
@@ -318,6 +319,25 @@ func (s *Service) ListCheckinsByFamily(ctx context.Context, userID, familyID uin
 		views = append(views, toCheckinView(&rows[i]))
 	}
 	return views, nil
+}
+
+// DeleteCheckin 软删打卡记录：管理员可删家庭内任意记录，提交人可删自己提交的记录。
+func (s *Service) DeleteCheckin(ctx context.Context, userID, familyID, checkinID uint64) error {
+	actorMemberID, role, err := s.id.RequireActive(ctx, userID, familyID)
+	if err != nil {
+		return err
+	}
+	c, err := s.store.FindCheckin(ctx, familyID, checkinID)
+	if err != nil {
+		return err
+	}
+	if c == nil {
+		return ErrCheckinNotFound
+	}
+	if role != roleAdmin && c.SubmitMemberID != actorMemberID {
+		return ErrForbidden
+	}
+	return s.store.RemoveCheckinWithEvent(ctx, familyID, checkinID, actorMemberID)
 }
 
 // ---- 内部辅助 ----

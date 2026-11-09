@@ -69,6 +69,7 @@ Page({
           add(t.child_member_id, {
             id: 't' + t.task_id,
             isTask: true,
+            task: t,
             title: (TASK_EMOJI[t.goal_type] || '📷') + ' ' + t.name + ' · ' + (FREQ_LABEL[t.freq] || t.freq) + ' ' + goalSuffix(t),
             meta: '责任：' + (nameMap[t.owner_member_id] || '—') + ' · 连续 ' + (t.streak_days || 0) + ' 天'
           })
@@ -93,6 +94,28 @@ Page({
     const v = e.currentTarget.dataset.v
     if (v === 'child') return
     wx.showToast({ title: (v === 'org' ? '按机构' : '已暂停') + '视图开发中', icon: 'none' })
+  },
+
+  openItem(e) {
+    const it = e.currentTarget.dataset.item
+    if (!it) return
+    if (!it.isTask) {
+      wx.showToast({ title: '日程编辑请从日历详情进入', icon: 'none' })
+      return
+    }
+    const t = it.task || {}
+    wx.navigateTo({
+      url: '/pages/task-detail/index?task_id=' + t.task_id +
+        '&name=' + encodeURIComponent(t.name || '') +
+        '&title=' + encodeURIComponent(it.title || '') +
+        '&goal_type=' + (t.goal_type || '') +
+        '&goal_value=' + (t.goal_value || 0) +
+        '&freq=' + (t.freq || 'daily') +
+        '&weekly_target=' + (t.weekly_target || 0) +
+        '&child_member_id=' + (t.child_member_id || 0) +
+        '&owner_member_id=' + (t.owner_member_id || 0) +
+        '&remind_time=' + encodeURIComponent(t.remind_time || '')
+    })
   },
 
   goBack() { wx.navigateBack() }

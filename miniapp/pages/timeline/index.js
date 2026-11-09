@@ -36,6 +36,7 @@ Page({
     children: [],
     childFilter: 0,
     childLabel: '全部',
+    isAdmin: false,
     entries: [],
     filteredEntries: []
   },
@@ -68,13 +69,16 @@ Page({
     }
     const end = fmt(new Date())
     const start = fmt(addDays(new Date(), -60))
-    this.setData({ hasFamily: true })
+    this._rangeStart = start
+    this._rangeEnd = end
+    this.setData({ hasFamily: true, isAdmin: !!app.globalData.isAdmin })
     return Promise.all([
       app.request(`/v1/families/${fid}/members`),
       app.request('/v1/tasks'),
-      app.request(`/v1/schedules/instances?start=${start}&end=${end}`)
+      app.request(`/v1/schedules/instances?start=${start}&end=${end}`),
+      app.request(`/v1/checkins?start=${start}&end=${end}`)
     ])
-      .then(([members, tasks, schedules]) => {
+      .then(([members, tasks, schedules, checkins]) => {
         const nameMap = {}
         const children = []
         ;(members || []).forEach((m) => {
@@ -86,39 +90,30 @@ Page({
         this._tasks = tasks || []
         this._schedules = schedules || []
         this.setData({ children })
-        return this.loadCheckins(tasks || [])
-      })
-      .then((checkins) => {
-        const entries = this.buildEntries(this._tasks || [], checkins || [], this._schedules || [], this._nameMap || {})
+        const entries = this.buildEntries(this._tasks || [], checkins || [], this._schedules || [], nameMap)
         this.setData({ entries, loading: false })
         this.applyFilter(this.data.childFilter)
       })
   },
 
-  loadCheckins(tasks) {
-    if (!tasks.length) return Promise.resolve([])
-    return Promise.all(tasks.map((t) => app.request(`/v1/tasks/${t.task_id}/checkins`).then((rows) => ({ task: t, rows: rows || [] }))))
-  },
-
-  buildEntries(tasks, checkinGroups, schedules, nameMap) {
+  buildEntries(tasks, checkins, schedules, nameMap) {
     const taskMap = {}
     tasks.forEach((t) => { taskMap[t.task_id] = t })
     const out = []
-    checkinGroups.forEach((g) => {
-      const task = g.task || taskMap[g.task_id]
-      ;(g.rows || []).forEach((c) => {
-        const date = timelineDate(c.created_at)
-        out.push({
-          id: 'checkin-' + c.checkin_id,
-          kind: 'checkin',
-          childId: c.child_member_id,
-          childName: nameMap[c.child_member_id] || '孩子',
-          date,
-          sortKey: c.created_at,
-          day: dayLabel(date),
-          title: '✅ ' + task.name + '打卡 ' + goalSuffix(task),
-          meta: (nameMap[c.child_member_id] || '孩子') + ' · ' + (nameMap[c.submit_member_id] || '家人') + '提交'
-        })
+    ;(checkins || []).forEach((c) => {
+      const task = taskMap[c.task_id] || { name: '已删除任务', goal_type: '', goal_value: 0 }
+      const date = timelineDate(c.created_at)
+      out.push({
+        id: 'checkin-' + c.checkin_id,
+        kind: 'checkin',
+        checkinId: c.checkin_id,
+        childId: c.child_member_id,
+        childName: nameMap[c.child_member_id] || '孩子',
+        date,
+        sortKey: c.created_at,
+        day: dayLabel(date),
+        title: '✅ ' + task.name + '打卡 ' + goalSuffix(task),
+        meta: (nameMap[c.child_member_id] || '孩子') + ' · ' + (nameMap[c.submit_member_id] || '家人') + '提交'
       })
     })
     ;(schedules || [])
@@ -147,6 +142,26 @@ Page({
 
   selectChild(e) {
     this.applyFilter(Number(e.currentTarget.dataset.id))
+  },
+
+  deleteCheckin(e) {
+    const id = e.currentTarget.dataset.id
+    if (!id) return
+    wx.showModal({
+      title: '删除打卡记录',
+      content: '删除后会影响连续天数、周报和时间线统计，确认删除？',
+      confirmText: '删除',
+      confirmColor: '#BF4A3C',
+      success: (r) => {
+        if (!r.confirm) return
+        app.request(`/v1/checkins/${id}`, { method: 'DELETE' })
+          .then(() => {
+            wx.showToast({ title: '已删除', icon: 'success' })
+            return this.refresh()
+          })
+          .catch((err) => wx.showToast({ title: err.message || '删除失败', icon: 'none' }))
+      }
+    })
   },
 
   goBack() { wx.navigateBack() },

@@ -1,1 +1,3 @@
-/* 打卡页：样式全部复用全局组件（app-head/body/group-label/card/task/chip），见 app.wxss */
+/* 打卡页：主体样式复用全局组件（app-head/body/group-label/card/task/chip），见 app.wxss */
+.task-actions { display: flex; gap: 24rpx; margin-top: 10rpx; }
+.link-action { color: var(--accent); font-size: 24rpx; }

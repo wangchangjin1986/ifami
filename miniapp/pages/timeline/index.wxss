@@ -14,3 +14,6 @@
   content: ""; position: absolute; left: -10rpx; top: 10rpx;
   width: 16rpx; height: 16rpx; border-radius: 50%; background: var(--accent);
 }
+.entry-actions { display: flex; gap: 24rpx; margin-top: 10rpx; }
+.link-action { color: var(--accent); font-size: 24rpx; }
+.link-action.danger { color: var(--warn); }
