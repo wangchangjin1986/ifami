@@ -98,8 +98,8 @@ func (s *Store) ReplaceFutureInstances(ctx context.Context, sch *Schedule, insta
 	})
 }
 
-// RemoveSchedule 事务：软删模板（status=removed）+ 删除全部已物化实例。
-func (s *Store) RemoveSchedule(ctx context.Context, familyID, scheduleID uint64) error {
+// RemoveSchedule 事务：软删模板（status=removed）+ 删除 from 当天及之后的已物化实例。
+func (s *Store) RemoveSchedule(ctx context.Context, familyID, scheduleID uint64, from time.Time) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Model(&Schedule{}).
 			Where("family_id = ? AND schedule_id = ? AND status = ?", familyID, scheduleID, StatusActive).
@@ -110,7 +110,7 @@ func (s *Store) RemoveSchedule(ctx context.Context, familyID, scheduleID uint64)
 		if res.RowsAffected == 0 {
 			return ErrScheduleNotFound
 		}
-		return tx.Where("family_id = ? AND schedule_id = ?", familyID, scheduleID).
+		return tx.Where("family_id = ? AND schedule_id = ? AND occur_date >= ?", familyID, scheduleID, from).
 			Delete(&ScheduleInstance{}).Error
 	})
 }

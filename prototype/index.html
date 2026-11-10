@@ -267,6 +267,7 @@ body {
     <div class="body">
       <div class="card">
         <div class="rowline"><span>时间</span><span class="v" id="event-time">每周三 17:30–18:30</span></div>
+        <div class="rowline"><span>重复</span><span class="v" id="event-repeat">每周三</span></div>
         <div class="rowline"><span>孩子</span><span class="v" id="event-child">乐乐</span></div>
         <div class="rowline"><span>责任人</span><span class="v" id="event-owner">奶奶（送）</span></div>
         <div class="rowline"><span>地点</span><span class="v" id="event-loc">音悦琴行 3 楼</span></div>
@@ -277,8 +278,8 @@ body {
         <button class="btn ghost" style="flex:1" id="btn-edit-event">编辑</button>
         <button class="btn danger" style="flex:1" id="btn-cancel-event">取消本次</button>
       </div>
-      <button class="btn danger" id="btn-delete-event-series">删除全部周期日程</button>
-      <div class="note">取消本次只影响当前日历里的这一条；删除全部会移除整条周期日程。</div>
+      <button class="btn danger" id="btn-delete-event-series">删除此后周期日程</button>
+      <div class="note" id="event-delete-note">取消本次只影响当前日历里的这一条；删除此后周期日程会保留历史记录，只移除当前日期及未来日程。</div>
     </div>
   </section>
 
@@ -294,18 +295,18 @@ body {
         <div class="week">
           <div class="slot"></div><div class="dow">一</div><div class="dow">二</div><div class="dow">三</div><div class="dow">四</div><div class="dow">五</div><div class="dow">六</div><div class="dow">日</div>
           <div class="slot">16-18</div>
-          <div class="cell"><b>乐乐·妈妈</b><span>接乐乐</span></div>
-          <div class="cell"><b>乐乐·妈妈</b><span>接乐乐</span></div>
-          <div class="cell hot"><b>乐乐·奶奶</b><span>接乐乐</span></div>
-          <div class="cell"><b>乐乐·妈妈</b><span>接乐乐</span></div>
-          <div class="cell"><b>俩娃·爸爸</b><span>接俩娃</span></div>
-          <div class="cell"><b>果果·爸爸</b><span>游泳</span></div>
+          <div class="cell tappable" data-event="接乐乐" data-repeat="weekly"><b>乐乐·妈妈</b><span>接乐乐</span></div>
+          <div class="cell tappable" data-event="接乐乐" data-repeat="weekly"><b>乐乐·妈妈</b><span>接乐乐</span></div>
+          <div class="cell hot tappable" data-event="接乐乐放学" data-repeat="weekly"><b>乐乐·奶奶</b><span>接乐乐</span></div>
+          <div class="cell tappable" data-event="接乐乐" data-repeat="weekly"><b>乐乐·妈妈</b><span>接乐乐</span></div>
+          <div class="cell tappable" data-event="接俩娃" data-repeat="weekly"><b>俩娃·爸爸</b><span>接俩娃</span></div>
+          <div class="cell tappable" data-event="果果游泳" data-repeat="single"><b>果果·爸爸</b><span>游泳</span></div>
           <div class="cell"></div>
           <div class="slot">18-20</div>
-          <div class="cell"><b>乐乐·妈妈</b><span>钢琴</span></div>
-          <div class="cell"><b>果果·妈妈</b><span>英语 19:00</span></div>
-          <div class="cell hot" id="cell-wed-piano"><b id="wed-piano-who">乐乐·奶奶</b><span>钢琴</span></div>
-          <div class="cell"><b>果果·妈妈</b><span>英语 19:00</span></div>
+          <div class="cell tappable" data-event="乐乐钢琴课" data-repeat="weekly"><b>乐乐·妈妈</b><span>钢琴</span></div>
+          <div class="cell tappable" data-event="果果英语" data-repeat="weekly"><b>果果·妈妈</b><span>英语 19:00</span></div>
+          <div class="cell hot tappable" id="cell-wed-piano" data-event="乐乐钢琴课" data-repeat="weekly"><b id="wed-piano-who">乐乐·奶奶</b><span>钢琴</span></div>
+          <div class="cell tappable" data-event="果果英语" data-repeat="weekly"><b>果果·妈妈</b><span>英语 19:00</span></div>
           <div class="cell"></div>
           <div class="cell"></div>
           <div class="cell"></div>
@@ -707,14 +708,14 @@ body {
   <section class="screen" id="scr-manage" hidden>
     <div class="app-head"><button class="back">‹ 返回</button><h1>全部安排</h1></div>
     <div class="body">
-      <div class="filters" id="manage-filter"><span class="chip on">按孩子</span><span class="chip">按机构</span><span class="chip">已暂停</span></div>
+      <div class="filters" id="manage-filter"><span class="chip on">按孩子</span><span class="chip">按机构</span><span class="chip">已归档</span></div>
       <div class="group-label">乐乐</div>
-      <div class="card tappable" data-event="钢琴"><div class="ev-title">🎹 钢琴 · 每周三 17:30</div><div class="ev-meta">音悦琴行 · 接送：奶奶</div><div class="inline-actions"><span class="link-action">编辑</span><span class="link-action muted">暂停</span><span class="link-action danger">归档</span></div></div>
-      <div class="card tappable" data-event="英语"><div class="ev-title">🔤 英语 · 每周二/四 19:00</div><div class="ev-meta">线上 · 责任：妈妈</div><div class="inline-actions"><span class="link-action">编辑</span><span class="link-action muted">暂停</span><span class="link-action danger">归档</span></div></div>
+      <div class="card tappable" data-event="钢琴" data-repeat="weekly"><div class="ev-title">🎹 钢琴 · 每周三 17:30</div><div class="ev-meta">音悦琴行 · 接送：奶奶</div><div class="inline-actions"><span class="link-action">进详情</span><span class="link-action muted">取消本次</span><span class="link-action danger">删除此后</span></div></div>
+      <div class="card tappable" data-event="英语" data-repeat="weekly"><div class="ev-title">🔤 英语 · 每周二/四 19:00</div><div class="ev-meta">线上 · 责任：妈妈</div><div class="inline-actions"><span class="link-action">进详情</span><span class="link-action muted">取消本次</span><span class="link-action danger">删除此后</span></div></div>
       <div class="card tappable" data-open-task-detail="阅读 20 分钟"><div class="ev-title">📖 阅读 · 每天 20 分钟 <span class="chip gray">打卡任务</span></div><div class="ev-meta">责任：妈妈 · 连续 5 天</div><div class="inline-actions"><span class="link-action">编辑</span><span class="link-action muted">暂停提醒</span><span class="link-action danger">归档</span></div></div>
       <div class="card tappable" data-open-task-detail="跳绳 100 个"><div class="ev-title">🤸 跳绳 · 每天 100 个 <span class="chip gray">打卡任务</span></div><div class="ev-meta">责任：爸爸</div><div class="inline-actions"><span class="link-action">编辑</span><span class="link-action muted">暂停提醒</span><span class="link-action danger">归档</span></div></div>
       <div class="group-label">果果</div>
-      <div class="card"><div class="ev-title">🏊 游泳 · 每周六 10:00</div><div class="ev-meta">蓝旗游泳 · 责任：爸爸</div></div>
+      <div class="card tappable" data-event="游泳比赛" data-repeat="single"><div class="ev-title">🏊 游泳比赛 · 11月8日 10:00</div><div class="ev-meta">蓝旗游泳 · 责任：爸爸</div><div class="inline-actions"><span class="link-action">进详情</span><span class="link-action danger">删除此日程</span></div></div>
     </div>
   </section>
 
@@ -904,13 +905,17 @@ body {
   // 日程详情
   Array.prototype.forEach.call(document.querySelectorAll('[data-event]'), function (c) {
     c.addEventListener('click', function () {
+      var single = c.dataset.repeat === 'single';
       document.getElementById('event-title').textContent = c.dataset.event;
+      document.getElementById('event-repeat').textContent = single ? '单次' : '每周重复';
+      document.getElementById('btn-delete-event-series').textContent = single ? '删除此日程' : '删除此后周期日程';
+      document.getElementById('event-delete-note').textContent = single ? '删除此日程会移除这条单次安排；历史记录不受影响。' : '取消本次只影响当前日历里的这一条；删除此后周期日程会保留历史记录，只移除当前日期及未来日程。';
       nav('scr-event');
     });
   });
   document.getElementById('btn-edit-event').addEventListener('click', function () { toast('原型演示：编辑日程（同新建表单）'); });
   document.getElementById('btn-cancel-event').addEventListener('click', function () { toast('已取消本次，并通知奶奶'); });
-  document.getElementById('btn-delete-event-series').addEventListener('click', function () { toast('已删除全部周期日程（原型演示）'); });
+  document.getElementById('btn-delete-event-series').addEventListener('click', function () { toast(this.textContent + '（原型演示，历史记录保留）'); });
 
   // 改分工
   var sheetRe = document.getElementById('sheet-reassign');

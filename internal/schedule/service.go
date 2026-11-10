@@ -109,6 +109,7 @@ type InstanceView struct {
 	ChildMemberID uint64  `json:"child_member_id"`
 	Title         string  `json:"title"`
 	Type          string  `json:"type"`
+	RRule         string  `json:"rrule"`
 	OccurDate     string  `json:"occur_date"`
 	StartAt       string  `json:"start_at"`
 	EndAt         *string `json:"end_at"`
@@ -357,12 +358,12 @@ func (s *Service) ListSchedules(ctx context.Context, userID, familyID uint64) ([
 	return views, nil
 }
 
-// DeleteSchedule 软删模板并清空该模板全部已物化实例。
-func (s *Service) DeleteSchedule(ctx context.Context, userID, familyID, scheduleID uint64) error {
+// DeleteSchedule 软删模板并清空 from 当天及之后的已物化实例，历史实例保留用于时间线/历史回看。
+func (s *Service) DeleteSchedule(ctx context.Context, userID, familyID, scheduleID uint64, from time.Time) error {
 	if err := s.requireWriter(ctx, userID, familyID); err != nil {
 		return err
 	}
-	return s.store.RemoveSchedule(ctx, familyID, scheduleID)
+	return s.store.RemoveSchedule(ctx, familyID, scheduleID, dateOnly(from))
 }
 
 // ListInstances 按日期范围列实例（今日/周/月视图，任意 active 成员可读）。
@@ -375,8 +376,14 @@ func (s *Service) ListInstances(ctx context.Context, userID, familyID uint64, st
 		return nil, err
 	}
 	views := make([]InstanceView, 0, len(rows))
+	rrules, err := s.rrulesForInstances(ctx, familyID, rows)
+	if err != nil {
+		return nil, err
+	}
 	for i := range rows {
-		views = append(views, toInstanceView(&rows[i]))
+		view := toInstanceView(&rows[i])
+		view.RRule = rrules[rows[i].ScheduleID]
+		views = append(views, view)
 	}
 	return views, nil
 }
@@ -417,6 +424,27 @@ func (s *Service) UpdateInstance(ctx context.Context, userID, familyID, instance
 }
 
 // ---- 内部辅助 ----
+
+func (s *Service) rrulesForInstances(ctx context.Context, familyID uint64, rows []ScheduleInstance) (map[uint64]string, error) {
+	ids := map[uint64]bool{}
+	for i := range rows {
+		ids[rows[i].ScheduleID] = true
+	}
+	if len(ids) == 0 {
+		return map[uint64]string{}, nil
+	}
+	schedules, err := s.store.ListSchedules(ctx, familyID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[uint64]string{}
+	for i := range schedules {
+		if ids[schedules[i].ScheduleID] {
+			out[schedules[i].ScheduleID] = schedules[i].RRule
+		}
+	}
+	return out, nil
+}
 
 // notifyOwner 接送类日程创建/变更后立即强触达执行端 owner（R4.3：创建→收到<1min）。
 // 触达是尽力而为，失败不阻塞日程主流程（log 后忽略）。到点提醒（开始前 X 分钟）需 Worker 扫实例表，留 TODO。
