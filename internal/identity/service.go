@@ -79,18 +79,22 @@ func (s *Service) Login(ctx context.Context, code string) (*LoginResult, error) 
 	}
 	userID, err := s.getOrCreateUser(ctx, sess)
 	if err != nil {
+		logx.Errorf("登录查找或创建用户失败: %v", err)
 		return nil, err
 	}
 	token, err := s.newSession(ctx, userID)
 	if err != nil {
+		logx.Errorf("登录创建会话失败: user_id=%d err=%v", userID, err)
 		return nil, err
 	}
 	u, err := s.store.FindUser(ctx, userID)
 	if err != nil {
+		logx.Errorf("登录查询用户失败: user_id=%d err=%v", userID, err)
 		return nil, err
 	}
 	memberships, err := s.memberships(ctx, userID)
 	if err != nil {
+		logx.Errorf("登录查询家庭成员关系失败: user_id=%d err=%v", userID, err)
 		return nil, err
 	}
 	return &LoginResult{
@@ -177,6 +181,7 @@ func (s *Service) JoinFamily(ctx context.Context, code, token, relationLabel str
 	}
 	userID, err := s.getOrCreateUser(ctx, sess)
 	if err != nil {
+		logx.Errorf("加入家庭查找或创建用户失败: family_id=%d err=%v", familyID, err)
 		return nil, err
 	}
 	if existing, _ := s.store.FindMember(ctx, userID, familyID); existing != nil {
@@ -192,6 +197,7 @@ func (s *Service) JoinFamily(ctx context.Context, code, token, relationLabel str
 	}
 	sessionToken, err := s.newSession(ctx, userID)
 	if err != nil {
+		logx.Errorf("加入家庭创建会话失败: family_id=%d user_id=%d err=%v", familyID, userID, err)
 		return nil, err
 	}
 	return &JoinResult{Token: sessionToken, FamilyID: familyID, Role: RoleGrandparent}, nil

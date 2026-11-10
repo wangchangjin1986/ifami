@@ -4,6 +4,7 @@ package wechat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -64,7 +65,7 @@ func (c *MiniClient) Code2Session(ctx context.Context, code string) (*Session, e
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, c.safeRequestError(err)
 	}
 	defer resp.Body.Close()
 
@@ -76,4 +77,14 @@ func (c *MiniClient) Code2Session(ctx context.Context, code string) (*Session, e
 		return nil, fmt.Errorf("code2session 失败: errcode=%d errmsg=%s", s.ErrCode, s.ErrMsg)
 	}
 	return &s, nil
+}
+
+func (c *MiniClient) safeRequestError(err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		// net/url.Error 默认会把完整请求 URL 放进 Error()，而 code2session URL
+		// 包含 app secret 和一次性 js_code；这里只保留端点与底层网络错误。
+		return fmt.Errorf("code2session 请求失败: %s %s: %w", uerr.Op, c.baseURL, uerr.Err)
+	}
+	return fmt.Errorf("code2session 请求失败: %w", err)
 }
