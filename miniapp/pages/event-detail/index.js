@@ -33,16 +33,33 @@ Page({
     ownerName: '',
     location: '',
     note: '',
+    repeatLabel: '单次',
+    deleteButtonText: '删除此日程',
+    deleteConfirmTitle: '删除此日程',
+    deleteConfirmContent: '会删除这条单次安排，确认删除？历史记录不受影响。',
+    deleteNote: '删除此日程会移除这条单次安排；历史记录不受影响。',
+    hasInstance: false,
     owners: [],
     sheetOpen: false
   },
 
   onLoad(options) {
     this._inst = options
+    const isRecurring = !!options.rrule
     this.setData({
       canManage: !!app.globalData.isAdmin,
       title: decodeQueryText(options.title),
       time: dateLabel(options.occur_date) + ' ' + hhmm(options.start_at) + (options.end_at ? '–' + hhmm(options.end_at) : ''),
+      repeatLabel: decodeQueryText(options.repeat_label, isRecurring ? '重复' : '单次'),
+      hasInstance: !!options.instance_id,
+      deleteButtonText: isRecurring ? '删除此后周期日程' : '删除此日程',
+      deleteConfirmTitle: isRecurring ? '删除此后周期日程' : '删除此日程',
+      deleteConfirmContent: isRecurring
+        ? '会删除这条周期日程从本次开始的当前及未来日历记录，历史记录会保留。如果只是不去这一次，请选择「取消本次」。确认删除此后周期日程？'
+        : '会删除这条单次安排，确认删除？历史记录不受影响。',
+      deleteNote: isRecurring
+        ? '「取消本次」只隐藏当前这一次；「删除此后周期日程」会保留历史记录，只删除当前及未来日程。'
+        : '单次日程可直接删除；历史记录不受影响。',
       location: decodeQueryText(options.location),
       note: decodeQueryText(options.note)
     })
@@ -109,7 +126,7 @@ Page({
 
   cancelInstance() {
     const iid = this._inst.instance_id
-    if (!iid) return
+    if (!iid) return wx.showToast({ title: '请从日历具体日期取消本次', icon: 'none' })
     wx.showModal({
       title: '取消本次',
       content: '仅取消这一次，不影响之后重复的日程。',
@@ -131,15 +148,16 @@ Page({
     const sid = this._inst.schedule_id
     if (!sid) return wx.showToast({ title: '缺少日程信息', icon: 'none' })
     wx.showModal({
-      title: '删除全部日程',
-      content: '会删除这条周期日程及所有已生成的日历记录；如果只是不去这一次，请选择「取消本次」。确认删除全部？',
-      confirmText: '删除全部',
+      title: this.data.deleteConfirmTitle,
+      content: this.data.deleteConfirmContent,
+      confirmText: '删除',
       confirmColor: '#BF4A3C',
       success: (r) => {
         if (!r.confirm) return
-        app.request(`/v1/schedules/${sid}`, { method: 'DELETE' })
+        const from = this._inst.occur_date ? '?from=' + this._inst.occur_date : ''
+        app.request(`/v1/schedules/${sid}${from}`, { method: 'DELETE' })
           .then(() => {
-            wx.showToast({ title: '已删除全部', icon: 'success' })
+            wx.showToast({ title: '已删除', icon: 'success' })
             setTimeout(() => wx.navigateBack(), 500)
           })
           .catch((err) => wx.showToast({ title: err.message || '删除失败', icon: 'none' }))

@@ -1,19 +1,11 @@
 // 全部安排：日程 + 打卡任务按孩子分组，对齐 prototype scr-manage。
 const app = getApp()
 const { hhmm } = require('../../utils/date')
+const { detailUrl, repeatLabel: scheduleRepeatLabel } = require('../../utils/nav')
 
 const TYPE_EMOJI = { course: '📚', pickup: '🚗', activity: '🎈', reminder: '⏰' }
 const TASK_EMOJI = { timer: '⏱', count: '🔢', photo: '📷' }
 const FREQ_LABEL = { daily: '每天', weekdays: '工作日', custom: '自定义' }
-const BYDAY_CN = { MO: '每周一', TU: '每周二', WE: '每周三', TH: '每周四', FR: '每周五', SA: '每周六', SU: '每周日' }
-
-function repeatLabel(rrule) {
-  if (!rrule) return '单次'
-  if (rrule.indexOf('FREQ=DAILY') >= 0) return '每天'
-  const m = rrule.match(/BYDAY=([A-Z]{2})/)
-  if (m) return BYDAY_CN[m[1]] || '每周'
-  return '重复'
-}
 
 function goalSuffix(t) {
   if (t.goal_type === 'timer') return t.goal_value + ' 分钟'
@@ -61,7 +53,8 @@ Page({
           add(s.child_member_id, {
             id: 's' + s.schedule_id,
             isTask: false,
-            title: (TYPE_EMOJI[s.type] || '📅') + ' ' + s.title + ' · ' + repeatLabel(s.rrule) + ' ' + hhmm(s.start_time),
+            schedule: s,
+            title: (TYPE_EMOJI[s.type] || '📅') + ' ' + s.title + ' · ' + scheduleRepeatLabel(s.rrule) + ' ' + hhmm(s.start_time),
             meta: [s.location, who].filter(Boolean).join(' · ')
           })
         })
@@ -93,14 +86,31 @@ Page({
   filter(e) {
     const v = e.currentTarget.dataset.v
     if (v === 'child') return
-    wx.showToast({ title: (v === 'org' ? '按机构' : '已暂停') + '视图开发中', icon: 'none' })
+    wx.showToast({ title: (v === 'org' ? '按机构' : '已归档') + '视图开发中', icon: 'none' })
   },
 
   openItem(e) {
     const it = e.currentTarget.dataset.item
     if (!it) return
     if (!it.isTask) {
-      wx.showToast({ title: '日程编辑请从日历详情进入', icon: 'none' })
+      const s = it.schedule || {}
+      wx.navigateTo({
+        url: detailUrl({
+          instanceId: '',
+          scheduleId: s.schedule_id,
+          title: s.title,
+          type: s.type,
+          occurDate: s.start_date,
+          startAt: s.start_date + 'T' + (s.start_time || '00:00:00'),
+          endAt: s.end_time ? s.start_date + 'T' + s.end_time : '',
+          rrule: s.rrule || '',
+          repeatLabel: scheduleRepeatLabel(s.rrule || ''),
+          location: s.location,
+          note: s.note,
+          childMemberId: s.child_member_id,
+          ownerMemberId: s.owner_member_id
+        })
+      })
       return
     }
     const t = it.task || {}

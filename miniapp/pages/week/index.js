@@ -161,6 +161,7 @@ Page({
         occurDate: i.occur_date,
         startAt: i.start_at,
         endAt: i.end_at,
+        rrule: i.rrule || '',
         location: i.location,
         note: i.note,
         childMemberId: i.child_member_id,

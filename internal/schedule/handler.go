@@ -130,7 +130,15 @@ func (h *Handler) DeleteSchedule(ctx context.Context, c *app.RequestContext) {
 		httpx.Fail(c, ErrBadParam)
 		return
 	}
-	if err := h.svc.DeleteSchedule(ctx, auth.UserID(ctx), fid, sid); err != nil {
+	from := dateOnly(time.Now().UTC())
+	if s := c.Query("from"); s != "" {
+		from, err = time.Parse("2006-01-02", s)
+		if err != nil {
+			httpx.Fail(c, ErrBadParam)
+			return
+		}
+	}
+	if err := h.svc.DeleteSchedule(ctx, auth.UserID(ctx), fid, sid, from); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

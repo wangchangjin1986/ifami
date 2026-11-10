@@ -20,7 +20,7 @@
         <view class="card tappable" wx:for="{{g.items}}" wx:for-item="it" wx:key="id" bindtap="openItem" data-item="{{it}}">
           <view class="ev-title">{{it.title}} <text wx:if="{{it.isTask}}" class="chip gray">打卡任务</text></view>
           <view class="ev-meta">{{it.meta}}</view>
-          <view class="muted">{{it.isTask ? '点我进入详情，可编辑 / 暂停提醒 / 归档' : '日程编辑请从日历详情进入'}}</view>
+          <view class="muted">{{it.isTask ? '点我进入详情，可编辑 / 暂停提醒 / 归档' : '点我进入详情，可编辑 / 删除此后日程'}}</view>
         </view>
       </block>
     </block>

@@ -7,6 +7,7 @@
   <view class="body">
     <view class="card">
       <view class="rowline"><text>时间</text><text class="v">{{time}}</text></view>
+      <view class="rowline"><text>重复</text><text class="v">{{repeatLabel}}</text></view>
       <view class="rowline"><text>孩子</text><text class="v">{{childName}}</text></view>
       <view class="rowline"><text>责任人</text><text class="v">{{ownerName}}</text></view>
       <view class="rowline"><text>地点</text><text class="v">{{location || '—'}}</text></view>
@@ -17,10 +18,10 @@
       <button class="btn" bindtap="openReassign">改分工</button>
       <view class="row">
         <button class="btn ghost" style="flex:1" bindtap="edit">编辑</button>
-        <button class="btn danger" style="flex:1" bindtap="cancelInstance">取消本次</button>
+        <button wx:if="{{hasInstance}}" class="btn danger" style="flex:1" bindtap="cancelInstance">取消本次</button>
       </view>
-      <button class="btn danger" bindtap="deleteSchedule">删除全部周期日程</button>
-      <view class="note">「取消本次」只隐藏当前这一次；「删除全部」会删除整条周期日程。</view>
+      <button class="btn danger" bindtap="deleteSchedule">{{deleteButtonText}}</button>
+      <view class="note">{{deleteNote}}</view>
     </block>
 
     <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeSheet">
