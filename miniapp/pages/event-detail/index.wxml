@@ -19,6 +19,8 @@
         <button class="btn ghost" style="flex:1" bindtap="edit">编辑</button>
         <button class="btn danger" style="flex:1" bindtap="cancelInstance">取消本次</button>
       </view>
+      <button class="btn danger" bindtap="deleteSchedule">删除全部周期日程</button>
+      <view class="note">「取消本次」只隐藏当前这一次；「删除全部」会删除整条周期日程。</view>
     </block>
 
     <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeSheet">
