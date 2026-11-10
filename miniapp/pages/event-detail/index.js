@@ -1,4 +1,4 @@
-// 日程详情：展示单个实例，支持改分工（重指派责任人）/ 编辑 / 取消本次，对齐 prototype scr-event。
+// 日程详情：展示单个实例，支持改分工（重指派责任人）/ 编辑 / 取消本次 / 删除全部，对齐 prototype scr-event。
 const app = getApp()
 const { hhmm } = require('../../utils/date')
 
@@ -123,6 +123,26 @@ Page({
             setTimeout(() => wx.navigateBack(), 500)
           })
           .catch((err) => wx.showToast({ title: err.message || '取消失败', icon: 'none' }))
+      }
+    })
+  },
+
+  deleteSchedule() {
+    const sid = this._inst.schedule_id
+    if (!sid) return wx.showToast({ title: '缺少日程信息', icon: 'none' })
+    wx.showModal({
+      title: '删除全部日程',
+      content: '会删除这条周期日程及所有已生成的日历记录；如果只是不去这一次，请选择「取消本次」。确认删除全部？',
+      confirmText: '删除全部',
+      confirmColor: '#BF4A3C',
+      success: (r) => {
+        if (!r.confirm) return
+        app.request(`/v1/schedules/${sid}`, { method: 'DELETE' })
+          .then(() => {
+            wx.showToast({ title: '已删除全部', icon: 'success' })
+            setTimeout(() => wx.navigateBack(), 500)
+          })
+          .catch((err) => wx.showToast({ title: err.message || '删除失败', icon: 'none' }))
       }
     })
   }

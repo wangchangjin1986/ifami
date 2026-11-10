@@ -277,6 +277,8 @@ body {
         <button class="btn ghost" style="flex:1" id="btn-edit-event">编辑</button>
         <button class="btn danger" style="flex:1" id="btn-cancel-event">取消本次</button>
       </div>
+      <button class="btn danger" id="btn-delete-event-series">删除全部周期日程</button>
+      <div class="note">取消本次只影响当前日历里的这一条；删除全部会移除整条周期日程。</div>
     </div>
   </section>
 
@@ -908,6 +910,7 @@ body {
   });
   document.getElementById('btn-edit-event').addEventListener('click', function () { toast('原型演示：编辑日程（同新建表单）'); });
   document.getElementById('btn-cancel-event').addEventListener('click', function () { toast('已取消本次，并通知奶奶'); });
+  document.getElementById('btn-delete-event-series').addEventListener('click', function () { toast('已删除全部周期日程（原型演示）'); });
 
   // 改分工
   var sheetRe = document.getElementById('sheet-reassign');

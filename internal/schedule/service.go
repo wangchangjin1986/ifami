@@ -357,12 +357,12 @@ func (s *Service) ListSchedules(ctx context.Context, userID, familyID uint64) ([
 	return views, nil
 }
 
-// DeleteSchedule 软删模板并清空未来实例。
+// DeleteSchedule 软删模板并清空该模板全部已物化实例。
 func (s *Service) DeleteSchedule(ctx context.Context, userID, familyID, scheduleID uint64) error {
 	if err := s.requireWriter(ctx, userID, familyID); err != nil {
 		return err
 	}
-	return s.store.RemoveSchedule(ctx, familyID, scheduleID, dateOnly(time.Now().UTC()))
+	return s.store.RemoveSchedule(ctx, familyID, scheduleID)
 }
 
 // ListInstances 按日期范围列实例（今日/周/月视图，任意 active 成员可读）。
