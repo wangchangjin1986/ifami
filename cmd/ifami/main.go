@@ -82,7 +82,7 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 	if err != nil {
 		logx.Fatalf("字段加密密钥无效（FIELD_ENC_KEY 需为 base64 编码的 32 字节）: %v", err)
 	}
-	sessions := auth.NewRedisStore(rdb)
+	sessions := auth.NewHybridStore(gdb, rdb)
 
 	idSvc := identity.NewService(
 		identity.NewStore(gdb), wx, cfg.WXMiniAppID,
