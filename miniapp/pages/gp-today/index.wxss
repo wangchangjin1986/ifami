@@ -1,0 +1,8 @@
+.gp-page .app-head { align-items: baseline; }
+.gp-head .settings { margin-left: auto; }
+.gp-body { padding-bottom: calc(48rpx + env(safe-area-inset-bottom)); }
+.gp-family { font-size: 30rpx; color: var(--accent); font-weight: 700; }
+.gp-card.done { opacity: .82; }
+.done-line { color: var(--accent); font-size: 30rpx; font-weight: 700; }
+.gp-actions button.done { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); font-weight: 700; }
+.gp-actions button.adjust { border-color: var(--accent); color: var(--accent); }

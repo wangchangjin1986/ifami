@@ -27,6 +27,7 @@ function decodeQueryText(v, fallback = '') {
 Page({
   data: {
     canManage: false,
+    isGrandparent: false,
     title: '',
     time: '',
     childName: '',
@@ -40,7 +41,14 @@ Page({
     deleteNote: '删除此日程会移除这条单次安排；历史记录不受影响。',
     hasInstance: false,
     owners: [],
-    sheetOpen: false
+    sheetOpen: false,
+    feedbackOpen: false,
+    feedbackReasons: [
+      { value: '今天去不了', label: '今天去不了', desc: '我这次没法接送，请家长重新安排' },
+      { value: '时间不对', label: '时间不对', desc: '看到的时间和实际不一致' },
+      { value: '地点/携带物不清楚', label: '地点/携带物不清楚', desc: '需要家长补充说明' },
+      { value: '其他，电话说', label: '其他，电话说', desc: '保留人工兜底' }
+    ]
   },
 
   onLoad(options) {
@@ -48,6 +56,7 @@ Page({
     const isRecurring = !!options.rrule
     this.setData({
       canManage: !!app.globalData.isAdmin,
+      isGrandparent: app.globalData.role === 'grandparent' && !app.globalData.isAdmin,
       title: decodeQueryText(options.title),
       time: dateLabel(options.occur_date) + ' ' + hhmm(options.start_at) + (options.end_at ? '–' + hhmm(options.end_at) : ''),
       repeatLabel: decodeQueryText(options.repeat_label, isRecurring ? '重复' : '单次'),
@@ -97,7 +106,29 @@ Page({
 
   openReassign() { this.setData({ sheetOpen: true }) },
   closeSheet() { this.setData({ sheetOpen: false }) },
+  openFeedback() { this.setData({ feedbackOpen: true }) },
+  closeFeedback() { this.setData({ feedbackOpen: false }) },
   noop() {},
+
+  completeInstance() {
+    const iid = this._inst.instance_id
+    if (!iid) return wx.showToast({ title: '缺少日程实例', icon: 'none' })
+    app.request(`/v1/schedules/instances/${iid}/complete`, { method: 'POST' })
+      .then(() => wx.showToast({ title: '已完成', icon: 'success' }))
+      .catch((err) => wx.showToast({ title: err.message || '提交失败', icon: 'none' }))
+  },
+
+  submitFeedback(e) {
+    const iid = this._inst.instance_id
+    const reason = e.currentTarget.dataset.reason
+    if (!iid || !reason) return
+    app.request(`/v1/schedules/instances/${iid}/feedback`, { method: 'POST', data: { reason } })
+      .then(() => {
+        this.setData({ feedbackOpen: false })
+        wx.showToast({ title: '已通知家长处理', icon: 'none' })
+      })
+      .catch((err) => wx.showToast({ title: err.message || '提交失败', icon: 'none' }))
+  },
 
   reassign(e) {
     const ownerId = e.currentTarget.dataset.id

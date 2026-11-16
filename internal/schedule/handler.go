@@ -31,6 +31,8 @@ func (h *Handler) Register(g *route.RouterGroup) {
 	authed.PATCH("/schedules/:sid", h.UpdateSchedule)
 	authed.DELETE("/schedules/:sid", h.DeleteSchedule)
 	authed.GET("/schedules/instances", h.ListInstances)
+	authed.POST("/schedules/instances/:iid/complete", h.CompleteInstance)
+	authed.POST("/schedules/instances/:iid/feedback", h.SubmitFeedback)
 	authed.PATCH("/schedules/instances/:iid", h.UpdateInstance)
 }
 
@@ -181,6 +183,47 @@ func (h *Handler) UpdateInstance(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	if err := h.svc.UpdateInstance(ctx, auth.UserID(ctx), fid, iid, &req); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *Handler) CompleteInstance(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	iid, err := instanceIDParam(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	if err := h.svc.CompleteInstance(ctx, auth.UserID(ctx), fid, iid); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *Handler) SubmitFeedback(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	iid, err := instanceIDParam(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	var req FeedbackInput
+	if err := c.BindJSON(&req); err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	if err := h.svc.SubmitFeedback(ctx, auth.UserID(ctx), fid, iid, &req); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

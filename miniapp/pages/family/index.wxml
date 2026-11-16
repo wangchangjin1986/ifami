@@ -47,11 +47,7 @@
         <button class="btn ghost" bindtap="addChild">＋ 添加孩子</button>
       </view>
 
-      <button class="btn" bindtap="genInvite">＋ 邀请家人</button>
-      <view wx:if="{{inviteToken}}" class="invite-row">
-        <text class="invite-token">{{inviteToken}}</text>
-        <text class="invite-copy" bindtap="copyInvite">复制</text>
-      </view>
+      <button wx:if="{{isAdmin}}" class="btn" bindtap="genInvite">＋ 邀请家人</button>
 
       <view class="row">
         <button class="btn ghost row-btn" bindtap="goManage">全部安排</button>
@@ -64,7 +60,7 @@
 
       <view class="card {{isAdmin ? 'tappable' : 'disabled'}}" bindtap="openEntryPermission">
         <view class="rowline"><text>录入权限</text><text class="v">仅管理员可录入</text></view>
-        <view class="muted">只有管理员可以录入或编辑日程、打卡任务；其他成员可查看，祖辈通过反馈回路请求调整。</view>
+        <view class="muted">只有管理员可以录入或编辑日程、打卡任务、邀请成员；其他成员可查看，照护人通过反馈回路请求调整。</view>
       </view>
     </view>
 
@@ -109,6 +105,30 @@
         <button class="opt" bindtap="goTask"><text class="opt-b">创建打卡任务</text><text class="opt-s">阅读、跳绳——重复的目标行为，进打卡</text></button>
         <button class="opt" bindtap="goImport"><text class="opt-b">📷 拍照导入日程</text><text class="opt-s">拍课表、作息表、群通知截图——自动识别成日程草稿，确认后入库</text></button>
         <button class="btn ghost" bindtap="closeFab">取消</button>
+      </view>
+    </view>
+
+    <view class="sheet-mask" wx:if="{{inviteSheet}}" bindtap="closeInvite">
+      <view class="sheet" catchtap="noop">
+        <view class="group-label">邀请家人</view>
+        <view class="muted">邀请共同照顾孩子的人加入家庭协作。</view>
+        <button
+          wx:for="{{inviteOptions}}"
+          wx:key="kind"
+          class="opt {{inviteKind === item.kind ? 'picked' : ''}}"
+          bindtap="pickInviteKind"
+          data-kind="{{item.kind}}"
+        >
+          <text class="opt-b">{{item.title}}</text>
+          <text class="opt-s">{{item.desc}}</text>
+        </button>
+        <view wx:if="{{inviteKind === 'parent'}}" class="rowline">
+          <text>管理员权限</text>
+          <button class="toggle {{inviteAdmin ? 'on' : ''}}" bindtap="toggleInviteAdmin" aria-label="管理员权限"></button>
+        </view>
+        <button class="btn" open-type="share" disabled="{{!inviteReady}}">微信分享给家人</button>
+        <button class="btn ghost" bindtap="copyInvite" disabled="{{!inviteReady}}">复制邀请链接</button>
+        <button class="btn ghost" bindtap="closeInvite">取消</button>
       </view>
     </view>
   </block>

@@ -69,7 +69,11 @@ body {
 .gp-meta { font-size: 17px; color: var(--muted); line-height: 1.5; }
 .gp-actions { display: flex; gap: 10px; margin-top: 4px; }
 .gp-actions button { flex: 1; border-radius: 12px; padding: 10px; font-size: 16px; cursor: pointer; font-family: var(--font); border: 1.5px solid var(--line); background: var(--surface); color: var(--fg); }
+.gp-actions button.done { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); font-weight: 700; }
 .gp-actions button.no { border-color: var(--warn); color: var(--warn); }
+.gp-actions button.adjust { border-color: var(--accent); color: var(--accent); }
+.gp-family { font-size: 15px; color: var(--accent); font-weight: 700; }
+.gp .tabbar, .gp #fab { display: none; }
 .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 10px; font-size: 12px; background: var(--accent-soft); color: var(--accent); font-weight: 500; white-space: nowrap; }
 .chip.gray { background: var(--surface-2); color: var(--muted); }
@@ -228,25 +232,27 @@ body {
     <button id="preview-exit">退出预览</button>
   </div>
 
-  <!-- 祖辈：今日视图 -->
+  <!-- 照护人：跨家庭聚合今日视图（无 Tab，祖辈/保姆阿姨共用） -->
   <section class="screen" id="scr-gp" hidden>
-    <div class="app-head"><h1 class="gp-head-date">今天 10月26日 星期一</h1></div>
+    <div class="app-head"><h1 class="gp-head-date">今天 10月26日 星期一</h1><span class="sub" id="gp-settings" style="margin-left:auto;color:var(--accent)">设置</span></div>
     <div class="body">
       <div class="gp-card">
+        <div class="gp-family">乐乐家 · 乐乐</div>
         <div class="gp-time">16:30</div>
         <div class="gp-title">接乐乐放学</div>
         <div class="gp-meta">📍 实验二小 东门<br>🎒 带：水壶、外套</div>
-        <div class="gp-actions"><button class="no" data-cantdo="接乐乐放学">去不了</button></div>
+        <div class="gp-actions"><button class="done" data-complete="接乐乐放学">完成</button><button class="adjust" data-feedback="接乐乐放学" data-reason="要调整">要调整</button></div>
       </div>
       <div class="gp-card">
+        <div class="gp-family">果果家 · 果果</div>
         <div class="gp-time">17:30</div>
-        <div class="gp-title">送乐乐上钢琴课</div>
-        <div class="gp-meta">📍 音悦琴行 3 楼<br>🎒 带：琴谱</div>
-        <div class="gp-actions"><button class="no" data-cantdo="送乐乐上钢琴课">去不了</button></div>
+        <div class="gp-title">送果果上舞蹈课</div>
+        <div class="gp-meta">📍 少儿艺术中心 2 楼<br>🎒 带：舞蹈鞋</div>
+        <div class="gp-actions"><button class="done" data-complete="送果果上舞蹈课">完成</button><button class="adjust" data-feedback="送果果上舞蹈课" data-reason="要调整">要调整</button></div>
       </div>
-      <div class="tomorrow">明天 · 07:30 送乐乐上学</div>
-      <button class="big-call" id="gp-call">📞 有事打给儿子</button>
-      <div class="note">「去不了」会立刻通知儿子儿媳改分工，<br>不用自己在群里解释</div>
+      <div class="tomorrow">明天 · 乐乐家 07:30 送乐乐上学</div>
+      <button class="big-call" id="gp-call">📞 联系家长</button>
+      <div class="note">这里不会显示复杂的日历和家庭管理；「完成」用于快速确认已执行，「要调整」会通知家长处理。</div>
     </div>
   </section>
 
@@ -273,13 +279,22 @@ body {
         <div class="rowline"><span>地点</span><span class="v" id="event-loc">音悦琴行 3 楼</span></div>
         <div class="rowline"><span>备注</span><span class="v" id="event-note">带琴谱</span></div>
       </div>
-      <button class="btn" id="btn-reassign">改分工</button>
-      <div class="row" style="gap:10px">
-        <button class="btn ghost" style="flex:1" id="btn-edit-event">编辑</button>
-        <button class="btn danger" style="flex:1" id="btn-cancel-event">取消本次</button>
+      <div id="event-admin-actions">
+        <button class="btn" id="btn-reassign">改分工</button>
+        <div class="row" style="gap:10px;margin-top:10px">
+          <button class="btn ghost" style="flex:1" id="btn-edit-event">编辑</button>
+          <button class="btn danger" style="flex:1" id="btn-cancel-event">取消本次</button>
+        </div>
+        <button class="btn danger" id="btn-delete-event-series" style="margin-top:10px">删除此后周期日程</button>
+        <div class="note" id="event-delete-note">取消本次只影响当前日历里的这一条；删除此后周期日程会保留历史记录，只移除当前日期及未来日程。</div>
       </div>
-      <button class="btn danger" id="btn-delete-event-series">删除此后周期日程</button>
-      <div class="note" id="event-delete-note">取消本次只影响当前日历里的这一条；删除此后周期日程会保留历史记录，只移除当前日期及未来日程。</div>
+      <div id="event-gp-actions" hidden>
+        <div class="row" style="gap:10px">
+          <button class="btn" style="flex:1" id="event-complete" data-complete="乐乐钢琴课">完成</button>
+          <button class="btn ghost" style="flex:1" id="event-feedback-adjust" data-feedback="乐乐钢琴课" data-reason="要调整">要调整</button>
+        </div>
+        <div class="note">你不能直接改日程；完成会记录执行结果，要调整会通知家长处理。</div>
+      </div>
     </div>
   </section>
 
@@ -631,7 +646,8 @@ body {
     <div class="body">
       <div class="card member" data-member="妈妈"><div class="avatar">妈</div><div class="ev-main"><div class="ev-title">妈妈 <span class="chip">管理员</span></div><div class="ev-meta">138****1234 · 服务号已绑</div></div></div>
       <div class="card member" data-member="爸爸"><div class="avatar">爸</div><div class="ev-main"><div class="ev-title">爸爸</div><div class="ev-meta">139****5678 · 服务号已绑</div></div></div>
-      <div class="card member" data-member="奶奶"><div class="avatar">奶</div><div class="ev-main"><div class="ev-title">奶奶</div><div class="ev-meta">136****9012 · 服务号 + 短信兜底</div></div></div>
+      <div class="card member" data-member="奶奶"><div class="avatar">奶</div><div class="ev-main"><div class="ev-title">奶奶 <span class="chip gray">照护人</span></div><div class="ev-meta">136****9012 · 服务号 + 短信兜底</div></div></div>
+      <div class="card member" data-member="接送阿姨"><div class="avatar">姨</div><div class="ev-main"><div class="ev-title">接送阿姨 <span class="chip gray">照护人</span></div><div class="ev-meta">只看今日安排 · 可完成/要调整</div></div></div>
       <div class="card member" data-member="乐乐"><div class="avatar">乐</div><div class="ev-main"><div class="ev-title">乐乐 <span class="chip gray">孩子档案</span></div><div class="ev-meta">三年级 · 虚拟成员，由父母代管</div></div></div>
       <div class="card member" data-member="果果"><div class="avatar">果</div><div class="ev-main"><div class="ev-title">果果 <span class="chip gray">孩子档案</span></div><div class="ev-meta">幼儿园大班 · 虚拟成员</div></div></div>
       <button class="btn" id="btn-invite">＋ 邀请家人</button>
@@ -645,7 +661,7 @@ body {
       </div>
       <div class="card tappable" id="entry-permission-card">
         <div class="rowline"><span>录入权限</span><span class="v">仅管理员可录入</span></div>
-        <div class="muted">只有管理员可以录入或编辑日程、打卡任务；其他成员可查看，祖辈通过反馈回路请求调整。</div>
+        <div class="muted">只有管理员可以录入或编辑日程、打卡任务；其他成员可查看，照护人通过完成/要调整反馈回路协作。</div>
       </div>
     </div>
   </section>
@@ -668,7 +684,7 @@ body {
       </div>
       <div class="card" id="member-role-card">
         <div class="ev-title" style="margin-bottom:8px">角色</div>
-        <div class="seg" id="member-role-seg"><button>家长</button><button class="on">祖辈</button></div>
+        <div class="seg" id="member-role-seg"><button>家长</button><button class="on">照护人</button></div>
         <div class="muted">角色是系统预设，只决定视角与业务身份；不包含管理员。</div>
       </div>
       <div class="card">
@@ -679,7 +695,7 @@ body {
         <div class="rowline"><span>短信兜底</span><span class="v">✅ 已开启</span></div>
         <div class="rowline"><span>大字模式</span><button class="toggle on" aria-label="大字模式"></button></div>
       </div>
-      <div class="muted">祖辈无编辑权；对日程点「去不了」即触发改分工流程，代替直接修改。</div>
+      <div class="muted">照护人无编辑权；通过「完成」确认执行，通过「要调整」通知家长处理。</div>
       <button class="btn" id="btn-save-member">保存</button>
       <button class="btn" id="btn-preview">预览 Ta 的视图</button>
       <button class="btn danger" id="btn-remove-member">移除成员</button>
@@ -691,15 +707,14 @@ body {
   <section class="screen" id="scr-invite" hidden>
     <div class="app-head"><button class="back">‹ 返回</button><h1>加入「乐乐家」</h1></div>
     <div class="body">
-      <div class="muted">妈妈 邀请你加入家庭协作。整个过程不到 30 秒，不需要下载 App。</div>
+      <div class="muted" id="invite-desc">妈妈邀请你加入家庭协作。另一位家长进入四 Tab；祖辈/保姆阿姨进入简化今日安排。</div>
       <div class="card"><div class="ev-title">第 1 步 · 微信授权</div><div class="ev-meta">✅ 已完成</div></div>
-      <div class="card"><div class="ev-title">第 2 步 · 手机号</div><div class="ev-meta">✅ 136****9012（微信一键取号，用于重要提醒的短信兜底）</div></div>
-      <div class="card"><div class="ev-title" style="margin-bottom:8px">第 3 步 · 你是孩子的？</div>
+      <div class="card"><div class="ev-title">第 2 步 · 提醒通道</div><div class="ev-meta">可在设置中补充手机号；服务号提醒后续开放</div></div>
+      <div class="card"><div class="ev-title" style="margin-bottom:8px" id="invite-rel-title">第 3 步 · 你的身份是？</div>
         <div class="filters" id="invite-rel">
-          <span class="chip on">奶奶</span><span class="chip">爷爷</span><span class="chip">外婆</span><span class="chip">外公</span>
+          <span class="chip on">妈妈</span><span class="chip">爸爸</span><span class="chip">奶奶</span><span class="chip">爷爷</span><span class="chip">阿姨</span><span class="chip">接送阿姨</span>
         </div>
       </div>
-      <div class="card"><div class="ev-title">第 4 步 · 关注服务号</div><div class="ev-meta">接送提醒会发到这里，不漏消息</div></div>
       <button class="btn" id="btn-join">完成，进入家庭</button>
     </div>
   </section>
@@ -821,6 +836,21 @@ body {
     </div>
   </div>
 
+  <!-- 动作面板：邀请家人 -->
+  <div class="sheet-mask" id="sheet-invite" hidden>
+    <div class="sheet tall">
+      <div class="ev-title">邀请家人</div>
+      <div class="muted">邀请共同照顾孩子的人加入家庭协作。</div>
+      <button class="opt" data-invite-kind="parent"><b>另一位家长</b><span>一起管理日程、查看打卡、接收提醒；可选普通家长/管理员</span></button>
+      <button class="opt" data-invite-kind="grandparent"><b>爷爷奶奶 / 姥姥姥爷</b><span>看今天安排，完成接送反馈</span></button>
+      <button class="opt" data-invite-kind="caregiver"><b>保姆阿姨 / 接送阿姨</b><span>只看今天安排，完成接送反馈，文案显示为照护人</span></button>
+      <div class="seg" id="invite-admin-seg"><button class="on">普通家长</button><button>管理员</button></div>
+      <button class="btn" id="invite-share">微信分享给家人</button>
+      <button class="btn ghost" id="invite-copy">复制邀请链接</button>
+      <button class="btn ghost" id="invite-cancel">取消</button>
+    </div>
+  </div>
+
   <!-- 动作面板：改分工 -->
   <div class="sheet-mask" id="sheet-reassign" hidden>
     <div class="sheet">
@@ -829,6 +859,19 @@ body {
       <button class="opt" data-pick="妈妈"><b>妈妈</b><span>17:30 无安排，可送</span></button>
       <button class="opt" data-pick="爸爸"><b>爸爸</b><span>17:30 无安排，可送</span></button>
       <button class="btn ghost" id="reassign-cancel">取消</button>
+    </div>
+  </div>
+
+  <!-- 动作面板：祖辈反馈 -->
+  <div class="sheet-mask" id="sheet-feedback" hidden>
+    <div class="sheet">
+      <div class="ev-title" id="feedback-title">接乐乐放学</div>
+      <div class="muted">要告诉家长哪里需要处理？</div>
+      <button class="opt" data-feedback-reason="今天去不了"><b>今天去不了</b><span>我这次没法接送，请家长重新安排</span></button>
+      <button class="opt" data-feedback-reason="时间不对"><b>时间不对</b><span>看到的时间和实际不一致</span></button>
+      <button class="opt" data-feedback-reason="地点/携带物不清楚"><b>地点/携带物不清楚</b><span>需要家长补充说明</span></button>
+      <button class="opt" data-feedback-reason="其他，电话说"><b>其他，电话说</b><span>保留人工兜底</span></button>
+      <button class="btn ghost" id="feedback-cancel">取消</button>
     </div>
   </div>
 
@@ -858,6 +901,8 @@ body {
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
   var navStack = [];
+  var currentRole = 'parent';
+  var feedbackEvent = '';
 
   function toast(msg) {
     toastEl.textContent = msg; toastEl.hidden = false;
@@ -876,6 +921,7 @@ body {
 
   // 角色切换
   function setRole(r) {
+    currentRole = r;
     newFamily = r === 'new';
     document.getElementById('role-parent').classList.toggle('on', r === 'parent');
     document.getElementById('role-gp').classList.toggle('on', r === 'gp');
@@ -894,13 +940,33 @@ body {
     b.addEventListener('click', back);
   });
 
-  // 祖辈「去不了」
-  Array.prototype.forEach.call(document.querySelectorAll('[data-cantdo]'), function (b) {
+  // 祖辈「完成 / 要调整」操作
+  var sheetFeedback = document.getElementById('sheet-feedback');
+  Array.prototype.forEach.call(document.querySelectorAll('[data-complete]'), function (b) {
     b.addEventListener('click', function () {
-      toast('已通知儿子儿媳：' + b.dataset.cantdo + ' 需要改分工');
+      toast('已完成：' + b.dataset.complete);
     });
   });
-  document.getElementById('gp-call').addEventListener('click', function () { toast('原型演示：拨打儿子电话（略）'); });
+  function openFeedback(eventName, reason) {
+    feedbackEvent = eventName;
+    document.getElementById('feedback-title').textContent = eventName + ' · ' + reason;
+    sheetFeedback.hidden = false;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-feedback]'), function (b) {
+    b.addEventListener('click', function () {
+      openFeedback(b.dataset.feedback, b.dataset.reason || '要调整');
+    });
+  });
+  document.getElementById('feedback-cancel').addEventListener('click', function () { sheetFeedback.hidden = true; });
+  sheetFeedback.addEventListener('click', function (e) { if (e.target === sheetFeedback) sheetFeedback.hidden = true; });
+  Array.prototype.forEach.call(sheetFeedback.querySelectorAll('[data-feedback-reason]'), function (b) {
+    b.addEventListener('click', function () {
+      sheetFeedback.hidden = true;
+      toast('已通知家长处理：' + feedbackEvent + ' · ' + b.dataset.feedbackReason);
+    });
+  });
+  document.getElementById('gp-call').addEventListener('click', function () { toast('原型演示：联系家长（略）'); });
+  document.getElementById('gp-settings').addEventListener('click', function () { nav('scr-settings'); });
 
   // 日程详情
   Array.prototype.forEach.call(document.querySelectorAll('[data-event]'), function (c) {
@@ -910,6 +976,10 @@ body {
       document.getElementById('event-repeat').textContent = single ? '单次' : '每周重复';
       document.getElementById('btn-delete-event-series').textContent = single ? '删除此日程' : '删除此后周期日程';
       document.getElementById('event-delete-note').textContent = single ? '删除此日程会移除这条单次安排；历史记录不受影响。' : '取消本次只影响当前日历里的这一条；删除此后周期日程会保留历史记录，只移除当前日期及未来日程。';
+      document.getElementById('event-admin-actions').hidden = currentRole === 'gp';
+      document.getElementById('event-gp-actions').hidden = currentRole !== 'gp';
+      document.getElementById('event-complete').dataset.complete = c.dataset.event;
+      document.getElementById('event-feedback-adjust').dataset.feedback = c.dataset.event;
       nav('scr-event');
     });
   });
@@ -1204,7 +1274,14 @@ body {
   });
 
   // 家庭相关
-  document.getElementById('btn-invite').addEventListener('click', function () { nav('scr-invite'); });
+  var inviteSheet = document.getElementById('sheet-invite');
+  document.getElementById('btn-invite').addEventListener('click', function () { inviteSheet.hidden = false; });
+  document.getElementById('invite-cancel').addEventListener('click', function () { inviteSheet.hidden = true; });
+  document.getElementById('invite-share').addEventListener('click', function () { inviteSheet.hidden = true; toast('已调起微信分享卡片（原型演示）'); nav('scr-invite'); });
+  document.getElementById('invite-copy').addEventListener('click', function () { toast('已复制邀请路径（原型演示）'); });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-invite-kind]'), function (b) {
+    b.addEventListener('click', function () { toast('邀请类型：' + b.querySelector('b').textContent); });
+  });
   document.getElementById('btn-join').addEventListener('click', function () { setRole('gp'); toast('已加入「乐乐家」'); });
   document.getElementById('btn-manage').addEventListener('click', function () { nav('scr-manage'); });
   document.getElementById('btn-report').addEventListener('click', function () { nav('scr-report'); });

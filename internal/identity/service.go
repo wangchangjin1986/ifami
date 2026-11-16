@@ -51,9 +51,17 @@ type LoginResult struct {
 }
 
 type JoinResult struct {
-	Token    string `json:"token"`
-	FamilyID uint64 `json:"family_id"`
-	Role     string `json:"role"`
+	Token      string `json:"token"`
+	FamilyID   uint64 `json:"family_id"`
+	Role       string `json:"role"`
+	InviteType string `json:"invite_type"`
+	IsAdmin    bool   `json:"is_admin"`
+}
+
+type InvitationInput struct {
+	InviteType string `json:"invite_type"`
+	Role       string `json:"role"`
+	IsAdmin    bool   `json:"is_admin"`
 }
 
 type MemberView struct {
@@ -150,23 +158,37 @@ func (s *Service) ListFamilies(ctx context.Context, userID uint64) ([]FamilyRole
 	return rows, nil
 }
 
-// CreateInvitation 生成邀请 token（admin/parent 可邀请）。
-func (s *Service) CreateInvitation(ctx context.Context, userID, familyID uint64) (string, error) {
-	if _, err := s.requireRole(ctx, userID, familyID, RoleAdmin, RoleParent); err != nil {
+// CreateInvitation 生成邀请 token（仅管理员可邀请）。
+func (s *Service) CreateInvitation(ctx context.Context, userID, familyID uint64, in InvitationInput) (string, error) {
+	if _, err := s.requireRole(ctx, userID, familyID, RoleAdmin); err != nil {
 		return "", err
 	}
-	return invite.Sign(s.inviteSecret, familyID, time.Now()), nil
+	if in.InviteType == "" {
+		in.InviteType = invite.TypeGrandparent
+	}
+	if in.Role == "" {
+		if in.InviteType == invite.TypeParent {
+			in.Role = RoleParent
+		} else {
+			in.Role = RoleGrandparent
+		}
+	}
+	if !invite.ValidClaims(in.InviteType, in.Role, in.IsAdmin) {
+		return "", ErrBadParam
+	}
+	return invite.SignClaims(s.inviteSecret, invite.Claims{FamilyID: familyID, InviteType: in.InviteType, Role: in.Role, IsAdmin: in.IsAdmin}, time.Now())
 }
 
 // JoinFamily 接受邀请：验证 token + code → 建/查 user → 加 grandparent 成员 → 自动登录。
 func (s *Service) JoinFamily(ctx context.Context, code, token, relationLabel string) (*JoinResult, error) {
-	familyID, err := invite.Verify(s.inviteSecret, token)
+	claims, err := invite.VerifyClaims(s.inviteSecret, token)
 	if err != nil {
 		if errors.Is(err, invite.ErrExpired) {
 			return nil, ErrInviteExpired
 		}
 		return nil, ErrBadInvite
 	}
+	familyID := claims.FamilyID
 	f, err := s.store.FindFamily(ctx, familyID)
 	if err != nil {
 		return nil, err
@@ -190,7 +212,7 @@ func (s *Service) JoinFamily(ctx context.Context, code, token, relationLabel str
 	uid := userID
 	m := &Member{
 		FamilyID: familyID, UserID: &uid, Type: TypeReal,
-		Role: RoleGrandparent, RelationLabel: relationLabel, Status: StatusActive,
+		Role: claims.Role, IsAdmin: claims.IsAdmin, RelationLabel: relationLabel, Status: StatusActive,
 	}
 	if err := s.store.CreateMember(ctx, m); err != nil {
 		return nil, err
@@ -200,7 +222,7 @@ func (s *Service) JoinFamily(ctx context.Context, code, token, relationLabel str
 		logx.Errorf("加入家庭创建会话失败: family_id=%d user_id=%d err=%v", familyID, userID, err)
 		return nil, err
 	}
-	return &JoinResult{Token: sessionToken, FamilyID: familyID, Role: RoleGrandparent}, nil
+	return &JoinResult{Token: sessionToken, FamilyID: familyID, Role: claims.Role, InviteType: claims.InviteType, IsAdmin: claims.IsAdmin}, nil
 }
 
 // ListMembers 家庭成员列表（含虚拟孩子，孩子姓名解密返回）。
@@ -384,6 +406,11 @@ func (s *Service) MemberUserID(ctx context.Context, familyID, memberID uint64) (
 		return 0, ErrNotMember
 	}
 	return *m.UserID, nil
+}
+
+// AdminUserIDs 返回家庭内管理员 user_id 列表（schedule 执行端反馈通知家长处理用）。
+func (s *Service) AdminUserIDs(ctx context.Context, familyID uint64) ([]uint64, error) {
+	return s.store.ListAdminUserIDs(ctx, familyID)
 }
 
 // ChildNames 返回家庭内孩子（虚拟成员）的 member_id → 解密姓名（ingest 识别结果匹配孩子用）。

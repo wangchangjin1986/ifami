@@ -1,0 +1,48 @@
+<view class="page gp-page">
+  <block wx:if="{{!logged}}">
+    <view class="empty">请先登录</view>
+  </block>
+
+  <block wx:elif="{{!hasFamily}}">
+    <view class="empty">暂无家庭安排</view>
+  </block>
+
+  <block wx:else>
+    <view class="app-head gp-head">
+      <text class="title">今天 {{dateStr}}</text>
+      <text class="sub link settings" bindtap="goSettings">设置</text>
+    </view>
+
+    <view class="body gp-body">
+      <view wx:if="{{empty}}" class="empty">今天暂无要处理的安排</view>
+
+      <view class="gp-card {{item.status === 'done' ? 'done' : ''}}" wx:for="{{items}}" wx:key="instanceId">
+        <view class="gp-family">{{item.familyName}} · {{item.childName}}</view>
+        <text class="gp-time">{{item.start}}</text>
+        <text class="gp-title">{{item.title}}</text>
+        <text class="gp-meta">{{item.meta}}</text>
+        <view wx:if="{{item.status === 'done'}}" class="done-line">✅ 已完成</view>
+        <view wx:else class="gp-actions">
+          <button class="done" bindtap="completeItem" data-id="{{item.instanceId}}" data-family-id="{{item.familyId}}">完成</button>
+          <button class="adjust" bindtap="openFeedback" data-id="{{item.instanceId}}" data-family-id="{{item.familyId}}" data-title="{{item.title}}">要调整</button>
+        </view>
+      </view>
+
+      <view wx:if="{{tomorrowText}}" class="tomorrow">{{tomorrowText}}</view>
+      <button class="big-call" bindtap="callBackup">📞 有事打给儿子</button>
+      <view class="note">祖辈没有底部 Tab，也不用切家庭；「完成」用于快速确认已执行，「要调整」会通知对应家庭管理员处理。</view>
+    </view>
+
+    <view class="sheet-mask" wx:if="{{feedbackOpen}}" bindtap="closeFeedback">
+      <view class="sheet" catchtap="noop">
+        <view class="group-label">{{feedbackTitle}}</view>
+        <view class="muted">要告诉家长哪里需要处理？</view>
+        <button class="opt" wx:for="{{feedbackReasons}}" wx:key="value" bindtap="submitFeedback" data-reason="{{item.value}}">
+          <text class="opt-b">{{item.label}}</text>
+          <text class="opt-s">{{item.desc}}</text>
+        </button>
+        <button class="btn ghost" bindtap="closeFeedback">取消</button>
+      </view>
+    </view>
+  </block>
+</view>

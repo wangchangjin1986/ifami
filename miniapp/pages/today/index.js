@@ -22,6 +22,7 @@ Page({
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 0 })
     }
+    if (app.routeGrandparentHome('pages/today/index')) return
     this.refresh()
   },
 
@@ -42,7 +43,10 @@ Page({
     }
     const ready = app.globalData.familyId && (app.globalData.memberships || []).length > 0
     if (!ready) {
-      app.ensureLogin().then(() => this.loadToday()).catch((e) => handleErr(e))
+      app.ensureLogin().then(() => {
+        if (app.routeGrandparentHome('pages/today/index')) return
+        return this.loadToday()
+      }).catch((e) => handleErr(e))
       return
     }
     this.loadToday().catch((e) => handleErr(e))

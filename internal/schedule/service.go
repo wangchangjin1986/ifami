@@ -3,6 +3,7 @@ package schedule
 import (
 	"context"
 	"ifami/internal/pkg/logx"
+	"strconv"
 	"time"
 
 	"ifami/internal/pkg/httpx"
@@ -19,6 +20,8 @@ type Membership interface {
 	RequireMember(ctx context.Context, familyID, memberID uint64) (mtype, role string, err error)
 	// MemberUserID 返回 real 成员的 user_id（触达需 openid，openid 需 user_id）。
 	MemberUserID(ctx context.Context, familyID, memberID uint64) (uint64, error)
+	// AdminUserIDs 返回家庭管理员 user_id 列表（执行端反馈通知家长处理用）。
+	AdminUserIDs(ctx context.Context, familyID uint64) ([]uint64, error)
 }
 
 // Notifier 是 schedule 对 notify 模块的最小依赖（消费方定义接口，跨模块只走接口，硬性规则 6）。
@@ -123,6 +126,11 @@ type InstanceView struct {
 type InstanceInput struct {
 	Status        string `json:"status"`
 	OwnerMemberID uint64 `json:"owner_member_id"`
+}
+
+// FeedbackInput 祖辈/执行人对日程实例的异常反馈。
+type FeedbackInput struct {
+	Reason string `json:"reason"`
 }
 
 // CreateSchedule 创建日程：物化未来 90 天 + 冲突检测（force 跳过冲突拦截）。
@@ -423,6 +431,60 @@ func (s *Service) UpdateInstance(ctx context.Context, userID, familyID, instance
 	return s.store.UpdateInstance(ctx, instanceID, familyID, updates)
 }
 
+// CompleteInstance 执行端确认日程已完成：任意 active 成员可提交，写入事件流。
+func (s *Service) CompleteInstance(ctx context.Context, userID, familyID, instanceID uint64) error {
+	if _, _, err := s.id.RequireActive(ctx, userID, familyID); err != nil {
+		return err
+	}
+	inst, err := s.store.FindInstance(ctx, familyID, instanceID)
+	if err != nil {
+		return err
+	}
+	if inst == nil {
+		return ErrInstanceNotFound
+	}
+	if inst.Status == StatusDone {
+		return nil
+	}
+	if inst.Status == StatusCancelled {
+		return ErrBadParam
+	}
+	return s.store.CompleteInstanceWithEvent(ctx, familyID, instanceID)
+}
+
+// SubmitFeedback 执行端提交「要调整」反馈：待处理状态下重复提交只更新原因和时间，并强触达管理员。
+func (s *Service) SubmitFeedback(ctx context.Context, userID, familyID, instanceID uint64, in *FeedbackInput) error {
+	reporterID, _, err := s.id.RequireActive(ctx, userID, familyID)
+	if err != nil {
+		return err
+	}
+	if !validFeedbackReason(in.Reason) {
+		return ErrBadParam
+	}
+	inst, err := s.store.FindInstance(ctx, familyID, instanceID)
+	if err != nil {
+		return err
+	}
+	if inst == nil {
+		return ErrInstanceNotFound
+	}
+	if inst.Status == StatusCancelled {
+		return ErrBadParam
+	}
+	if err := s.store.UpsertPendingFeedbackWithEvent(ctx, &ScheduleFeedback{
+		FamilyID:   familyID,
+		InstanceID: instanceID,
+		ScheduleID: inst.ScheduleID,
+		ReporterID: reporterID,
+		Reason:     in.Reason,
+		Status:     StatusPending,
+	}); err != nil {
+		return err
+	}
+	s.notifyAdminsFeedback(ctx, familyID, inst, in.Reason)
+	return nil
+}
+
 // ---- 内部辅助 ----
 
 func (s *Service) rrulesForInstances(ctx context.Context, familyID uint64, rows []ScheduleInstance) (map[uint64]string, error) {
@@ -469,6 +531,46 @@ func (s *Service) notifyOwner(ctx context.Context, familyID uint64, sch *Schedul
 		},
 	}); err != nil {
 		logx.Errorf("[schedule] 创建触达任务失败: %v", err)
+	}
+}
+
+func (s *Service) notifyAdminsFeedback(ctx context.Context, familyID uint64, inst *ScheduleInstance, reason string) {
+	if s.notify == nil {
+		return
+	}
+	userIDs, err := s.id.AdminUserIDs(ctx, familyID)
+	if err != nil {
+		logx.Warnf("[schedule] 反馈触达解析管理员失败: %v", err)
+		return
+	}
+	for _, userID := range userIDs {
+		if _, err := s.notify.CreateJob(ctx, NotifyInput{
+			FamilyID:     familyID,
+			TargetUserID: userID,
+			Level:        levelStrong,
+			BusinessKey:  "schedule_feedback:" + instKey(inst.InstanceID) + ":" + instKey(userID),
+			Payload: map[string]any{
+				"type":        "schedule_feedback",
+				"title":       inst.Title,
+				"reason":      reason,
+				"start_at":    inst.StartAt.Format(time.RFC3339),
+				"location":    inst.Location,
+				"instance_id": inst.InstanceID,
+			},
+		}); err != nil {
+			logx.Errorf("[schedule] 创建反馈触达任务失败: %v", err)
+		}
+	}
+}
+
+func instKey(id uint64) string { return strconv.FormatUint(id, 10) }
+
+func validFeedbackReason(reason string) bool {
+	switch reason {
+	case "今天去不了", "时间不对", "地点/携带物不清楚", "其他，电话说":
+		return true
+	default:
+		return false
 	}
 }
 

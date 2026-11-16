@@ -4,6 +4,7 @@
     "pages/week/index",
     "pages/daka/index",
     "pages/family/index",
+    "pages/gp-today/index",
     "pages/event/index",
     "pages/event-detail/index",
     "pages/task/index",

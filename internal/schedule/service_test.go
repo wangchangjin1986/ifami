@@ -29,6 +29,10 @@ func (f fakeScheduleMembership) MemberUserID(context.Context, uint64, uint64) (u
 	return 1, nil
 }
 
+func (f fakeScheduleMembership) AdminUserIDs(context.Context, uint64) ([]uint64, error) {
+	return []uint64{1}, nil
+}
+
 func TestRequireWriter_AdminOnly(t *testing.T) {
 	ctx := context.Background()
 	if err := (&Service{id: fakeScheduleMembership{role: roleAdmin}}).requireWriter(ctx, 1, 100); err != nil {
@@ -36,6 +40,17 @@ func TestRequireWriter_AdminOnly(t *testing.T) {
 	}
 	if err := (&Service{id: fakeScheduleMembership{role: "parent"}}).requireWriter(ctx, 1, 100); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("parent requireWriter error = %v，want ErrForbidden", err)
+	}
+}
+
+func TestValidFeedbackReason(t *testing.T) {
+	for _, reason := range []string{"今天去不了", "时间不对", "地点/携带物不清楚", "其他，电话说"} {
+		if !validFeedbackReason(reason) {
+			t.Fatalf("reason %q should be valid", reason)
+		}
+	}
+	if validFeedbackReason("随便改一下") {
+		t.Fatalf("unknown reason should be invalid")
 	}
 }
 

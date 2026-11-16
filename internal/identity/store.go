@@ -177,6 +177,17 @@ func (s *Store) CountAdmins(ctx context.Context, familyID, excludeMemberID uint6
 	return n, err
 }
 
+// ListAdminUserIDs 返回家庭内 active 管理员的 user_id（执行端反馈强触达用）。
+func (s *Store) ListAdminUserIDs(ctx context.Context, familyID uint64) ([]uint64, error) {
+	var rows []uint64
+	err := s.db.WithContext(ctx).
+		Model(&Member{}).
+		Where("family_id = ? AND status = ? AND type = ? AND user_id IS NOT NULL AND (is_admin = ? OR role = ?)",
+			familyID, StatusActive, TypeReal, true, RoleAdmin).
+		Pluck("user_id", &rows).Error
+	return rows, err
+}
+
 // RemoveMember 软删除成员（status=removed）。孩子档案不受影响（见 ADR-001）。
 func (s *Store) RemoveMember(ctx context.Context, memberID, familyID uint64) error {
 	res := s.db.WithContext(ctx).

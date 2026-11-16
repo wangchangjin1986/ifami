@@ -30,6 +30,7 @@ Page({
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 2 })
     }
+    if (app.routeGrandparentHome('pages/daka/index')) return
     if (this.data.skipNextRefresh) {
       this.setData({ skipNextRefresh: false })
       return
@@ -46,8 +47,12 @@ Page({
     const ready = app.globalData.familyId && (app.globalData.memberships || []).length > 0
     const ensureSession = ready ? Promise.resolve() : app.refreshMe()
     return ensureSession
+      .then(() => {
+        if (app.routeGrandparentHome('pages/daka/index')) return Promise.reject({ routed: true })
+      })
       .then(() => this.loadTasks())
       .catch((e) => {
+        if (e && e.routed) return
         if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false, groups: [] }) }
         else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
       })

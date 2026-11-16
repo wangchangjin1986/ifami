@@ -103,12 +103,17 @@ func (h *Handler) Me(ctx context.Context, c *app.RequestContext) {
 }
 
 func (h *Handler) CreateInvitation(ctx context.Context, c *app.RequestContext) {
+	var req InvitationInput
+	if err := c.BindJSON(&req); err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
 	fid, err := familyIDParam(c)
 	if err != nil {
 		httpx.Fail(c, ErrBadParam)
 		return
 	}
-	token, err := h.svc.CreateInvitation(ctx, auth.UserID(ctx), fid)
+	token, err := h.svc.CreateInvitation(ctx, auth.UserID(ctx), fid, req)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

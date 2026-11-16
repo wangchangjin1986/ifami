@@ -136,6 +136,20 @@ App({
     setTimeout(() => wx.switchTab({ url: '/pages/family/index' }), 0)
   },
 
+  isGrandparentHomeRole() {
+    return this.globalData.role === 'grandparent' && !this.globalData.isAdmin
+  },
+
+  routeGrandparentHome(currentPath = '') {
+    if (!this.globalData.token || !this.globalData.user || !this.isGrandparentHomeRole()) return false
+    const path = currentPath || (getCurrentPages().slice(-1)[0] || {}).route || ''
+    if (path === 'pages/gp-today/index' || path === 'pages/settings/index' || path === 'pages/invite/index') return false
+    const tabPages = ['pages/today/index', 'pages/week/index', 'pages/daka/index', 'pages/family/index']
+    if (!tabPages.includes(path)) return false
+    wx.reLaunch({ url: '/pages/gp-today/index' })
+    return true
+  },
+
   // 统一请求：Promise 化 wx.request，注入鉴权头，解析 {code, data, message}。
   // extraHeader 用于业务自定义头（如打卡提交的 Idempotency-Key）。
   request(path, { method = 'GET', data = {}, familyId = null, header: extraHeader = {}, retry = null } = {}) {

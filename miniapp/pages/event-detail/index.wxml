@@ -24,6 +24,14 @@
       <view class="note">{{deleteNote}}</view>
     </block>
 
+    <block wx:elif="{{isGrandparent && hasInstance}}">
+      <view class="row">
+        <button class="btn" style="flex:1" bindtap="completeInstance">完成</button>
+        <button class="btn ghost" style="flex:1" bindtap="openFeedback">要调整</button>
+      </view>
+      <view class="note">你不能直接改日程；完成会记录执行结果，要调整会通知家长处理。</view>
+    </block>
+
     <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeSheet">
       <view class="sheet" catchtap="noop">
         <view class="group-label">改分工：本次由谁负责？</view>
@@ -36,6 +44,18 @@
           data-id="{{o.member_id}}"
         ><text class="opt-b">{{o.name}}</text></button>
         <button class="btn ghost" bindtap="closeSheet">取消</button>
+      </view>
+    </view>
+
+    <view class="sheet-mask" wx:if="{{feedbackOpen}}" bindtap="closeFeedback">
+      <view class="sheet" catchtap="noop">
+        <view class="group-label">{{title}}</view>
+        <view class="muted">要告诉家长哪里需要处理？</view>
+        <button class="opt" wx:for="{{feedbackReasons}}" wx:key="value" bindtap="submitFeedback" data-reason="{{item.value}}">
+          <text class="opt-b">{{item.label}}</text>
+          <text class="opt-s">{{item.desc}}</text>
+        </button>
+        <button class="btn ghost" bindtap="closeFeedback">取消</button>
       </view>
     </view>
   </view>

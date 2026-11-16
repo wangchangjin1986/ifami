@@ -47,6 +47,7 @@ Page({
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 1 })
     }
+    if (app.routeGrandparentHome('pages/week/index')) return
     this.refresh()
   },
 
@@ -65,7 +66,10 @@ Page({
     }
     const ready = app.globalData.familyId && (app.globalData.memberships || []).length > 0
     if (!ready) {
-      return app.ensureLogin().then(() => this.loadCalendar()).catch((e) => handleErr(e))
+      return app.ensureLogin().then(() => {
+        if (app.routeGrandparentHome('pages/week/index')) return
+        return this.loadCalendar()
+      }).catch((e) => handleErr(e))
     }
     const load = this.loadCalendar().catch((e) => handleErr(e))
     app.maybeRefreshMe().catch((e) => handleErr(e, true))

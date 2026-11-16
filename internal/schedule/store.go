@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Store 是 schedule 模块的 DB 访问层，只读写本模块的表（schedules / schedule_instances）。
@@ -153,6 +154,45 @@ func (s *Store) UpdateInstance(ctx context.Context, instanceID, familyID uint64,
 		return ErrInstanceNotFound
 	}
 	return nil
+}
+
+// CompleteInstanceWithEvent 事务：标记实例完成 + 写 schedule_done 事件。
+func (s *Store) CompleteInstanceWithEvent(ctx context.Context, familyID, instanceID uint64) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&ScheduleInstance{}).
+			Where("instance_id = ? AND family_id = ?", instanceID, familyID).
+			Update("status", StatusDone)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrInstanceNotFound
+		}
+		ref := instanceID
+		return tx.Create(&Event{FamilyID: familyID, Type: EventScheduleDone, RefID: &ref}).Error
+	})
+}
+
+// UpsertPendingFeedbackWithEvent 事务：同一实例 pending 反馈去重更新 + 写 schedule_feedback 事件。
+func (s *Store) UpsertPendingFeedbackWithEvent(ctx context.Context, f *ScheduleFeedback) error {
+	now := time.Now().UTC()
+	f.Status = StatusPending
+	f.LastReportedAt = now
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "family_id"}, {Name: "instance_id"}, {Name: "status"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"reason":             f.Reason,
+				"reporter_member_id": f.ReporterID,
+				"last_reported_at":   now,
+				"updated_at":         now,
+			}),
+		}).Create(f).Error; err != nil {
+			return err
+		}
+		ref := f.InstanceID
+		return tx.Create(&Event{FamilyID: f.FamilyID, Type: EventScheduleFeedback, RefID: &ref}).Error
+	})
 }
 
 // FindConflicts 冲突检测：同孩子或同责任人时间重叠的 active 实例（排除指定模板）。

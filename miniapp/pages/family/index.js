@@ -2,14 +2,35 @@
 // 管理员可点成员卡片进入管理面板：名称/身份配置 + 角色选择 + 管理员设置 + 移除（对齐 prototype scr-member）。
 const app = getApp()
 
-const ROLE_LABEL = { admin: '管理员', parent: '家长', grandparent: '祖辈', child: '孩子' }
+const ROLE_LABEL = { admin: '管理员', parent: '家长', grandparent: '照护人', child: '孩子' }
 const ROLE_OPTIONS_REAL = [
   { value: 'parent', label: '家长' },
-  { value: 'grandparent', label: '祖辈' }
+  { value: 'grandparent', label: '照护人' }
 ]
 // 真实成员的名称预设；孩子身份单独用儿子/女儿。
 const RELATIONS_REAL = ['爸爸', '妈妈', '爷爷', '奶奶', '姥姥', '姥爷', '叔叔', '阿姨']
 const RELATIONS_CHILD = ['儿子', '女儿']
+
+const INVITE_CONFIG = {
+  parent: {
+    title: '另一位家长',
+    desc: '一起管理日程、查看打卡、接收提醒',
+    role: 'parent',
+    shareTitle: '邀请你加入家庭，一起管理孩子的日程和打卡'
+  },
+  grandparent: {
+    title: '爷爷奶奶 / 姥姥姥爷',
+    desc: '查看今天接送安排，轻松完成反馈',
+    role: 'grandparent',
+    shareTitle: '邀请你加入家庭，查看今天接送安排'
+  },
+  caregiver: {
+    title: '保姆阿姨 / 接送阿姨',
+    desc: '查看今天需要协助的接送和照看安排',
+    role: 'grandparent',
+    shareTitle: '邀请你加入家庭，查看今天需要协助的安排'
+  }
+}
 
 function familyNameKey(fid) { return 'familyName:' + fid }
 function familyMembersKey(fid) { return 'familyMembers:' + fid }
@@ -29,10 +50,8 @@ function memberView(m, selfUserID) {
   } else {
     if (isAdmin) {
       chip = '管理员'
-      meta = ROLE_LABEL[role] || role
-    } else {
-      meta = ROLE_LABEL[role] || role
     }
+    meta = ROLE_LABEL[role] || role
   }
   return {
     member_id: m.member_id,
@@ -61,6 +80,17 @@ Page({
     childName: '',
     childRelation: '',
     inviteToken: '',
+    inviteSheet: false,
+    inviteKind: 'parent',
+    inviteAdmin: false,
+    inviteReady: false,
+    invitePath: '',
+    inviteShareTitle: '',
+    inviteOptions: [
+      { kind: 'parent', title: '另一位家长', desc: '一起管理日程、查看打卡、接收提醒；可选普通家长/管理员' },
+      { kind: 'grandparent', title: '爷爷奶奶 / 姥姥姥爷', desc: '看今天安排，完成接送反馈' },
+      { kind: 'caregiver', title: '保姆阿姨 / 接送阿姨', desc: '只看今天安排，完成接送反馈' }
+    ],
     sheetOpen: false,
     memberSheet: { open: false },
     customName: '',
@@ -71,6 +101,7 @@ Page({
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 3 })
     }
+    if (app.routeGrandparentHome('pages/family/index')) return
     this.refresh()
   },
 
@@ -87,6 +118,9 @@ Page({
     this.renderLocalFirst()
 
     return app.ensureLogin()
+      .then(() => {
+        if (app.routeGrandparentHome('pages/family/index')) return Promise.reject({ routed: true })
+      })
       .then(() => app.request('/v1/families'))
       .then((families) => {
         const list = families || []
@@ -111,6 +145,7 @@ Page({
         })
       })
       .catch((e) => {
+        if (e && e.routed) return
         this.setData({ loading: false })
         if (e.code === 4001) {
           app.logout()
@@ -175,15 +210,60 @@ Page({
   },
 
   genInvite() {
+    this.setData({ inviteSheet: true, inviteKind: 'parent', inviteAdmin: false, inviteReady: false })
+    this.prepareInvite()
+  },
+
+  closeInvite() { this.setData({ inviteSheet: false }) },
+
+  pickInviteKind(e) {
+    const kind = e.currentTarget.dataset.kind
+    if (!kind || kind === this.data.inviteKind) return
+    this.setData({ inviteKind: kind, inviteAdmin: false, inviteReady: false })
+    this.prepareInvite()
+  },
+
+  toggleInviteAdmin() {
+    if (this.data.inviteKind !== 'parent') return
+    this.setData({ inviteAdmin: !this.data.inviteAdmin, inviteReady: false })
+    this.prepareInvite()
+  },
+
+  prepareInvite() {
     const fid = app.globalData.familyId
-    app.request(`/v1/families/${fid}/invitations`, { method: 'POST', data: {} })
-      .then((r) => this.setData({ inviteToken: r.invite_token }))
-      .catch((e) => wx.showToast({ title: e.message || '生成失败', icon: 'none' }))
+    const kind = this.data.inviteKind
+    const cfg = INVITE_CONFIG[kind] || INVITE_CONFIG.grandparent
+    const isAdmin = kind === 'parent' && !!this.data.inviteAdmin
+    const familyName = this.data.familyName || '家庭'
+    return app.request(`/v1/families/${fid}/invitations`, {
+      method: 'POST',
+      data: { invite_type: kind, role: cfg.role, is_admin: isAdmin }
+    })
+      .then((r) => {
+        const path = `/pages/invite/index?invite_token=${encodeURIComponent(r.invite_token)}&family=${encodeURIComponent(familyName)}&invite_type=${kind}&is_admin=${isAdmin ? 1 : 0}`
+        this.setData({
+          inviteToken: r.invite_token,
+          inviteReady: true,
+          invitePath: path,
+          inviteShareTitle: `邀请你加入「${familyName}」：${cfg.desc}`
+        })
+      })
+      .catch((e) => {
+        this.setData({ inviteReady: false })
+        wx.showToast({ title: e.message || '生成失败', icon: 'none' })
+      })
   },
 
   copyInvite() {
-    if (!this.data.inviteToken) return
-    wx.setClipboardData({ data: this.data.inviteToken })
+    if (!this.data.invitePath) return
+    wx.setClipboardData({ data: `邀请你加入「${this.data.familyName || '家庭'}」：${this.data.invitePath}` })
+  },
+
+  onShareAppMessage() {
+    return {
+      title: this.data.inviteShareTitle || '邀请你加入家庭协作',
+      path: this.data.invitePath || '/pages/family/index'
+    }
   },
 
   // ---- 成员管理（仅管理员；对齐 prototype scr-member） ----
@@ -209,7 +289,7 @@ Page({
         isSelf: m.isSelf,
         relations,
         relation: m.relation,
-        // 管理员是单独权限设置；role 只表示家长/祖辈/孩子。
+        // 管理员是单独权限设置；role 只表示家长/照护人/孩子。
         role: m.role,
         isAdmin: !!m.is_admin,
         roleOptions: ROLE_OPTIONS_REAL,
