@@ -13,7 +13,7 @@
 
       <view class="field">
         <text class="label">类型</text>
-        <picker range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
+        <picker range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType" disabled="{{isSchoolEdit}}">
           <view class="picker">{{types[typeIndex].label}} ▾</view>
         </picker>
       </view>
@@ -49,8 +49,8 @@
         </view>
         <view class="field" style="flex:1">
           <text class="label">责任人</text>
-          <picker range="{{owners}}" range-key="name" value="{{ownerIndex}}" bindchange="onOwner" disabled="{{owners.length === 0}}">
-            <view class="picker {{owners.length === 0 ? 'disabled' : ''}}">{{owners.length ? owners[ownerIndex].name : '暂无成员'}} ▾</view>
+          <picker range="{{owners}}" range-key="name" value="{{ownerIndex}}" bindchange="onOwner" disabled="{{isSchoolEdit || owners.length === 0}}">
+            <view class="picker {{isSchoolEdit || owners.length === 0 ? 'disabled' : ''}}">{{isSchoolEdit ? '在校日程不需要责任人' : (owners.length ? owners[ownerIndex].name : '暂无成员')}} ▾</view>
           </picker>
         </view>
       </view>

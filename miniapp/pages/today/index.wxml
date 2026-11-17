@@ -14,6 +14,18 @@
     </view>
 
     <view class="body">
+      <view wx:if="{{hasReddot}}" class="banner">
+        <view class="bt">有 {{notifyReddots.length}} 条待确认提醒</view>
+        <view class="muted">点击查看详情后会自动回执，停止继续升级备份联系人。</view>
+        <view class="rowline" wx:for="{{notifyReddots}}" wx:key="job_id" bindtap="tapReddot" data-id="{{item.job_id}}">
+          <view class="row-main">
+            <view>{{item.payload.title || item.payload.task || '家庭提醒'}}</view>
+            <view class="ev-meta">{{item.payload.time_text || item.payload.reason || '请及时查看'}}</view>
+          </view>
+          <text class="v">查看</text>
+        </view>
+      </view>
+
       <view wx:if="{{empty}}" class="empty">今天暂无日程</view>
 
       <view class="card tappable" wx:for="{{items}}" wx:key="instanceId" bindtap="tapItem" data-id="{{item.instanceId}}">

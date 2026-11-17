@@ -18,6 +18,7 @@ function normalizeMemberships(list) {
 
 const ME_REFRESH_TTL_MS = 5 * 60 * 1000
 const REQUEST_RETRY_DELAY_MS = 600
+const SUBSCRIBE_CONFIG_TTL_MS = 10 * 60 * 1000
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -107,7 +108,9 @@ App({
     familyId: null,    // 当前家庭（默认第一个）
     role: null,        // parent|grandparent|child
     isAdmin: false,
-    meRefreshAt: 0     // 最近一次 /v1/me 成功时间，用于避免切 Tab 时反复校验
+    meRefreshAt: 0,    // 最近一次 /v1/me 成功时间，用于避免切 Tab 时反复校验
+    subscribeTemplateIds: [],
+    subscribeConfigAt: 0
   },
 
   onLaunch() {
@@ -208,6 +211,60 @@ App({
     })
 
     return once(1)
+  },
+
+  requestNotifySubscribe() {
+    if (!wx.requestSubscribeMessage) return Promise.resolve(false)
+    return this.loadSubscribeConfig().then((tmplIds) => {
+      if (tmplIds.length === 0) return false
+      return new Promise((resolve) => {
+        wx.requestSubscribeMessage({
+          tmplIds,
+          success: () => resolve(true),
+          fail: () => resolve(false)
+        })
+      })
+    }).catch((e) => {
+      console.warn('[ifami] load subscribe config failed', e)
+      return false
+    })
+  },
+
+  loadSubscribeConfig({ force = false } = {}) {
+    const fresh = Date.now() - (this.globalData.subscribeConfigAt || 0) < SUBSCRIBE_CONFIG_TTL_MS
+    if (!force && fresh) return Promise.resolve(this.globalData.subscribeTemplateIds || [])
+    return this.request('/v1/notify/config', { retry: true }).then((cfg) => {
+      const ids = ((cfg && cfg.template_ids) || [])
+        .map((id) => String(id || '').trim())
+        .filter((id) => id && id.indexOf('WX_SUBSCRIBE_') !== 0)
+      this.globalData.subscribeTemplateIds = Array.from(new Set(ids))
+      this.globalData.subscribeConfigAt = Date.now()
+      return this.globalData.subscribeTemplateIds
+    })
+  },
+
+  loadNotifyReddots() {
+    if (!this.globalData.token || !this.globalData.familyId) return Promise.resolve([])
+    return this.request('/v1/notify/reddots').then((rows) => rows || [])
+  },
+
+  reportNotifyReceipt(jobId) {
+    if (!jobId) return Promise.resolve()
+    return this.request('/v1/notify/receipt', { method: 'POST', data: { job_id: Number(jobId) || 0 } }).catch((e) => {
+      console.warn('[ifami] notify receipt failed', e)
+    })
+  },
+
+  openNotifyPage(page) {
+    if (!page) return
+    const clean = String(page).replace(/^\//, '')
+    const base = clean.split('?')[0]
+    const tabPages = ['pages/today/index', 'pages/week/index', 'pages/daka/index', 'pages/family/index']
+    if (tabPages.includes(base)) {
+      wx.switchTab({ url: '/' + base })
+      return
+    }
+    wx.navigateTo({ url: '/' + clean })
   },
 
   // 登录：wx.login → code → POST /v1/auth/login，返回 token/user/memberships。

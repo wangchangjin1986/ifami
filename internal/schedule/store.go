@@ -126,6 +126,18 @@ func (s *Store) ListInstances(ctx context.Context, familyID uint64, start, end t
 	return rows, err
 }
 
+// ListReminderDueInstances 扫描即将开始且需要触达的实例（在校块不触达）。
+func (s *Store) ListReminderDueInstances(ctx context.Context, now, before time.Time) ([]ScheduleInstance, error) {
+	var rows []ScheduleInstance
+	err := s.db.WithContext(ctx).
+		Where("status = ? AND type <> ? AND owner_member_id <> 0", StatusActive, TypeSchool).
+		Where("start_at > ? AND start_at <= ?", now, before).
+		Order("start_at ASC, instance_id ASC").
+		Limit(500).
+		Find(&rows).Error
+	return rows, err
+}
+
 // FindInstance 查实例（family_id + instance_id），未找到返回 (nil, nil)。
 func (s *Store) FindInstance(ctx context.Context, familyID, instanceID uint64) (*ScheduleInstance, error) {
 	var inst ScheduleInstance

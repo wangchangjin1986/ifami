@@ -7,7 +7,18 @@
   <view class="body" wx:if="{{!done}}">
     <view class="field">
       <text class="label">为谁打卡？</text>
-      <view class="who"><button class="on">{{childName}}</button></view>
+      <view class="who" wx:if="{{children.length > 0}}">
+        <button
+          class="{{childIndex === ci ? 'on' : ''}}"
+          wx:for="{{children}}"
+          wx:for-index="ci"
+          wx:key="member_id"
+          bindtap="selectChild"
+          data-i="{{ci}}"
+          disabled="{{submitting}}"
+        >{{item.name}}</button>
+      </view>
+      <view wx:else class="who"><button class="on">{{childName}}</button></view>
     </view>
 
     <view class="field">

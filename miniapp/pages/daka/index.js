@@ -26,6 +26,10 @@ Page({
     skipNextRefresh: false
   },
 
+  onLoad(options) {
+    app.reportNotifyReceipt(options.job_id)
+  },
+
   onShow() {
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 2 })
@@ -152,15 +156,13 @@ Page({
       wx.showToast({ title: '今日已打卡', icon: 'none' })
       return
     }
-    if (t.goal_type === 'photo') {
-      wx.showToast({ title: '拍照打卡待对象存储接入', icon: 'none' })
-      return
-    }
     wx.navigateTo({
       url: '/pages/daka-flow/index?task_id=' + t.task_id +
+        '&name=' + encodeURIComponent(t.name || '') +
         '&title=' + encodeURIComponent(t.title) +
         '&goal_type=' + t.goal_type +
         '&goal_value=' + (t.goal_value || 0) +
+        '&child_member_id=' + (t.child_member_id || 0) +
         '&child=' + encodeURIComponent(t.childName || '')
     })
   },

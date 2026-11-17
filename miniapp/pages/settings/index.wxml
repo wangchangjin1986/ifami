@@ -38,11 +38,17 @@
 
       <view class="group-label">数据与隐私</view>
       <view class="card">
-        <view class="rowline tappable" bindtap="exportChildData"><text>导出孩子数据</text><text class="v accent">申请导出</text></view>
-        <view class="rowline tappable" bindtap="deleteChildProfile"><text>删除孩子档案</text><text class="v danger">需管理员确认</text></view>
+        <view class="rowline">
+          <text>选择孩子</text>
+          <picker range="{{children}}" range-key="name" value="{{childIndex}}" bindchange="onChildPick" disabled="{{children.length === 0}}">
+            <text class="v accent">{{children.length ? childPickerLabel : '暂无孩子'}} ▾</text>
+          </picker>
+        </view>
+        <view class="rowline tappable" bindtap="exportChildData"><text>导出孩子数据</text><text class="v accent">{{exporting ? '导出中…' : '复制 JSON'}}</text></view>
+        <view class="rowline tappable" bindtap="deleteChildProfile"><text>删除孩子档案</text><text class="v danger">{{deletingChild ? '删除中…' : '需管理员确认'}}</text></view>
       </view>
 
-      <view class="note">设置会先保存在当前设备；真实服务号、短信和批量导出通道接入后，将同步为家庭级配置。</view>
+      <view class="note">设置会先保存在当前设备；孩子数据导出会复制 JSON 到剪贴板。删除孩子档案只移除虚拟成员档案，历史日程/打卡事实记录保留。</view>
     </block>
   </view>
 </view>

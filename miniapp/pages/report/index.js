@@ -36,13 +36,13 @@ function scheduleIcon(type) {
   return '⏰'
 }
 
-function withTimeout(promise, fallback, ms = OPTIONAL_TIMEOUT_MS) {
-  return new Promise((resolve) => {
+function withTimeout(promise, label, ms = OPTIONAL_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
     let done = false
     const timer = setTimeout(() => {
       if (done) return
       done = true
-      resolve(fallback)
+      reject(new Error((label || '请求') + '超时，请稍后重试'))
     }, ms)
     promise
       .then((res) => {
@@ -51,11 +51,11 @@ function withTimeout(promise, fallback, ms = OPTIONAL_TIMEOUT_MS) {
         clearTimeout(timer)
         resolve(res)
       })
-      .catch(() => {
+      .catch((err) => {
         if (done) return
         done = true
         clearTimeout(timer)
-        resolve(fallback)
+        reject(err)
       })
   })
 }
@@ -65,6 +65,8 @@ Page({
     logged: false,
     hasFamily: false,
     loading: true,
+    loadError: false,
+    loadErrorText: '周报加载失败，请检查网络后重试',
     children: [],
     childFilter: 0,
     weekLabel: '',
@@ -72,7 +74,8 @@ Page({
     enoughData: false,
     taskRows: [],
     childHighlights: [],
-    nextWeekItems: []
+    nextWeekItems: [],
+    nextWeekError: false
   },
 
   onLoad() {
@@ -84,13 +87,16 @@ Page({
       this.setData({ logged: false, hasFamily: false, loading: false })
       return Promise.resolve()
     }
-    this.setData({ loading: true })
+    this.setData({ loading: true, loadError: false, nextWeekError: false })
     return app.maybeRefreshMe()
       .then(() => this.loadReport())
       .catch((e) => {
-        this.setData({ loading: false })
-        if (e.code === 4001) { app.logout(); this.setData({ logged: false, hasFamily: false }) }
-        else wx.showToast({ title: e.message || '加载失败', icon: 'none' })
+        if (e.code === 4001) {
+          app.logout()
+          this.setData({ logged: false, hasFamily: false, loading: false, loadError: false })
+        } else {
+          this.setData({ loading: false, loadError: true, loadErrorText: e.message || '周报加载失败，请检查网络后重试' })
+        }
       })
   },
 
@@ -118,10 +124,10 @@ Page({
     this.setData({ hasFamily: true, weekLabel: weekStart.slice(5).replace('-', '/') + ' – ' + weekEnd.slice(5).replace('-', '/') })
 
     return Promise.all([
-      withTimeout(app.request(`/v1/families/${fid}/members`), []),
-      withTimeout(app.request('/v1/tasks'), []),
-      withTimeout(app.request(`/v1/schedules/instances?start=${weekStart}&end=${weekEnd}`), []),
-      withTimeout(this.loadCheckins(), [])
+      withTimeout(app.request(`/v1/families/${fid}/members`), '成员信息'),
+      withTimeout(app.request('/v1/tasks'), '打卡任务'),
+      withTimeout(app.request(`/v1/schedules/instances?start=${weekStart}&end=${weekEnd}`), '本周日程'),
+      withTimeout(this.loadCheckins(), '打卡记录')
     ])
       .then(([members, tasks, weekSchedules, checkinGroups]) => {
         const nameMap = {}
@@ -138,8 +144,15 @@ Page({
         this._checkinGroups = checkinGroups || []
         this.setData({ children })
         this.applyFilter(this.data.childFilter)
-        this.setData({ loading: false })
+        this.setData({ loading: false, loadError: false })
         this.loadNextWeekItems()
+      })
+      .catch((e) => {
+        this.setData({
+          loading: false,
+          loadError: true,
+          loadErrorText: e.message || '周报加载失败，请检查网络后重试'
+        })
       })
   },
 
@@ -148,11 +161,15 @@ Page({
   },
 
   loadNextWeekItems() {
-    return withTimeout(app.request(`/v1/schedules/instances?start=${this._nextStart}&end=${this._nextEnd}`), [])
+    return withTimeout(app.request(`/v1/schedules/instances?start=${this._nextStart}&end=${this._nextEnd}`), '下周日程')
       .then((rows) => {
         this._nextSchedules = rows || []
         const report = this.buildReport(this.data.childFilter)
-        this.setData({ nextWeekItems: report.nextWeekItems })
+        this.setData({ nextWeekItems: report.nextWeekItems, nextWeekError: false })
+      })
+      .catch(() => {
+        this._nextSchedules = []
+        this.setData({ nextWeekItems: [], nextWeekError: true })
       })
   },
 

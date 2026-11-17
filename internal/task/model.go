@@ -6,7 +6,7 @@ import "time"
 
 // 目标类型与状态常量（术语表 wiki/product/glossary.md）。
 // 单位约定：GoalCount 的 goal_value=目标次数；GoalTimer 的 goal_value=目标分钟数，
-// 对应 checkin payload.seconds 存秒；GoalPhoto 无量化目标（照片走 media_tos_key）。
+// 对应 checkin payload.seconds 存秒；GoalPhoto 无量化目标（照片二进制存 MySQL）。
 const (
 	GoalPhoto = "photo"
 	GoalTimer = "timer"
@@ -59,7 +59,7 @@ type Task struct {
 func (Task) TableName() string { return "tasks" }
 
 // Checkin 打卡记录（任务的一次提交，可由父母/祖辈代打）。
-// Payload 存计时/计数，照片走 media_tos_key（TOS 对象存储 key）。
+// Payload 存计时/计数/照片元信息；照片二进制走 photo_data 存 MySQL。
 type Checkin struct {
 	CheckinID         uint64         `gorm:"column:checkin_id;primaryKey"`
 	TaskID            uint64         `gorm:"column:task_id"`
@@ -68,6 +68,8 @@ type Checkin struct {
 	SubmitMemberID    uint64         `gorm:"column:submit_member_id"`
 	Payload           map[string]any `gorm:"column:payload;type:json;serializer:json"`
 	MediaTosKey       string         `gorm:"column:media_tos_key"`
+	PhotoData         []byte         `gorm:"column:photo_data"`
+	PhotoContentType  string         `gorm:"column:photo_content_type"`
 	IdempotencyKey    string         `gorm:"column:idempotency_key"`
 	Status            string         `gorm:"column:status"`
 	DeletedAt         *time.Time     `gorm:"column:deleted_at"`

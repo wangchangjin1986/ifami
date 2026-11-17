@@ -59,12 +59,16 @@
       <input wx:if="{{templates[templateIndex].name === '自定义'}}" class="input" placeholder="任务名，如：口算" model:value="{{customName}}" />
     </view>
 
-    <view class="field">
+    <view class="field" wx:if="{{templates[templateIndex].goal_type !== 'photo'}}">
       <text class="label">目标量</text>
       <view class="seg">
         <button class="{{goalIndex === gi ? 'on' : ''}}" wx:for="{{goalOptions}}" wx:for-index="gi" wx:key="label" bindtap="selectGoal" data-i="{{gi}}">{{item.label}}</button>
       </view>
       <input wx:if="{{goalOptions[goalIndex].custom}}" class="input" type="number" placeholder="自定义{{goalUnit}}数" model:value="{{customGoal}}" />
+    </view>
+    <view class="field" wx:else>
+      <text class="label">目标量</text>
+      <view class="picker disabled">拍照记录，无需填写数量</view>
     </view>
 
     <view class="field">

@@ -104,6 +104,7 @@ func (s *Store) CreateEvents(ctx context.Context, events []Event) error {
 func (s *Store) FindCheckinByIdempotency(ctx context.Context, familyID uint64, key string) (*Checkin, error) {
 	var c Checkin
 	err := s.db.WithContext(ctx).
+		Omit("PhotoData").
 		Where("family_id = ? AND idempotency_key = ? AND status = ?", familyID, key, StatusActive).
 		First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -119,6 +120,7 @@ func (s *Store) FindCheckinByIdempotency(ctx context.Context, familyID uint64, k
 func (s *Store) ListCheckinsByTask(ctx context.Context, familyID, taskID uint64) ([]Checkin, error) {
 	var rows []Checkin
 	err := s.db.WithContext(ctx).
+		Omit("PhotoData").
 		Where("family_id = ? AND task_id = ? AND status = ?", familyID, taskID, StatusActive).
 		Order("created_at ASC").
 		Find(&rows).Error
@@ -139,6 +141,7 @@ func (s *Store) ListCheckinDatesByTask(ctx context.Context, familyID, taskID uin
 // ListCheckinsByFamily 列家庭打卡时间线；[start, end) 半开区间，可按孩子筛选。
 func (s *Store) ListCheckinsByFamily(ctx context.Context, familyID uint64, start, end time.Time, childID uint64) ([]Checkin, error) {
 	q := s.db.WithContext(ctx).
+		Omit("PhotoData").
 		Where("family_id = ? AND status = ? AND created_at >= ? AND created_at < ?", familyID, StatusActive, start, end)
 	if childID != 0 {
 		q = q.Where("child_member_id = ?", childID)
@@ -179,6 +182,7 @@ func (s *Store) HasCheckinOn(ctx context.Context, familyID, taskID uint64, day t
 func (s *Store) FindCheckin(ctx context.Context, familyID, checkinID uint64) (*Checkin, error) {
 	var c Checkin
 	err := s.db.WithContext(ctx).
+		Omit("PhotoData").
 		Where("family_id = ? AND checkin_id = ? AND status = ?", familyID, checkinID, StatusActive).
 		First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -188,6 +192,24 @@ func (s *Store) FindCheckin(ctx context.Context, familyID, checkinID uint64) (*C
 		return nil, err
 	}
 	return &c, nil
+}
+
+func (s *Store) FindCheckinPhoto(ctx context.Context, familyID, checkinID uint64) ([]byte, string, error) {
+	var c Checkin
+	err := s.db.WithContext(ctx).
+		Select("checkin_id", "photo_data", "photo_content_type").
+		Where("family_id = ? AND checkin_id = ? AND status = ?", familyID, checkinID, StatusActive).
+		First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, "", ErrCheckinNotFound
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if len(c.PhotoData) == 0 {
+		return nil, "", ErrCheckinNotFound
+	}
+	return c.PhotoData, c.PhotoContentType, nil
 }
 
 // RemoveCheckinWithEvent 软删打卡记录并写删除事件，供统计/后续事件回放保持语义完整。

@@ -11,4 +11,5 @@ var (
 	ErrRecognize   = &httpx.Err{Code: 6005, Message: "没识别出来，可以手动安排", HTTP: 400}
 	ErrQuota       = &httpx.Err{Code: 6006, Message: "今天识别次数已用完，明天再试", HTTP: 429}
 	ErrBadState    = &httpx.Err{Code: 6007, Message: "当前状态不允许此操作", HTTP: 409}
+	ErrImageUnsafe = &httpx.Err{Code: 6008, Message: "图片内容安全审核未通过，请更换图片", HTTP: 400}
 )

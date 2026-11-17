@@ -72,6 +72,7 @@ type MemberView struct {
 	IsAdmin       bool    `json:"is_admin"`
 	RelationLabel string  `json:"relation_label"`
 	Name          string  `json:"name"`
+	Phone         string  `json:"phone,omitempty"`
 	Status        string  `json:"status"`
 }
 
@@ -413,6 +414,11 @@ func (s *Service) AdminUserIDs(ctx context.Context, familyID uint64) ([]uint64, 
 	return s.store.ListAdminUserIDs(ctx, familyID)
 }
 
+// BackupUserIDs 返回家庭内备份联系人 user_id 列表：管理员优先，父母兜底。
+func (s *Service) BackupUserIDs(ctx context.Context, familyID uint64) ([]uint64, error) {
+	return s.store.ListBackupUserIDs(ctx, familyID)
+}
+
 // ChildNames 返回家庭内孩子（虚拟成员）的 member_id → 解密姓名（ingest 识别结果匹配孩子用）。
 func (s *Service) ChildNames(ctx context.Context, familyID uint64) (map[uint64]string, error) {
 	ms, err := s.store.ListMembers(ctx, familyID)
@@ -509,6 +515,11 @@ func (s *Service) toView(m *Member) MemberView {
 	if m.NameEnc != nil && s.field != nil {
 		if plain, err := s.field.Decrypt(m.NameEnc); err == nil {
 			v.Name = string(plain)
+		}
+	}
+	if m.PhoneEnc != nil && s.field != nil {
+		if plain, err := s.field.Decrypt(m.PhoneEnc); err == nil {
+			v.Phone = string(plain)
 		}
 	}
 	return v

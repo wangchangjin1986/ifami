@@ -188,6 +188,35 @@ func (s *Store) ListAdminUserIDs(ctx context.Context, familyID uint64) ([]uint64
 	return rows, err
 }
 
+// ListBackupUserIDs 返回家庭内可作为备份联系人的真实成员 user_id：管理员优先，父母兜底。
+func (s *Store) ListBackupUserIDs(ctx context.Context, familyID uint64) ([]uint64, error) {
+	var rows []struct {
+		UserID  uint64 `gorm:"column:user_id"`
+		IsAdmin bool   `gorm:"column:is_admin"`
+		Role    string `gorm:"column:role"`
+	}
+	err := s.db.WithContext(ctx).
+		Model(&Member{}).
+		Select("user_id, is_admin, role").
+		Where("family_id = ? AND status = ? AND type = ? AND user_id IS NOT NULL AND (is_admin = ? OR role IN ?)",
+			familyID, StatusActive, TypeReal, true, []string{RoleAdmin, RoleParent}).
+		Order("is_admin DESC, member_id ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint64, 0, len(rows))
+	seen := map[uint64]bool{}
+	for _, row := range rows {
+		if row.UserID == 0 || seen[row.UserID] {
+			continue
+		}
+		seen[row.UserID] = true
+		ids = append(ids, row.UserID)
+	}
+	return ids, nil
+}
+
 // RemoveMember 软删除成员（status=removed）。孩子档案不受影响（见 ADR-001）。
 func (s *Store) RemoveMember(ctx context.Context, memberID, familyID uint64) error {
 	res := s.db.WithContext(ctx).

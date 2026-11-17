@@ -3,8 +3,13 @@ package schedule
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 type fakeScheduleMembership struct {
@@ -33,6 +38,37 @@ func (f fakeScheduleMembership) AdminUserIDs(context.Context, uint64) ([]uint64,
 	return []uint64{1}, nil
 }
 
+type fakeScheduleNotifier struct{ jobs []NotifyInput }
+
+func (f *fakeScheduleNotifier) CreateJob(_ context.Context, in NotifyInput) (uint64, error) {
+	f.jobs = append(f.jobs, in)
+	return uint64(len(f.jobs)), nil
+}
+
+func newScheduleTestStore(t *testing.T) (*Store, sqlmock.Sqlmock) {
+	t.Helper()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	gdb, err := gorm.Open(mysql.New(mysql.Config{Conn: db, SkipInitializeWithVersion: true}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	return NewStore(gdb), mock
+}
+
+func scheduleInstanceRows(owner uint64) *sqlmock.Rows {
+	return scheduleInstanceRowsWithType(owner, TypePickup)
+}
+
+func scheduleInstanceRowsWithType(owner uint64, typ string) *sqlmock.Rows {
+	day := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	start := time.Date(2026, 11, 16, 16, 30, 0, 0, time.UTC)
+	return sqlmock.NewRows([]string{"instance_id", "schedule_id", "family_id", "child_member_id", "title", "type", "occur_date", "start_at", "end_at", "location", "note", "owner_member_id", "status"}).
+		AddRow(7, 3, 100, 10, "接孩子放学", typ, day, start, nil, "学校东门", "带水壶", owner, StatusActive)
+}
+
 func TestRequireWriter_AdminOnly(t *testing.T) {
 	ctx := context.Background()
 	if err := (&Service{id: fakeScheduleMembership{role: roleAdmin}}).requireWriter(ctx, 1, 100); err != nil {
@@ -40,6 +76,85 @@ func TestRequireWriter_AdminOnly(t *testing.T) {
 	}
 	if err := (&Service{id: fakeScheduleMembership{role: "parent"}}).requireWriter(ctx, 1, 100); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("parent requireWriter error = %v，want ErrForbidden", err)
+	}
+}
+
+func TestUpdateInstanceReassignRejectsVirtualOwner(t *testing.T) {
+	store, mock := newScheduleTestStore(t)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).
+		WillReturnRows(scheduleInstanceRows(20))
+	svc := &Service{
+		store: store,
+		id:    fakeScheduleMembership{role: roleAdmin, members: map[uint64]string{10: memberTypeVirtual, 20: memberTypeReal, 30: memberTypeVirtual}},
+	}
+	err := svc.UpdateInstance(context.Background(), 1, 100, 7, &InstanceInput{OwnerMemberID: 30})
+	if !errors.Is(err, ErrOwnerRequired) {
+		t.Fatalf("virtual owner error = %v, want ErrOwnerRequired", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestUpdateInstanceReassignNotifiesNewOwner(t *testing.T) {
+	store, mock := newScheduleTestStore(t)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).
+		WillReturnRows(scheduleInstanceRows(20))
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `owner_member_id`=? WHERE instance_id = ? AND family_id = ?")).
+		WithArgs(uint64(21), uint64(7), uint64(100)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	notifier := &fakeScheduleNotifier{}
+	svc := &Service{
+		store:  store,
+		id:     fakeScheduleMembership{role: roleAdmin, members: map[uint64]string{10: memberTypeVirtual, 20: memberTypeReal, 21: memberTypeReal}},
+		notify: notifier,
+	}
+	if err := svc.UpdateInstance(context.Background(), 1, 100, 7, &InstanceInput{OwnerMemberID: 21}); err != nil {
+		t.Fatalf("UpdateInstance error = %v", err)
+	}
+	if len(notifier.jobs) != 1 {
+		t.Fatalf("notify jobs = %d, want 1", len(notifier.jobs))
+	}
+	job := notifier.jobs[0]
+	if job.TargetUserID != 1 || job.Level != levelStrong || job.BusinessKey != "" {
+		t.Fatalf("notify job = %+v", job)
+	}
+	if job.Payload["type"] != "schedule_reassigned" || job.Payload["instance_id"] != uint64(7) {
+		t.Fatalf("payload = %+v", job.Payload)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestUpdateInstanceReassignNotifiesForNonPickup(t *testing.T) {
+	store, mock := newScheduleTestStore(t)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).
+		WillReturnRows(scheduleInstanceRowsWithType(20, TypeCourse))
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `owner_member_id`=? WHERE instance_id = ? AND family_id = ?")).
+		WithArgs(uint64(21), uint64(7), uint64(100)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	notifier := &fakeScheduleNotifier{}
+	svc := &Service{
+		store:  store,
+		id:     fakeScheduleMembership{role: roleAdmin, members: map[uint64]string{10: memberTypeVirtual, 20: memberTypeReal, 21: memberTypeReal}},
+		notify: notifier,
+	}
+	if err := svc.UpdateInstance(context.Background(), 1, 100, 7, &InstanceInput{OwnerMemberID: 21}); err != nil {
+		t.Fatalf("UpdateInstance error = %v", err)
+	}
+	if len(notifier.jobs) != 1 {
+		t.Fatalf("notify jobs = %d, want 1", len(notifier.jobs))
+	}
+	if notifier.jobs[0].Payload["type"] != "schedule_reassigned" {
+		t.Fatalf("payload = %+v", notifier.jobs[0].Payload)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
 	}
 }
 

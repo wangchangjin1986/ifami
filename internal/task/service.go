@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"ifami/internal/pkg/logx"
+	"net/http"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -12,6 +14,8 @@ import (
 
 // streakWindowDays 连续天数最多向前追溯的窗口（种子期够用；更长留给 V2 重放）。
 const streakWindowDays = 90
+
+const MaxPhotoBytes = 5 << 20
 
 // Membership 是 task 对 identity 模块的最小依赖（消费方定义接口，跨模块只走接口）。
 type Membership interface {
@@ -91,6 +95,13 @@ type CheckinInput struct {
 	SubmitMemberID uint64         `json:"submit_member_id"`
 }
 
+type PhotoInput struct {
+	Data           []byte
+	ContentType    string
+	SubmitMemberID uint64
+	IdempotencyKey string
+}
+
 // SubmitResult 打卡提交结果。
 type SubmitResult struct {
 	CheckinID  uint64 `json:"checkin_id"`
@@ -106,6 +117,8 @@ type CheckinView struct {
 	SubmitMemberID uint64         `json:"submit_member_id"`
 	Payload        map[string]any `json:"payload"`
 	MediaTosKey    string         `json:"media_tos_key"`
+	HasPhoto       bool           `json:"has_photo"`
+	PhotoURL       string         `json:"photo_url,omitempty"`
 	CreatedAt      string         `json:"created_at"`
 }
 
@@ -137,8 +150,9 @@ func (s *Service) ListTasks(ctx context.Context, userID, familyID uint64) ([]Tas
 	}
 	// 一次拉取窗口内全部打卡，按任务分组算 streak / 今日状态（避免 N+1）。
 	now := time.Now().UTC()
-	start := dateOnly(now).AddDate(0, 0, -streakWindowDays)
-	end := dateOnly(now).AddDate(0, 0, 1)
+	localNow := now.In(appLocation)
+	start := appDayStartUTC(localNow).AddDate(0, 0, -streakWindowDays)
+	end := appDayStartUTC(localNow).AddDate(0, 0, 1)
 	checkins, err := s.store.ListCheckinsByFamily(ctx, familyID, start, end, 0)
 	if err != nil {
 		return nil, err
@@ -147,12 +161,12 @@ func (s *Service) ListTasks(ctx context.Context, userID, familyID uint64) ([]Tas
 	for i := range checkins {
 		byTask[checkins[i].TaskID] = append(byTask[checkins[i].TaskID], checkins[i])
 	}
-	today := dateOnly(now).Format("2006-01-02")
+	today := localNow.Format("2006-01-02")
 	views := make([]TaskView, 0, len(rows))
 	for i := range rows {
 		dates := map[string]bool{}
 		for _, c := range byTask[rows[i].TaskID] {
-			dates[c.CreatedAt.UTC().Format("2006-01-02")] = true
+			dates[c.CreatedAt.In(appLocation).Format("2006-01-02")] = true
 		}
 		views = append(views, TaskView{
 			TaskID:        rows[i].TaskID,
@@ -164,7 +178,7 @@ func (s *Service) ListTasks(ctx context.Context, userID, familyID uint64) ([]Tas
 			WeeklyTarget:  rows[i].WeeklyTarget,
 			OwnerMemberID: rows[i].OwnerMemberID,
 			RemindTime:    rows[i].RemindTime,
-			StreakDays:    calcStreak(dates, now),
+			StreakDays:    calcStreak(dates, localNow),
 			TodayChecked:  dates[today],
 		})
 	}
@@ -279,6 +293,74 @@ func (s *Service) SubmitCheckin(ctx context.Context, userID, familyID, taskID ui
 	return &SubmitResult{CheckinID: c.CheckinID, StreakDays: streak, GoalHit: hit}, nil
 }
 
+func (s *Service) SubmitPhotoCheckin(ctx context.Context, userID, familyID, taskID uint64, in *PhotoInput) (*SubmitResult, error) {
+	actorMemberID, _, err := s.id.RequireActive(ctx, userID, familyID)
+	if err != nil {
+		return nil, err
+	}
+	task, err := s.store.FindTask(ctx, familyID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, ErrTaskNotFound
+	}
+	if task.GoalType != GoalPhoto {
+		return nil, ErrBadGoal
+	}
+	in.ContentType = strings.ToLower(strings.TrimSpace(in.ContentType))
+	if len(in.Data) == 0 || len(in.Data) > MaxPhotoBytes {
+		return nil, ErrBadGoal
+	}
+	detectedContentType := strings.ToLower(strings.TrimSpace(http.DetectContentType(in.Data)))
+	if !validPhotoContentType(detectedContentType) {
+		return nil, ErrBadGoal
+	}
+	in.ContentType = detectedContentType
+	if in.IdempotencyKey != "" {
+		if existing, err := s.store.FindCheckinByIdempotency(ctx, familyID, in.IdempotencyKey); err != nil {
+			return nil, err
+		} else if existing != nil {
+			streak, _ := s.streakDays(ctx, familyID, existing.TaskID)
+			return &SubmitResult{CheckinID: existing.CheckinID, StreakDays: streak}, nil
+		}
+	}
+	submitMemberID := in.SubmitMemberID
+	if submitMemberID == 0 {
+		submitMemberID = actorMemberID
+	} else if mtype, _, err := s.id.RequireMember(ctx, familyID, submitMemberID); err != nil {
+		return nil, err
+	} else if mtype != memberTypeReal {
+		return nil, ErrOwnerRequired
+	}
+	c := &Checkin{
+		TaskID:           taskID,
+		FamilyID:         familyID,
+		ChildMemberID:    task.ChildMemberID,
+		SubmitMemberID:   submitMemberID,
+		Payload:          map[string]any{"photo": true, "content_type": in.ContentType, "bytes": len(in.Data)},
+		MediaTosKey:      "mysql://checkins/photo_data",
+		PhotoData:        in.Data,
+		PhotoContentType: in.ContentType,
+		IdempotencyKey:   in.IdempotencyKey,
+		Status:           StatusActive,
+	}
+	if err := s.store.CreateCheckinWithEvents(ctx, c, []Event{{Type: EventCheckinDone}}); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) && in.IdempotencyKey != "" {
+			if existing, e2 := s.store.FindCheckinByIdempotency(ctx, familyID, in.IdempotencyKey); e2 == nil && existing != nil {
+				streak, _ := s.streakDays(ctx, familyID, existing.TaskID)
+				return &SubmitResult{CheckinID: existing.CheckinID, StreakDays: streak}, nil
+			}
+		}
+		return nil, err
+	}
+	streak, err := s.streakDays(ctx, familyID, taskID)
+	if err != nil {
+		streak = 0
+	}
+	return &SubmitResult{CheckinID: c.CheckinID, StreakDays: streak, GoalHit: true}, nil
+}
+
 // ListCheckinsByTask 列任务打卡记录（进步曲线：只和自己比，ADR-004）。
 func (s *Service) ListCheckinsByTask(ctx context.Context, userID, familyID, taskID uint64) ([]CheckinView, error) {
 	if _, _, err := s.id.RequireActive(ctx, userID, familyID); err != nil {
@@ -340,11 +422,18 @@ func (s *Service) DeleteCheckin(ctx context.Context, userID, familyID, checkinID
 	return s.store.RemoveCheckinWithEvent(ctx, familyID, checkinID, actorMemberID)
 }
 
+func (s *Service) CheckinPhoto(ctx context.Context, userID, familyID, checkinID uint64) ([]byte, string, error) {
+	if _, _, err := s.id.RequireActive(ctx, userID, familyID); err != nil {
+		return nil, "", err
+	}
+	return s.store.FindCheckinPhoto(ctx, familyID, checkinID)
+}
+
 // ---- 内部辅助 ----
 
 // RemindDue 打卡提醒扫描（R3.3，Worker 每 30s 调用）：到点未完成的任务给责任父母发中等触达。
 // 幂等：business_key = checkin:<task_id>:<YYYY-MM-DD>，同一天只发一次（notify 按 key 去重）。
-// 提醒时间按 UTC 解释（与打卡 dateOnly 同口径；中国时区偏移留 TODO，见 conventions 时区约定）。
+// 提醒时间按东八区家庭日历日解释：用户在小程序填 20:00，上海时间 20:00 后触发。
 func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 	if s.notify == nil {
 		return nil
@@ -353,14 +442,18 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	dateKey := dateOnly(now).Format("2006-01-02")
-	hhmm := now.UTC().Format("15:04")
+	localNow := now.In(appLocation)
+	dateKey := localNow.Format("2006-01-02")
+	hhmm := localNow.Format("15:04")
 	for i := range rows {
 		t := &rows[i]
+		if !taskOccursOn(t.Freq, localNow) {
+			continue
+		}
 		if t.RemindTime > hhmm {
 			continue // 未到提醒时间
 		}
-		checked, err := s.store.HasCheckinOn(ctx, t.FamilyID, t.TaskID, dateOnly(now))
+		checked, err := s.store.HasCheckinOn(ctx, t.FamilyID, t.TaskID, appDayStartUTC(localNow))
 		if err != nil {
 			logx.Errorf("[task] 提醒扫描查打卡失败 task=%d err=%v", t.TaskID, err)
 			continue
@@ -370,7 +463,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 		}
 		// 「每周 N 次」任务按自然周累计完成次数判定：达标后不再提醒（R3.3）。
 		if t.Freq == FreqWeekly && t.WeeklyTarget > 0 {
-			n, err := s.store.CountCheckinsSince(ctx, t.FamilyID, t.TaskID, weekStart(now))
+			n, err := s.store.CountCheckinsSince(ctx, t.FamilyID, t.TaskID, appWeekStartUTC(localNow))
 			if err != nil {
 				logx.Errorf("[task] 周完成次数统计失败 task=%d err=%v", t.TaskID, err)
 				continue
@@ -388,8 +481,16 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 			FamilyID:     t.FamilyID,
 			TargetUserID: userID,
 			Level:        levelMedium,
-			Payload:      map[string]any{"task": t.Name, "child_member_id": t.ChildMemberID},
-			BusinessKey:  fmt.Sprintf("checkin:%d:%s", t.TaskID, dateKey),
+			Payload: map[string]any{
+				"type":            "checkin_reminder",
+				"task":            t.Name,
+				"title":           t.Name,
+				"time_text":       t.RemindTime,
+				"task_id":         t.TaskID,
+				"child_member_id": t.ChildMemberID,
+				"page":            "pages/daka/index",
+			},
+			BusinessKey: fmt.Sprintf("checkin:%d:%s", t.TaskID, dateKey),
 		}); err != nil {
 			logx.Errorf("[task] 创建提醒触达失败 task=%d err=%v", t.TaskID, err)
 		}
@@ -462,22 +563,23 @@ func (s *Service) buildTask(ctx context.Context, familyID uint64, in *TaskInput)
 // streakDays 计算任务当前连续打卡天数。
 func (s *Service) streakDays(ctx context.Context, familyID, taskID uint64) (int, error) {
 	now := time.Now().UTC()
-	start := dateOnly(now).AddDate(0, 0, -streakWindowDays)
-	end := dateOnly(now).AddDate(0, 0, 1)
+	localNow := now.In(appLocation)
+	start := appDayStartUTC(localNow).AddDate(0, 0, -streakWindowDays)
+	end := appDayStartUTC(localNow).AddDate(0, 0, 1)
 	rows, err := s.store.ListCheckinDatesByTask(ctx, familyID, taskID, start, end)
 	if err != nil {
 		return 0, err
 	}
 	dates := map[string]bool{}
 	for i := range rows {
-		dates[rows[i].UTC().Format("2006-01-02")] = true
+		dates[rows[i].In(appLocation).Format("2006-01-02")] = true
 	}
-	return calcStreak(dates, now), nil
+	return calcStreak(dates, localNow), nil
 }
 
-// calcStreak 从今天起向前数连续有打卡的天数；今天未打卡不算断签。
+// calcStreak 从家庭日历今天起向前数连续有打卡的天数；今天未打卡不算断签。
 func calcStreak(dates map[string]bool, now time.Time) int {
-	d := dateOnly(now)
+	d := dateOnly(now.In(appLocation))
 	if !dates[d.Format("2006-01-02")] {
 		d = d.AddDate(0, 0, -1)
 	}
@@ -493,6 +595,11 @@ func validGoalType(t string) bool {
 	return t == GoalPhoto || t == GoalTimer || t == GoalCount
 }
 
+func validPhotoContentType(ct string) bool {
+	ct = strings.ToLower(strings.TrimSpace(ct))
+	return ct == "image/jpeg" || ct == "image/png"
+}
+
 // validatePayload 校验打卡负载与任务目标类型匹配。
 func validatePayload(goalType string, payload map[string]any, mediaTosKey string) error {
 	switch goalType {
@@ -501,31 +608,48 @@ func validatePayload(goalType string, payload map[string]any, mediaTosKey string
 			return ErrBadGoal
 		}
 	case GoalTimer:
-		if v, _ := payload["seconds"].(float64); v <= 0 {
-			return ErrBadGoal
+		if seconds, _ := payload["seconds"].(float64); seconds <= 0 {
+			if count, _ := payload["count"].(float64); count <= 0 {
+				return ErrBadGoal
+			}
 		}
 	case GoalCount:
-		if v, _ := payload["count"].(float64); v <= 0 {
-			return ErrBadGoal
+		if count, _ := payload["count"].(float64); count <= 0 {
+			if seconds, _ := payload["seconds"].(float64); seconds <= 0 {
+				return ErrBadGoal
+			}
 		}
+	default:
+		return ErrBadGoal
 	}
 	return nil
+}
+
+func payloadSeconds(payload map[string]any) float64 {
+	v, _ := payload["seconds"].(float64)
+	return v
+}
+
+func payloadCount(payload map[string]any) float64 {
+	v, _ := payload["count"].(float64)
+	return v
 }
 
 // goalHit 判断本次是否达成目标（count/timer 达到 goal_value；photo 无量化目标）。
 func goalHit(goalType string, goalValue int, payload map[string]any) bool {
 	switch goalType {
 	case GoalCount:
-		v, _ := payload["count"].(float64)
+		v := payloadCount(payload)
 		return goalValue > 0 && int(v) >= goalValue
 	case GoalTimer:
-		v, _ := payload["seconds"].(float64)
+		v := payloadSeconds(payload)
 		return goalValue > 0 && int(v) >= goalValue*60 // goal_value 单位=分钟，payload.seconds 单位=秒
 	}
 	return false
 }
 
 func toCheckinView(c *Checkin) CheckinView {
+	hasPhoto := c.PhotoContentType != ""
 	return CheckinView{
 		CheckinID:      c.CheckinID,
 		TaskID:         c.TaskID,
@@ -533,8 +657,38 @@ func toCheckinView(c *Checkin) CheckinView {
 		SubmitMemberID: c.SubmitMemberID,
 		Payload:        c.Payload,
 		MediaTosKey:    c.MediaTosKey,
+		HasPhoto:       hasPhoto,
+		PhotoURL:       photoURL(c.CheckinID, hasPhoto),
 		CreatedAt:      c.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func photoURL(checkinID uint64, ok bool) string {
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("/v1/checkins/%d/photo", checkinID)
+}
+
+var appLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
+func taskOccursOn(freq string, localNow time.Time) bool {
+	if freq != FreqWeekdays {
+		return true
+	}
+	w := localNow.Weekday()
+	return w != time.Saturday && w != time.Sunday
+}
+
+func appDayStartUTC(localNow time.Time) time.Time {
+	local := localNow.In(appLocation)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, appLocation).UTC()
+}
+
+func appWeekStartUTC(localNow time.Time) time.Time {
+	localStart := appDayStartUTC(localNow).In(appLocation)
+	daysFromMonday := (int(localStart.Weekday()) + 6) % 7 // Sunday=0 → 6, Monday=1 → 0 …
+	return localStart.AddDate(0, 0, -daysFromMonday).UTC()
 }
 
 // dateOnly 归一化到 UTC 当天 00:00（streak/窗口边界用）。

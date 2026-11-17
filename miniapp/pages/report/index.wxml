@@ -9,6 +9,13 @@
     <view wx:if="{{loading}}" class="empty">正在生成周报…</view>
     <view wx:elif="{{!logged}}" class="empty">请先到「家庭」页登录</view>
     <view wx:elif="{{!hasFamily}}" class="empty">请先在「家庭」页创建家庭</view>
+    <view wx:elif="{{loadError}}" class="card empty-card">
+      <view class="ev-title">周报加载失败</view>
+      <view class="muted">{{loadErrorText}}</view>
+      <view class="row report-actions">
+        <button class="btn ghost sm" bindtap="refresh">重试</button>
+      </view>
+    </view>
     <block wx:else>
       <view class="filters">
         <text class="chip {{childFilter === 0 ? 'on' : ''}}" bindtap="selectChild" data-id="0">全部</text>
@@ -67,7 +74,10 @@
 
         <view class="card">
           <view class="ev-title">下周提醒</view>
-          <block wx:if="{{nextWeekItems.length === 0}}">
+          <block wx:if="{{nextWeekError}}">
+            <view class="muted">下周日程加载失败，下拉刷新可重试。</view>
+          </block>
+          <block wx:elif="{{nextWeekItems.length === 0}}">
             <view class="muted">下周暂未安排日程；可点 ＋ 安排一件事，或拍照导入课表。</view>
           </block>
           <block wx:else>

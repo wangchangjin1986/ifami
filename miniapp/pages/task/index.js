@@ -6,6 +6,7 @@ const TEMPLATES = [
   { name: '跳绳', goal_type: 'count', goal_value: 100 },
   { name: '练琴', goal_type: 'timer', goal_value: 30 },
   { name: '英语', goal_type: 'timer', goal_value: 20 },
+  { name: '拍照记录', goal_type: 'photo', goal_value: 0 },
   { name: '自定义', goal_type: 'timer', goal_value: 0 }
 ]
 
@@ -19,6 +20,9 @@ const GOAL_PRESETS = {
     { label: '50 个', value: 50 },
     { label: '100 个', value: 100 },
     { label: '自定义', value: 0, custom: true }
+  ],
+  photo: [
+    { label: '拍照', value: 0 }
   ]
 }
 
@@ -31,6 +35,7 @@ const FREQS = [
 const ROLE_LABEL = { admin: '管理员', parent: '家长', grandparent: '祖辈', child: '孩子' }
 
 function withGoalLabel(t) {
+  if (t.goal_type === 'photo') return Object.assign({}, t, { goalLabel: '拍照' })
   const unit = t.goal_type === 'count' ? '个' : '分钟'
   return Object.assign({}, t, { goalLabel: t.goal_value + ' ' + unit })
 }
@@ -166,7 +171,7 @@ Page({
       customName: useTemplate ? '' : task.name,
       customGoal: goalIndex >= 0 ? '' : String(task.goal_value || ''),
       weeklyTarget: task.freq === 'weekly' ? String(task.weekly_target || '') : '',
-      goalUnit: task.goal_type === 'count' ? '个' : '分钟'
+      goalUnit: task.goal_type === 'photo' ? '张' : (task.goal_type === 'count' ? '个' : '分钟')
     }
   },
 
@@ -178,7 +183,7 @@ Page({
       templateIndex: i,
       goalOptions: GOAL_PRESETS[goalType] || GOAL_PRESETS.timer,
       goalIndex: 0,
-      goalUnit: goalType === 'count' ? '个' : '分钟'
+      goalUnit: goalType === 'photo' ? '张' : (goalType === 'count' ? '个' : '分钟')
     })
   },
 
@@ -200,14 +205,15 @@ Page({
     const t = this.data.templates[this.data.templateIndex]
     const child = this.data.children[this.data.childIndex]
     const owner = this.data.owners[this.data.ownerIndex]
+    const goalType = this.data.editMode && t.name === '自定义' && this.data.editTask ? this.data.editTask.goal_type : t.goal_type
     const goal = this.data.goalOptions[this.data.goalIndex]
 
     const name = (t.name === '自定义' ? this.data.customName : t.name).trim()
     if (!name) return wx.showToast({ title: '请输入任务名', icon: 'none' })
     if (!child) return wx.showToast({ title: '请先到「家庭」页添加孩子', icon: 'none' })
     if (!owner) return wx.showToast({ title: '请选择责任人', icon: 'none' })
-    const goalValue = goal.custom ? parseInt(this.data.customGoal, 10) : goal.value
-    if (!goalValue || goalValue <= 0) return wx.showToast({ title: '请输入目标量', icon: 'none' })
+    const goalValue = goalType === 'photo' ? 0 : (goal.custom ? parseInt(this.data.customGoal, 10) : goal.value)
+    if (goalType !== 'photo' && (!goalValue || goalValue <= 0)) return wx.showToast({ title: '请输入目标量', icon: 'none' })
 
     const freq = this.data.freqs[this.data.freqIndex].value
     let weeklyTarget = 0
@@ -218,7 +224,7 @@ Page({
 
     const payload = {
       name,
-      goal_type: this.data.editMode && t.name === '自定义' && this.data.editTask ? this.data.editTask.goal_type : t.goal_type,
+      goal_type: goalType,
       goal_value: goalValue,
       freq,
       weekly_target: weeklyTarget,
@@ -229,7 +235,8 @@ Page({
     this.setData({ submitting: true })
     const method = this.data.editMode ? 'PATCH' : 'POST'
     const path = this.data.editMode ? `/v1/tasks/${this.data.editTaskId}` : '/v1/tasks'
-    app.request(path, { method, data: payload })
+    app.requestNotifySubscribe()
+      .then(() => app.request(path, { method, data: payload }))
       .then(() => {
         wx.showToast({ title: this.data.editMode ? '已保存' : '已创建', icon: 'success' })
         setTimeout(() => wx.navigateBack(), 600)
@@ -256,19 +263,20 @@ Page({
       if (!weeklyTarget || weeklyTarget <= 0) return wx.showToast({ title: '请输入每周次数', icon: 'none' })
     }
     this.setData({ submitting: true })
-    Promise.all(selected.map((t) => app.request('/v1/tasks', {
-      method: 'POST',
-      data: {
-        name: t.name,
-        goal_type: t.goal_type,
-        goal_value: t.goal_value,
-        freq,
-        weekly_target: weeklyTarget,
-        child_member_id: child.member_id,
-        owner_member_id: owner.member_id,
-        remind_time: ''
-      }
-    })))
+    app.requestNotifySubscribe()
+      .then(() => Promise.all(selected.map((t) => app.request('/v1/tasks', {
+        method: 'POST',
+        data: {
+          name: t.name,
+          goal_type: t.goal_type,
+          goal_value: t.goal_value,
+          freq,
+          weekly_target: weeklyTarget,
+          child_member_id: child.member_id,
+          owner_member_id: owner.member_id,
+          remind_time: ''
+        }
+      }))))
       .then(() => {
         wx.showToast({ title: '已启用模板', icon: 'success' })
         setTimeout(() => wx.navigateBack(), 600)

@@ -7,12 +7,13 @@ import "time"
 
 // 任务状态（术语表 wiki/product/glossary.md：拍照导入 ingest_job）。
 const (
-	StatusUploading = "uploading" // 已创建，等待上传图片
-	StatusPending   = "pending"   // 已开始，等待执行
-	StatusRunning   = "running"   // 识别中（heartbeat_at 心跳）
-	StatusDone      = "done"      // 识别完成，草稿待确认
-	StatusFailed    = "failed"    // 识别失败
-	StatusConfirmed = "confirmed" // 已确认入库
+	StatusUploading  = "uploading"  // 已创建，等待上传图片
+	StatusPending    = "pending"    // 已开始，等待执行
+	StatusRunning    = "running"    // 识别中（heartbeat_at 心跳）
+	StatusDone       = "done"       // 识别完成，草稿待确认
+	StatusConfirming = "confirming" // 确认入库中（CAS 防止并发重复确认）
+	StatusFailed     = "failed"     // 识别失败
+	StatusConfirmed  = "confirmed"  // 已确认入库
 
 	ImageWaiting = "waiting"
 	ImageDone    = "done"

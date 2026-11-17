@@ -52,6 +52,30 @@ func (f *fakeNotifier) CreateJob(_ context.Context, in NotifyInput) (uint64, err
 	return 1, nil
 }
 
+type fakeScheduleCreator struct {
+	calls int
+	ids   []uint64
+	err   error
+}
+
+func (f *fakeScheduleCreator) CreateBatch(context.Context, uint64, uint64, []ScheduleItem, bool) ([]uint64, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.ids, nil
+}
+
+type fakeImageSafety struct {
+	calls int
+	err   error
+}
+
+func (f *fakeImageSafety) CheckImageSafety(context.Context, []byte) error {
+	f.calls++
+	return f.err
+}
+
 var jpeg = []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0}
 
 func newSvc(t *testing.T, rec Recognizer, role string) (*Service, sqlmock.Sqlmock, *LocalImageStore, *fakeNotifier) {
@@ -91,6 +115,76 @@ func TestUploadImage_RejectsNonImage(t *testing.T) {
 	}
 	if err := svc.UploadImage(context.Background(), 1, 100, 5, MaxImagesPerJob, 0, jpeg); !errors.Is(err, ErrBadParam) {
 		t.Fatalf("seq 越界 err = %v, want ErrBadParam", err)
+	}
+}
+
+func TestUploadImage_ChecksImageSafetyBeforeStore(t *testing.T) {
+	svc, mock, imgs, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
+	checker := &fakeImageSafety{err: errors.New("unsafe")}
+	svc.safety = checker
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).
+		WillReturnRows(sqlmock.NewRows([]string{"job_id", "family_id", "creator_user_id", "status", "images", "result_enc", "stats", "error_code", "attempts", "heartbeat_at", "created_at", "finished_at"}).
+			AddRow(5, 100, 1, StatusUploading, "[]", nil, "{}", 0, 0, nil, time.Now(), nil))
+	err := svc.UploadImage(context.Background(), 1, 100, 5, 0, 0, jpeg)
+	if !errors.Is(err, ErrImageUnsafe) {
+		t.Fatalf("unsafe upload err = %v, want ErrImageUnsafe", err)
+	}
+	if checker.calls != 1 {
+		t.Fatalf("safety calls = %d, want 1", checker.calls)
+	}
+	if _, statErr := os.Stat(filepath.Join(imgs.root, "100", "5")); !os.IsNotExist(statErr) {
+		t.Fatalf("unsafe image should not be stored, stat err=%v", statErr)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func doneJobRows() *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"job_id", "family_id", "creator_user_id", "status", "images", "result_enc", "stats", "error_code", "attempts", "heartbeat_at", "created_at", "finished_at"}).
+		AddRow(7, 100, 1, StatusDone, "[]", nil, "{}", 0, 1, nil, time.Now(), time.Now())
+}
+
+func TestConfirmClaimsBeforeCreateBatch(t *testing.T) {
+	svc, mock, _, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
+	creator := &fakeScheduleCreator{ids: []uint64{11, 12}}
+	svc.schedules = creator
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).WillReturnRows(doneJobRows())
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET")).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET")).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	ids, err := svc.Confirm(context.Background(), 1, 100, 7, []ScheduleItem{{Title: "钢琴"}}, false)
+	if err != nil {
+		t.Fatalf("Confirm error = %v", err)
+	}
+	if creator.calls != 1 || len(ids) != 2 {
+		t.Fatalf("calls=%d ids=%v", creator.calls, ids)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfirmDoesNotCreateBatchWhenClaimLost(t *testing.T) {
+	svc, mock, _, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
+	creator := &fakeScheduleCreator{ids: []uint64{11}}
+	svc.schedules = creator
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).WillReturnRows(doneJobRows())
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET")).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+	_, err := svc.Confirm(context.Background(), 1, 100, 7, []ScheduleItem{{Title: "钢琴"}}, false)
+	if !errors.Is(err, ErrBadState) {
+		t.Fatalf("Confirm error = %v, want ErrBadState", err)
+	}
+	if creator.calls != 0 {
+		t.Fatalf("CreateBatch calls = %d, want 0", creator.calls)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

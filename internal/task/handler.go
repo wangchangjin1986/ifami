@@ -2,6 +2,10 @@ package task
 
 import (
 	"context"
+	"io"
+	"mime"
+	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -30,7 +34,9 @@ func (h *Handler) Register(g *route.RouterGroup) {
 	authed.PATCH("/tasks/:tid", h.UpdateTask)
 	authed.DELETE("/tasks/:tid", h.DeleteTask)
 	authed.POST("/tasks/:tid/checkins", h.SubmitCheckin)
+	authed.POST("/tasks/:tid/checkins/photo", h.SubmitPhotoCheckin)
 	authed.GET("/checkins", h.ListCheckinsByFamily)
+	authed.GET("/checkins/:cid/photo", h.GetCheckinPhoto)
 	authed.DELETE("/checkins/:cid", h.DeleteCheckin)
 	authed.GET("/tasks/:tid/checkins", h.ListCheckins)
 }
@@ -134,6 +140,64 @@ func (h *Handler) SubmitCheckin(ctx context.Context, c *app.RequestContext) {
 	httpx.OK(c, res)
 }
 
+func (h *Handler) SubmitPhotoCheckin(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	tid, err := taskIDParam(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		httpx.Fail(c, ErrBadGoal)
+		return
+	}
+	if fh.Size <= 0 || fh.Size > MaxPhotoBytes {
+		httpx.Fail(c, ErrBadGoal)
+		return
+	}
+	f, err := fh.Open()
+	if err != nil {
+		httpx.Fail(c, ErrBadGoal)
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, MaxPhotoBytes+1))
+	if err != nil || len(data) > MaxPhotoBytes {
+		httpx.Fail(c, ErrBadGoal)
+		return
+	}
+	submitMemberID := uint64(0)
+	if v := string(c.FormValue("submit_member_id")); v != "" {
+		if submitMemberID, err = strconv.ParseUint(v, 10, 64); err != nil {
+			httpx.Fail(c, ErrBadParam)
+			return
+		}
+	}
+	contentType := fh.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = mime.TypeByExtension(filepath.Ext(fh.Filename))
+	}
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = "image/jpeg"
+	}
+	res, err := h.svc.SubmitPhotoCheckin(ctx, auth.UserID(ctx), fid, tid, &PhotoInput{
+		Data:           data,
+		ContentType:    contentType,
+		SubmitMemberID: submitMemberID,
+		IdempotencyKey: string(c.GetHeader("Idempotency-Key")),
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, res)
+}
+
 func (h *Handler) ListCheckins(ctx context.Context, c *app.RequestContext) {
 	fid, err := familyID(c)
 	if err != nil {
@@ -196,6 +260,25 @@ func (h *Handler) DeleteCheckin(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	httpx.OK(c, nil)
+}
+
+func (h *Handler) GetCheckinPhoto(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	cid, err := checkinIDParam(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	data, contentType, err := h.svc.CheckinPhoto(ctx, auth.UserID(ctx), fid, cid)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.Data(http.StatusOK, contentType, data)
 }
 
 func familyID(c *app.RequestContext) (uint64, error) {

@@ -8,8 +8,12 @@ type Config struct {
 	APIAddr string
 
 	// 微信小程序
-	WXMiniAppID  string
-	WXMiniSecret string
+	WXMiniAppID                 string
+	WXMiniSecret                string
+	NotifyChannel               string
+	WXSubscribeScheduleTemplate string
+	WXSubscribeTaskTemplate     string
+	WXSubscribeFeedbackTemplate string
 
 	// 数据库 / 缓存
 	RDSDSN    string
@@ -33,17 +37,21 @@ type Config struct {
 // Load 读取环境变量，未设置的回落到默认值。
 func Load() *Config {
 	return &Config{
-		APIAddr:      getenv("API_ADDR", ":8080"),
-		WXMiniAppID:  getenv("WX_MINIAPP_APPID", ""),
-		WXMiniSecret: getenv("WX_MINIAPP_SECRET", ""),
-		RDSDSN:       getenv("RDS_DSN", ""),
-		RedisAddr:    getenv("REDIS_ADDR", "localhost:6379"),
-		FieldEncKey:  getenv("FIELD_ENC_KEY", ""),
-		InviteSecret: getenv("INVITE_SECRET", ""),
-		ArkAPIKey:    getenv("ARK_API_KEY", ""),
-		ArkBaseURL:   getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
-		ArkModel:     getenv("ARK_MODEL", ""),
-		IngestDir:    getenv("INGEST_DIR", "/var/lib/ifami/ingest"),
+		APIAddr:                     getenv("API_ADDR", ":8080"),
+		WXMiniAppID:                 getenv("WX_MINIAPP_APPID", ""),
+		WXMiniSecret:                getenv("WX_MINIAPP_SECRET", ""),
+		NotifyChannel:               getenv("NOTIFY_CHANNEL", "wechat_subscribe"),
+		WXSubscribeScheduleTemplate: getenv("WX_SUBSCRIBE_TEMPLATE_SCHEDULE", ""),
+		WXSubscribeTaskTemplate:     getenv("WX_SUBSCRIBE_TEMPLATE_TASK", ""),
+		WXSubscribeFeedbackTemplate: getenv("WX_SUBSCRIBE_TEMPLATE_FEEDBACK", ""),
+		RDSDSN:                      getenv("RDS_DSN", ""),
+		RedisAddr:                   getenv("REDIS_ADDR", "localhost:6379"),
+		FieldEncKey:                 getenv("FIELD_ENC_KEY", ""),
+		InviteSecret:                getenv("INVITE_SECRET", ""),
+		ArkAPIKey:                   getenv("ARK_API_KEY", ""),
+		ArkBaseURL:                  getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+		ArkModel:                    getenv("ARK_MODEL", ""),
+		IngestDir:                   getenv("INGEST_DIR", "/var/lib/ifami/ingest"),
 	}
 }
 

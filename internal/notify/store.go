@@ -64,6 +64,17 @@ func (s *Store) ListDueJobs(ctx context.Context, status string, before time.Time
 	return rows, err
 }
 
+// ListReddotJobs 返回当前用户待确认的应用内红点任务。
+func (s *Store) ListReddotJobs(ctx context.Context, familyID, targetUserID uint64) ([]NotifyJob, error) {
+	var rows []NotifyJob
+	err := s.db.WithContext(ctx).
+		Where("family_id = ? AND target_user_id = ? AND status = ?", familyID, targetUserID, StatusReddot).
+		Order("created_at DESC, job_id DESC").
+		Limit(50).
+		Find(&rows).Error
+	return rows, err
+}
+
 func envInt(key string, def int) int {
 	v, err := strconv.Atoi(os.Getenv(key))
 	if err != nil || v <= 0 {

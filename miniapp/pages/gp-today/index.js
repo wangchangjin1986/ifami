@@ -11,14 +11,25 @@ function nameOf(m) {
   return m.name || m.relation_label || ('成员' + m.member_id)
 }
 
+function pickContact(members) {
+  const admins = (members || []).filter((m) => m.type === 'real' && (m.is_admin || m.role === 'admin'))
+  const parents = (members || []).filter((m) => m.type === 'real' && m.role === 'parent')
+  return admins.find((m) => m.phone) || parents.find((m) => m.phone) || admins[0] || parents[0] || null
+}
+
 Page({
   data: {
     logged: false,
     hasFamily: false,
     dateStr: '',
+    notifyReddots: [],
+    hasReddot: false,
     items: [],
     empty: true,
     tomorrowText: '',
+    contactName: '',
+    contactPhone: '',
+    callText: '📞 联系家长',
     feedbackOpen: false,
     feedbackTitle: '',
     feedbackReasons: [
@@ -37,7 +48,7 @@ Page({
     const now = new Date()
     this.setData({ dateStr: dateLabel(now) })
     if (!app.globalData.token || !app.globalData.user) {
-      this.setData({ logged: false, hasFamily: false, items: [], empty: true, tomorrowText: '' })
+      this.setData({ logged: false, hasFamily: false, notifyReddots: [], hasReddot: false, items: [], empty: true, tomorrowText: '', contactName: '', contactPhone: '', callText: '📞 联系家长' })
       return
     }
     app.ensureLogin()
@@ -45,7 +56,7 @@ Page({
       .catch((e) => {
         if (e.code === 4001) {
           app.logout()
-          this.setData({ logged: false, hasFamily: false, items: [], empty: true, tomorrowText: '' })
+          this.setData({ logged: false, hasFamily: false, notifyReddots: [], hasReddot: false, items: [], empty: true, tomorrowText: '', contactName: '', contactPhone: '', callText: '📞 联系家长' })
           return
         }
         wx.showToast({ title: e.message || '加载失败', icon: 'none' })
@@ -68,15 +79,19 @@ Page({
         return Promise.all(familyIds.map((fid) => Promise.all([
           app.request(`/v1/families/${fid}/members`, { familyId: fid }),
           app.request(`/v1/schedules/instances?start=${today}&end=${today}`, { familyId: fid }),
-          app.request(`/v1/schedules/instances?start=${tomorrow}&end=${tomorrow}`, { familyId: fid })
-        ]).then(([members, todayRows, tomorrowRows]) => ({ fid, familyName: familyName[fid] || '家庭', members, todayRows, tomorrowRows }))))
+          app.request(`/v1/schedules/instances?start=${tomorrow}&end=${tomorrow}`, { familyId: fid }),
+          app.request('/v1/notify/reddots', { familyId: fid }).catch(() => [])
+        ]).then(([members, todayRows, tomorrowRows, reddots]) => ({ fid, familyName: familyName[fid] || '家庭', members, todayRows, tomorrowRows, reddots }))))
       })
       .then((groups) => {
         const items = []
         const tomorrowItems = []
+        const notifyReddots = []
+        let contact = null
         groups.forEach((g) => {
           const names = {}
           ;(g.members || []).forEach((m) => { names[m.member_id] = nameOf(m) })
+          if (!contact) contact = pickContact(g.members || [])
           ;(g.todayRows || []).forEach((it) => {
             if (it.status === 'cancelled') return
             items.push({
@@ -95,18 +110,39 @@ Page({
             if (it.status === 'cancelled') return
             tomorrowItems.push({ familyName: g.familyName, start: hhmm(it.start_at), title: it.title, startAt: it.start_at })
           })
+          ;(g.reddots || []).forEach((job) => {
+            notifyReddots.push(Object.assign({}, job, { familyId: g.fid, familyName: g.familyName }))
+          })
         })
         items.sort((a, b) => a.startAt < b.startAt ? -1 : 1)
         tomorrowItems.sort((a, b) => a.startAt < b.startAt ? -1 : 1)
         const firstTomorrow = tomorrowItems[0]
+        const contactName = contact ? nameOf(contact) : ''
+        const contactPhone = contact && contact.phone ? contact.phone : ''
         this.setData({
           logged: true,
           hasFamily: true,
+          notifyReddots,
+          hasReddot: notifyReddots.length > 0,
           items,
           empty: items.length === 0,
-          tomorrowText: firstTomorrow ? `明天 · ${firstTomorrow.familyName} ${firstTomorrow.start} ${firstTomorrow.title}` : ''
+          tomorrowText: firstTomorrow ? `明天 · ${firstTomorrow.familyName} ${firstTomorrow.start} ${firstTomorrow.title}` : '',
+          contactName,
+          contactPhone,
+          callText: contactName ? `📞 联系${contactName}` : '📞 联系家长'
         })
       })
+  },
+
+  tapReddot(e) {
+    const id = e.currentTarget.dataset.id
+    const familyId = e.currentTarget.dataset.familyId
+    const job = (this.data.notifyReddots || []).find((x) => String(x.job_id) === String(id) && String(x.familyId) === String(familyId))
+    if (!job) return
+    app.reportNotifyReceipt(job.job_id)
+      .then(() => this.loadAggregate())
+    const page = job.payload && job.payload.page
+    app.openNotifyPage(page)
   },
 
   completeItem(e) {
@@ -146,7 +182,15 @@ Page({
   },
 
   callBackup() {
-    wx.showToast({ title: '请拨打家人电话确认', icon: 'none' })
+    const phone = this.data.contactPhone
+    if (!phone) {
+      wx.showToast({ title: '家长未设置电话，请用微信联系', icon: 'none' })
+      return
+    }
+    wx.makePhoneCall({
+      phoneNumber: phone,
+      fail: () => wx.showToast({ title: '拨号取消或失败', icon: 'none' })
+    })
   },
 
   goSettings() { wx.navigateTo({ url: '/pages/settings/index' }) },

@@ -42,6 +42,15 @@ type Notifier interface {
 	CreateJob(ctx context.Context, in NotifyInput) (uint64, error)
 }
 
+// ImageSafety 是图片内容安全审核接口。上传原图入临时存储前必须通过审核。
+type ImageSafety interface {
+	CheckImageSafety(ctx context.Context, data []byte) error
+}
+
+type NoopImageSafety struct{}
+
+func (NoopImageSafety) CheckImageSafety(context.Context, []byte) error { return nil }
+
 // NotifyInput 对齐 notify.CreateJobInput。
 type NotifyInput struct {
 	FamilyID     uint64
@@ -68,16 +77,22 @@ type Service struct {
 	schedules ScheduleCreator
 	notify    Notifier
 	cipher    Cipher
+	safety    ImageSafety
 	sem       chan struct{}
 	running   sync.Map // job_id → struct{}：本进程正在执行的任务
 	now       func() time.Time
 }
 
-func NewService(store *Store, images ImageStore, rec Recognizer, id Membership, schedules ScheduleCreator, notify Notifier, cipher Cipher) *Service {
+func NewService(store *Store, images ImageStore, rec Recognizer, id Membership, schedules ScheduleCreator, notify Notifier, cipher Cipher, safety ...ImageSafety) *Service {
+	checker := ImageSafety(NoopImageSafety{})
+	if len(safety) > 0 && safety[0] != nil {
+		checker = safety[0]
+	}
 	return &Service{
 		store: store, images: images, rec: rec, id: id, schedules: schedules, notify: notify, cipher: cipher,
-		sem: make(chan struct{}, runConcurrency),
-		now: func() time.Time { return time.Now().UTC() },
+		safety: checker,
+		sem:    make(chan struct{}, runConcurrency),
+		now:    func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -137,6 +152,10 @@ func (s *Service) UploadImage(ctx context.Context, userID, familyID, jobID uint6
 	}
 	if j.Status != StatusUploading {
 		return ErrBadState
+	}
+	if err := s.safety.CheckImageSafety(ctx, data); err != nil {
+		logx.Warnf("[ingest] 图片内容安全审核未通过 job=%d seq=%d err=%v", jobID, seq, err)
+		return ErrImageUnsafe
 	}
 	if err := s.images.Put(familyID, jobID, seq, data); err != nil {
 		return err
@@ -244,13 +263,26 @@ func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, i
 	if j.Status != StatusDone {
 		return nil, ErrBadState
 	}
+	stats := j.Stats
+	ok, err := s.store.Transition(ctx, jobID, []string{StatusDone}, map[string]any{
+		"status": StatusConfirming,
+		"stats":  gormJSON(stats),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrBadState
+	}
 	ids, err := s.schedules.CreateBatch(ctx, userID, familyID, items, force)
 	if err != nil {
+		if ok, e2 := s.store.Transition(ctx, jobID, []string{StatusConfirming}, map[string]any{"status": StatusDone}); e2 != nil || !ok {
+			logx.Errorf("[ingest] 任务 %d 确认失败后恢复 done 失败: ok=%t err=%v", jobID, ok, e2)
+		}
 		return nil, err // 冲突（2005）/ 校验错误透传给前端
 	}
-	stats := j.Stats
 	stats.Confirmed = len(ids)
-	if _, err := s.store.Transition(ctx, jobID, []string{StatusDone}, map[string]any{
+	if _, err := s.store.Transition(ctx, jobID, []string{StatusConfirming}, map[string]any{
 		"status": StatusConfirmed, "stats": gormJSON(stats),
 	}); err != nil {
 		logx.Errorf("[ingest] 任务 %d 置 confirmed 失败: %v", jobID, err)

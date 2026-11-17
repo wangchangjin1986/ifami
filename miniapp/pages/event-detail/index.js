@@ -53,6 +53,7 @@ Page({
 
   onLoad(options) {
     this._inst = options
+    app.reportNotifyReceipt(options.job_id)
     const isRecurring = !!options.rrule
     this.setData({
       canManage: !!app.globalData.isAdmin,
@@ -91,7 +92,7 @@ Page({
           if (m.type === 'virtual') {
             if (String(m.member_id) === String(this._inst.child_member_id)) childName = label
           } else {
-            owners.push({ member_id: m.member_id, name: label, picked: String(m.member_id) === String(this._inst.owner_member_id) })
+            owners.push({ member_id: m.member_id, user_id: m.user_id, name: label, picked: String(m.member_id) === String(this._inst.owner_member_id) })
             if (String(m.member_id) === String(this._inst.owner_member_id)) ownerName = label
           }
         })
@@ -139,7 +140,11 @@ Page({
       this.closeSheet()
       return
     }
-    app.request(`/v1/schedules/instances/${iid}`, { method: 'PATCH', data: { owner_member_id: ownerId } })
+    const owner = (this.data.owners || []).find((o) => String(o.member_id) === String(ownerId))
+    const currentUserId = app.globalData.user && app.globalData.user.user_id
+    const ensureSubscribe = owner && String(owner.user_id) === String(currentUserId) ? app.requestNotifySubscribe() : Promise.resolve(false)
+    ensureSubscribe
+      .then(() => app.request(`/v1/schedules/instances/${iid}`, { method: 'PATCH', data: { owner_member_id: ownerId } }))
       .then(() => {
         this.closeSheet()
         this._inst.owner_member_id = ownerId

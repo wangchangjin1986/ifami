@@ -12,10 +12,16 @@ Page({
     hasFamily: false,
     dateStr: '',
     familyName: '',
+    notifyReddots: [],
+    hasReddot: false,
     items: [],
     empty: true,
     isAdmin: false,
     sheetOpen: false
+  },
+
+  onLoad(options) {
+    app.reportNotifyReceipt(options.job_id)
   },
 
   onShow() {
@@ -30,13 +36,13 @@ Page({
     const now = new Date()
     this.setData({ dateStr: (now.getMonth() + 1) + '月' + now.getDate() + '日 ' + WEEK_CN[now.getDay()] })
     if (!app.globalData.token) {
-      this.setData({ logged: false, hasFamily: false, items: [], empty: true, familyName: '' })
+      this.setData({ logged: false, hasFamily: false, items: [], empty: true, familyName: '', notifyReddots: [], hasReddot: false })
       return
     }
     const handleErr = (e, silent = false) => {
       if (e.code === 4001) {
         app.logout()
-        this.setData({ logged: false, hasFamily: false, items: [], empty: true })
+        this.setData({ logged: false, hasFamily: false, items: [], empty: true, notifyReddots: [], hasReddot: false })
         return
       }
       if (!silent) wx.showToast({ title: e.message || '加载失败', icon: 'none' })
@@ -57,7 +63,7 @@ Page({
     const fid = app.globalData.familyId
     this.setData({ logged: true })
     if (!fid) {
-      this.setData({ hasFamily: false, items: [], empty: true })
+      this.setData({ hasFamily: false, items: [], empty: true, notifyReddots: [], hasReddot: false })
       return
     }
     this.setData({ hasFamily: true, isAdmin: !!app.globalData.isAdmin })
@@ -66,9 +72,10 @@ Page({
     return Promise.all([
       app.request(`/v1/schedules/instances?start=${today}&end=${today}`),
       app.request(`/v1/families/${fid}/members`),
-      app.request('/v1/families')
+      app.request('/v1/families'),
+      app.loadNotifyReddots().catch(() => [])
     ])
-      .then(([instances, members, families]) => {
+      .then(([instances, members, families, reddots]) => {
         const nameMap = {}
         ;(members || []).forEach((m) => { nameMap[m.member_id] = m.name || m.relation_label || '成员' + m.member_id })
         const cur = (families || []).find((f) => f.family_id === fid) || {}
@@ -91,8 +98,18 @@ Page({
             meta: [it.location, it.note].filter(Boolean).join(' · ')
           }))
           .sort((a, b) => (a.start < b.start ? -1 : 1))
-        this.setData({ familyName: cur.name || '', items, empty: items.length === 0 })
+        this.setData({ familyName: cur.name || '', notifyReddots: reddots || [], hasReddot: (reddots || []).length > 0, items, empty: items.length === 0 })
       })
+  },
+
+  tapReddot(e) {
+    const id = e.currentTarget.dataset.id
+    const job = (this.data.notifyReddots || []).find((x) => String(x.job_id) === String(id))
+    if (!job) return
+    app.reportNotifyReceipt(job.job_id)
+      .then(() => this.loadToday())
+    const page = job.payload && job.payload.page
+    app.openNotifyPage(page)
   },
 
   // 点击条目 → 日程详情（改分工/编辑/取消本次都在详情页完成）。

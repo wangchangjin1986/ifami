@@ -2,7 +2,9 @@ package schedule
 
 import (
 	"context"
+	"fmt"
 	"ifami/internal/pkg/logx"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 
 // materializeWindowDays 是物化滚动窗口：始终物化未来 90 天实例（ADR-003）。
 const materializeWindowDays = 90
+const scheduleReminderLead = 15 * time.Minute
 
 // Membership 是 schedule 对 identity 模块的最小依赖（消费方定义接口，跨模块只走接口）。
 type Membership interface {
@@ -418,8 +421,12 @@ func (s *Service) UpdateInstance(ctx context.Context, userID, familyID, instance
 		}
 	}
 	if in.OwnerMemberID != 0 {
-		if _, _, err := s.id.RequireMember(ctx, familyID, in.OwnerMemberID); err != nil {
+		ownerType, _, err := s.id.RequireMember(ctx, familyID, in.OwnerMemberID)
+		if err != nil {
 			return err
+		}
+		if ownerType != memberTypeReal {
+			return ErrOwnerRequired
 		}
 		if in.OwnerMemberID != inst.OwnerMemberID {
 			updates["owner_member_id"] = in.OwnerMemberID
@@ -428,7 +435,14 @@ func (s *Service) UpdateInstance(ctx context.Context, userID, familyID, instance
 	if len(updates) == 0 {
 		return nil // 幂等：无实际变化（如重指派到同一责任人）视为成功
 	}
-	return s.store.UpdateInstance(ctx, instanceID, familyID, updates)
+	if err := s.store.UpdateInstance(ctx, instanceID, familyID, updates); err != nil {
+		return err
+	}
+	if ownerID, ok := updates["owner_member_id"].(uint64); ok {
+		inst.OwnerMemberID = ownerID
+		s.notifyInstanceOwner(ctx, familyID, inst, "schedule_reassigned")
+	}
+	return nil
 }
 
 // CompleteInstance 执行端确认日程已完成：任意 active 成员可提交，写入事件流。
@@ -450,6 +464,45 @@ func (s *Service) CompleteInstance(ctx context.Context, userID, familyID, instan
 		return ErrBadParam
 	}
 	return s.store.CompleteInstanceWithEvent(ctx, familyID, instanceID)
+}
+
+// RemindDue 扫描即将开始的日程实例并创建触达任务（Worker 每 30s 调用）。
+func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
+	if s.notify == nil {
+		return nil
+	}
+	rows, err := s.store.ListReminderDueInstances(ctx, now.UTC(), now.UTC().Add(scheduleReminderLead))
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		inst := &rows[i]
+		userID, err := s.id.MemberUserID(ctx, inst.FamilyID, inst.OwnerMemberID)
+		if err != nil {
+			logx.Warnf("[schedule] 触达解析 owner user_id 失败 instance=%d err=%v", inst.InstanceID, err)
+			continue
+		}
+		page := fmt.Sprintf("pages/event-detail/index?instance_id=%d&schedule_id=%d&child_member_id=%d&owner_member_id=%d&occur_date=%s&start_at=%s&title=%s&rrule=&location=%s&note=%s",
+			inst.InstanceID, inst.ScheduleID, inst.ChildMemberID, inst.OwnerMemberID, inst.OccurDate.Format("2006-01-02"), url.QueryEscape(inst.StartAt.Format(time.RFC3339)), url.QueryEscape(inst.Title), url.QueryEscape(inst.Location), url.QueryEscape(inst.Note))
+		if _, err := s.notify.CreateJob(ctx, NotifyInput{
+			FamilyID:     inst.FamilyID,
+			TargetUserID: userID,
+			Level:        levelStrong,
+			Payload: map[string]any{
+				"type":        "schedule_reminder",
+				"title":       inst.Title,
+				"time_text":   inst.StartAt.Format("15:04"),
+				"start_at":    inst.StartAt.Format(time.RFC3339),
+				"location":    inst.Location,
+				"instance_id": inst.InstanceID,
+				"page":        page,
+			},
+			BusinessKey: fmt.Sprintf("schedule_remind:%d:%d", inst.InstanceID, userID),
+		}); err != nil {
+			logx.Errorf("[schedule] 创建日程到点提醒失败 instance=%d err=%v", inst.InstanceID, err)
+		}
+	}
+	return nil
 }
 
 // SubmitFeedback 执行端提交「要调整」反馈：待处理状态下重复提交只更新原因和时间，并强触达管理员。
@@ -534,6 +587,35 @@ func (s *Service) notifyOwner(ctx context.Context, familyID uint64, sch *Schedul
 	}
 }
 
+func (s *Service) notifyInstanceOwner(ctx context.Context, familyID uint64, inst *ScheduleInstance, eventType string) {
+	if s.notify == nil || inst.OwnerMemberID == 0 {
+		return
+	}
+	userID, err := s.id.MemberUserID(ctx, familyID, inst.OwnerMemberID)
+	if err != nil {
+		logx.Warnf("[schedule] 改分工触达解析 owner user_id 失败 instance=%d err=%v", inst.InstanceID, err)
+		return
+	}
+	page := fmt.Sprintf("pages/event-detail/index?instance_id=%d&schedule_id=%d&child_member_id=%d&owner_member_id=%d&occur_date=%s&start_at=%s&title=%s&rrule=&location=%s&note=%s",
+		inst.InstanceID, inst.ScheduleID, inst.ChildMemberID, inst.OwnerMemberID, inst.OccurDate.Format("2006-01-02"), url.QueryEscape(inst.StartAt.Format(time.RFC3339)), url.QueryEscape(inst.Title), url.QueryEscape(inst.Location), url.QueryEscape(inst.Note))
+	if _, err := s.notify.CreateJob(ctx, NotifyInput{
+		FamilyID:     familyID,
+		TargetUserID: userID,
+		Level:        levelStrong,
+		Payload: map[string]any{
+			"type":        eventType,
+			"title":       inst.Title,
+			"time_text":   inst.StartAt.Format("15:04"),
+			"start_at":    inst.StartAt.Format(time.RFC3339),
+			"location":    inst.Location,
+			"instance_id": inst.InstanceID,
+			"page":        page,
+		},
+	}); err != nil {
+		logx.Errorf("[schedule] 创建改分工触达任务失败 instance=%d err=%v", inst.InstanceID, err)
+	}
+}
+
 func (s *Service) notifyAdminsFeedback(ctx context.Context, familyID uint64, inst *ScheduleInstance, reason string) {
 	if s.notify == nil {
 		return
@@ -553,9 +635,11 @@ func (s *Service) notifyAdminsFeedback(ctx context.Context, familyID uint64, ins
 				"type":        "schedule_feedback",
 				"title":       inst.Title,
 				"reason":      reason,
+				"time_text":   inst.StartAt.Format("15:04"),
 				"start_at":    inst.StartAt.Format(time.RFC3339),
 				"location":    inst.Location,
 				"instance_id": inst.InstanceID,
+				"page":        "pages/today/index",
 			},
 		}); err != nil {
 			logx.Errorf("[schedule] 创建反馈触达任务失败: %v", err)

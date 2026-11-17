@@ -14,6 +14,18 @@
     </view>
 
     <view class="body gp-body">
+      <view wx:if="{{hasReddot}}" class="banner">
+        <view class="bt">有 {{notifyReddots.length}} 条待确认提醒</view>
+        <view class="muted">点击查看详情后会自动回执，停止继续升级备份联系人。</view>
+        <view class="rowline" wx:for="{{notifyReddots}}" wx:key="job_id" bindtap="tapReddot" data-id="{{item.job_id}}" data-family-id="{{item.familyId}}">
+          <view class="row-main">
+            <view>{{item.payload.title || item.payload.task || '家庭提醒'}}</view>
+            <view class="ev-meta">{{item.familyName}} · {{item.payload.time_text || item.payload.reason || '请及时查看'}}</view>
+          </view>
+          <text class="v">查看</text>
+        </view>
+      </view>
+
       <view wx:if="{{empty}}" class="empty">今天暂无要处理的安排</view>
 
       <view class="gp-card {{item.status === 'done' ? 'done' : ''}}" wx:for="{{items}}" wx:key="instanceId">
@@ -29,8 +41,8 @@
       </view>
 
       <view wx:if="{{tomorrowText}}" class="tomorrow">{{tomorrowText}}</view>
-      <button class="big-call" bindtap="callBackup">📞 有事打给儿子</button>
-      <view class="note">祖辈没有底部 Tab，也不用切家庭；「完成」用于快速确认已执行，「要调整」会通知对应家庭管理员处理。</view>
+      <button class="big-call" bindtap="callBackup">{{callText}}</button>
+      <view class="note">照护人没有底部 Tab，也不用切家庭；「完成」用于快速确认已执行，「要调整」会通知对应家庭管理员处理。</view>
     </view>
 
     <view class="sheet-mask" wx:if="{{feedbackOpen}}" bindtap="closeFeedback">

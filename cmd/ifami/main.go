@@ -129,7 +129,7 @@ func newIngest(cfg *config.Config, gdb *gorm.DB, idSvc *identity.Service, schedS
 	if !ark.Configured() {
 		logx.Warnf("ARK_API_KEY / ARK_MODEL 未配置，拍照导入识别将失败")
 	}
-	return ingest.NewService(ingest.NewStore(gdb), imgs, ark, idSvc, scheduleCreator{schedSvc}, ingestNotifier{notifSvc}, field)
+	return ingest.NewService(ingest.NewStore(gdb), imgs, ark, idSvc, scheduleCreator{schedSvc}, ingestNotifier{notifSvc}, field, wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret))
 }
 
 // notifyAdapter 把 notify.Service 适配成 schedule/task 消费方定义的 Notifier 接口。
@@ -152,12 +152,24 @@ func (a taskNotifier) CreateJob(ctx context.Context, in task.NotifyInput) (uint6
 	})
 }
 
+func newNotifyChannel(cfg *config.Config) notify.Channel {
+	if strings.EqualFold(cfg.NotifyChannel, "mock") {
+		logx.Warnf("NOTIFY_CHANNEL=mock，触达消息只记录日志，不会真实发送")
+		return notify.MockSubscribe{}
+	}
+	return notify.NewWechatSubscribe(wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret), notify.SubscribeTemplates{
+		Schedule: cfg.WXSubscribeScheduleTemplate,
+		Task:     cfg.WXSubscribeTaskTemplate,
+		Feedback: cfg.WXSubscribeFeedbackTemplate,
+	})
+}
+
 // serveAPI 启动 HTTP 服务（Hertz）。依赖注入见此处。
 func serveAPI() {
 	cfg := config.Load()
 	gdb, idSvc, sessions, field := initCore(cfg)
 
-	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, notify.MockSubscribe{})
+	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, newNotifyChannel(cfg))
 	schedSvc := schedule.NewService(schedule.NewStore(gdb), idSvc, scheduleNotifier{notifSvc})
 	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc})
 	ingestSvc := newIngest(cfg, gdb, idSvc, schedSvc, notifSvc, field)
@@ -231,7 +243,7 @@ func newRequestID() string {
 func serveWorker() {
 	cfg := config.Load()
 	gdb, idSvc, _, field := initCore(cfg)
-	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, notify.MockSubscribe{})
+	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, newNotifyChannel(cfg))
 	schedSvc := schedule.NewService(schedule.NewStore(gdb), idSvc, scheduleNotifier{notifSvc})
 	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc})
 	ingestSvc := newIngest(cfg, gdb, idSvc, schedSvc, notifSvc, field)
@@ -247,6 +259,9 @@ func serveWorker() {
 		}
 		if err := taskSvc.RemindDue(ctx, now); err != nil {
 			logx.Errorf("worker 打卡提醒扫描失败: %v", err)
+		}
+		if err := schedSvc.RemindDue(ctx, now); err != nil {
+			logx.Errorf("worker 日程到点提醒扫描失败: %v", err)
 		}
 		if err := ingestSvc.RecoverStale(ctx); err != nil {
 			logx.Errorf("worker 拍照导入接管失败: %v", err)
