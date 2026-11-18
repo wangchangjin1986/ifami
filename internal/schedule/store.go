@@ -2,7 +2,9 @@ package schedule
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	drivermysql "github.com/go-sql-driver/mysql"
 	"time"
 
 	"gorm.io/gorm"
@@ -33,8 +35,20 @@ func (s *Store) CreateSchedule(ctx context.Context, sch *Schedule, instances []S
 }
 
 // CreateSchedules 事务批量创建模板 + 物化实例，用于模板化录入确认入库。
-func (s *Store) CreateSchedules(ctx context.Context, schedules []*Schedule, instances [][]ScheduleInstance) error {
+func (s *Store) CreateSchedules(ctx context.Context, schedules []*Schedule, instances [][]ScheduleInstance, batchKey ...string) error {
+	if len(schedules) == 0 || len(schedules) != len(instances) {
+		return ErrBadParam
+	}
+	key := ""
+	if len(batchKey) > 0 {
+		key = batchKey[0]
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if key != "" {
+			if err := tx.Create(&ScheduleBatch{FamilyID: schedules[0].FamilyID, BatchKey: key, ScheduleIDs: []uint64{}}).Error; err != nil {
+				return err
+			}
+		}
 		for i, sch := range schedules {
 			if err := tx.Create(sch).Error; err != nil {
 				return err
@@ -49,8 +63,39 @@ func (s *Store) CreateSchedules(ctx context.Context, schedules []*Schedule, inst
 				}
 			}
 		}
+		if key != "" {
+			ids := make([]uint64, len(schedules))
+			for i := range schedules {
+				ids[i] = schedules[i].ScheduleID
+			}
+			encoded, err := json.Marshal(ids)
+			if err != nil {
+				return err
+			}
+			return tx.Model(&ScheduleBatch{}).Where("family_id = ? AND batch_key = ?", schedules[0].FamilyID, key).Update("schedule_ids", string(encoded)).Error
+		}
 		return nil
 	})
+}
+
+func isDuplicateKey(err error) bool {
+	var mysqlErr *drivermysql.MySQLError
+	return errors.Is(err, gorm.ErrDuplicatedKey) || (errors.As(err, &mysqlErr) && mysqlErr.Number == 1062)
+}
+
+func (s *Store) FindBatchResult(ctx context.Context, familyID uint64, key string) ([]uint64, bool, error) {
+	var row ScheduleBatch
+	err := s.db.WithContext(ctx).Where("family_id = ? AND batch_key = ?", familyID, key).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if len(row.ScheduleIDs) == 0 {
+		return nil, false, errors.New("committed schedule batch has no result")
+	}
+	return row.ScheduleIDs, true, nil
 }
 
 // FindSchedule 查 active 模板，未找到返回 (nil, nil)。
@@ -200,16 +245,17 @@ func (s *Store) FindInstance(ctx context.Context, familyID, instanceID uint64) (
 }
 
 // UpdateInstance 更新单实例（状态/责任人）。
-func (s *Store) UpdateInstance(ctx context.Context, instanceID, familyID uint64, updates map[string]any) error {
+func (s *Store) UpdateInstance(ctx context.Context, inst *ScheduleInstance, updates map[string]any) error {
+	updates["change_version"] = inst.ChangeVersion + 1
 	res := s.db.WithContext(ctx).
 		Model(&ScheduleInstance{}).
-		Where("instance_id = ? AND family_id = ?", instanceID, familyID).
+		Where("instance_id = ? AND family_id = ? AND change_version = ?", inst.InstanceID, inst.FamilyID, inst.ChangeVersion).
 		Updates(updates)
 	if res.Error != nil {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return ErrInstanceNotFound
+		return ErrBadParam // concurrent modification: reload before retrying
 	}
 	return nil
 }
@@ -219,7 +265,7 @@ func (s *Store) CompleteInstanceWithEvent(ctx context.Context, familyID, instanc
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Model(&ScheduleInstance{}).
 			Where("instance_id = ? AND family_id = ?", instanceID, familyID).
-			Update("status", StatusDone)
+			Updates(map[string]any{"status": StatusDone, "change_version": gorm.Expr("change_version + 1")})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -238,7 +284,7 @@ func (s *Store) UpsertPendingFeedbackWithEvent(ctx context.Context, f *ScheduleF
 	f.LastReportedAt = now
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "family_id"}, {Name: "instance_id"}, {Name: "status"}},
+			Columns: []clause.Column{{Name: "family_id"}, {Name: "pending_instance_id"}},
 			DoUpdates: clause.Assignments(map[string]any{
 				"reason":             f.Reason,
 				"reporter_member_id": f.ReporterID,

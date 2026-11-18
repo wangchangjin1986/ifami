@@ -94,7 +94,7 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 // scheduleCreator 把 schedule.Service 适配成 ingest 消费方定义的 ScheduleCreator 接口。
 type scheduleCreator struct{ svc *schedule.Service }
 
-func (a scheduleCreator) CreateBatch(ctx context.Context, userID, familyID uint64, items []ingest.ScheduleItem, force bool) ([]uint64, error) {
+func (a scheduleCreator) CreateBatch(ctx context.Context, userID, familyID, jobID uint64, items []ingest.ScheduleItem, force bool) ([]uint64, error) {
 	inputs := make([]schedule.ScheduleInput, 0, len(items))
 	for _, it := range items {
 		inputs = append(inputs, schedule.ScheduleInput{
@@ -103,11 +103,15 @@ func (a scheduleCreator) CreateBatch(ctx context.Context, userID, familyID uint6
 			Location: it.Location, Note: it.Note, OwnerMemberID: it.OwnerMemberID,
 		})
 	}
-	res, err := a.svc.CreateSchedulesBatch(ctx, userID, familyID, inputs, force)
+	res, err := a.svc.CreateSchedulesBatch(ctx, userID, familyID, inputs, force, fmt.Sprintf("ingest:%d", jobID))
 	if err != nil {
 		return nil, err
 	}
 	return res.ScheduleIDs, nil
+}
+
+func (a scheduleCreator) FindBatchResult(ctx context.Context, familyID, jobID uint64) ([]uint64, bool, error) {
+	return a.svc.FindBatchResult(ctx, familyID, fmt.Sprintf("ingest:%d", jobID))
 }
 
 type ingestNotifier struct{ svc *notify.Service }

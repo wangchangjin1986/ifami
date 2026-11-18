@@ -20,7 +20,8 @@ type Membership interface {
 
 // ScheduleCreator 对 schedule 的最小依赖：确认后批量入库（单事务、冲突逐条返回）。
 type ScheduleCreator interface {
-	CreateBatch(ctx context.Context, userID, familyID uint64, items []ScheduleItem, force bool) ([]uint64, error)
+	CreateBatch(ctx context.Context, userID, familyID, jobID uint64, items []ScheduleItem, force bool) ([]uint64, error)
+	FindBatchResult(ctx context.Context, familyID, jobID uint64) ([]uint64, bool, error)
 }
 
 // ScheduleItem 入库条目（对齐 schedule.ScheduleInput，不 import schedule 保持模块边界）。
@@ -260,15 +261,35 @@ func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, i
 	if j == nil {
 		return nil, ErrJobNotFound
 	}
+	if j.Status != StatusDone && j.Status != StatusConfirming && j.Status != StatusConfirmed {
+		return nil, ErrBadState
+	}
+	if ids, found, err := s.schedules.FindBatchResult(ctx, familyID, jobID); err != nil {
+		return nil, err
+	} else if found {
+		if j.Status != StatusConfirmed {
+			stats := j.Stats
+			stats.Confirmed = len(ids)
+			ok, err := s.store.Transition(ctx, jobID, []string{StatusDone, StatusConfirming}, map[string]any{"status": StatusConfirmed, "stats": gormJSON(stats)})
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				return nil, ErrBadState
+			}
+		}
+		return ids, nil
+	}
 	if j.Status != StatusDone {
 		return nil, ErrBadState
 	}
 	stats := j.Stats
 	now := s.now()
 	ok, err := s.store.Transition(ctx, jobID, []string{StatusDone}, map[string]any{
-		"status":       StatusConfirming,
-		"stats":        gormJSON(stats),
-		"heartbeat_at": now,
+		"status":               StatusConfirming,
+		"stats":                gormJSON(stats),
+		"heartbeat_at":         now,
+		"confirmation_version": 1,
 	})
 	if err != nil {
 		return nil, err
@@ -276,7 +297,7 @@ func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, i
 	if !ok {
 		return nil, ErrBadState
 	}
-	ids, err := s.schedules.CreateBatch(ctx, userID, familyID, items, force)
+	ids, err := s.schedules.CreateBatch(ctx, userID, familyID, jobID, items, force)
 	if err != nil {
 		if ok, e2 := s.store.Transition(ctx, jobID, []string{StatusConfirming}, map[string]any{"status": StatusDone}); e2 != nil || !ok {
 			logx.Errorf("[ingest] 任务 %d 确认失败后恢复 done 失败: ok=%t err=%v", jobID, ok, e2)
@@ -448,8 +469,25 @@ func (s *Service) RecoverStale(ctx context.Context) error {
 	for i := range rows {
 		j := rows[i]
 		if j.Status == StatusConfirming {
-			if ok, err := s.store.Transition(ctx, j.JobID, []string{StatusConfirming}, map[string]any{"status": StatusDone}); err != nil || !ok {
-				logx.Errorf("[ingest] 任务 %d confirming 恢复 done 失败: ok=%t err=%v", j.JobID, ok, err)
+			ids, committed, err := s.schedules.FindBatchResult(ctx, j.FamilyID, j.JobID)
+			if err != nil {
+				return err // unknown commit outcome must not reopen creation
+			}
+			if !committed && j.ConfirmationVersion == 0 {
+				// Legacy confirmations had no durable batch result. Their commit
+				// outcome cannot be inferred safely from a missing new ledger.
+				logx.Warnf("[ingest] 旧确认任务需核对已创建日程 family=%d job=%d", j.FamilyID, j.JobID)
+				continue
+			}
+			fields := map[string]any{"status": StatusDone}
+			if committed {
+				j.Stats.Confirmed = len(ids)
+				fields = map[string]any{"status": StatusConfirmed, "stats": gormJSON(j.Stats)}
+			}
+			if ok, err := s.store.Transition(ctx, j.JobID, []string{StatusConfirming}, fields); err != nil {
+				return err
+			} else if !ok {
+				logx.Infof("[ingest] 任务 %d 已被其他请求恢复", j.JobID)
 			}
 			continue
 		}

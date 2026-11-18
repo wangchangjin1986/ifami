@@ -53,16 +53,31 @@ func (f *fakeNotifier) CreateJob(_ context.Context, in NotifyInput) (uint64, err
 }
 
 type fakeScheduleCreator struct {
-	calls int
-	ids   []uint64
-	err   error
+	calls     int
+	ids       []uint64
+	err       error
+	committed bool
+	lookupErr error
+	jobID     uint64
 }
 
-func (f *fakeScheduleCreator) CreateBatch(context.Context, uint64, uint64, []ScheduleItem, bool) ([]uint64, error) {
+func (f *fakeScheduleCreator) FindBatchResult(context.Context, uint64, uint64) ([]uint64, bool, error) {
+	if f.lookupErr != nil {
+		return nil, false, f.lookupErr
+	}
+	if f.committed {
+		return f.ids, true, nil
+	}
+	return nil, false, nil
+}
+
+func (f *fakeScheduleCreator) CreateBatch(_ context.Context, _, _, jobID uint64, _ []ScheduleItem, _ bool) ([]uint64, error) {
 	f.calls++
+	f.jobID = jobID
 	if f.err != nil {
 		return nil, f.err
 	}
+	f.committed = true
 	return f.ids, nil
 }
 
@@ -215,10 +230,11 @@ func TestRecoverStaleConfirmingRestoresDone(t *testing.T) {
 	svc, mock, _, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
 	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return now }
+	svc.schedules = &fakeScheduleCreator{}
 	staleHeartbeat := now.Add(-4 * time.Minute)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).
-		WillReturnRows(sqlmock.NewRows([]string{"job_id", "family_id", "creator_user_id", "status", "images", "result_enc", "stats", "error_code", "attempts", "heartbeat_at", "created_at", "finished_at"}).
-			AddRow(7, 100, 1, StatusConfirming, "[]", nil, "{}", 0, 1, staleHeartbeat, now.Add(-10*time.Minute), now.Add(-5*time.Minute)))
+		WillReturnRows(sqlmock.NewRows([]string{"job_id", "family_id", "creator_user_id", "status", "images", "result_enc", "stats", "error_code", "attempts", "heartbeat_at", "created_at", "finished_at", "confirmation_version"}).
+			AddRow(7, 100, 1, StatusConfirming, "[]", nil, "{}", 0, 1, staleHeartbeat, now.Add(-10*time.Minute), now.Add(-5*time.Minute), 1))
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET `status`=? WHERE job_id = ? AND status IN (?)")).
 		WithArgs(StatusDone, uint64(7), StatusConfirming).
@@ -229,6 +245,71 @@ func TestRecoverStaleConfirmingRestoresDone(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestConfirmCommittedBatchRecovery(t *testing.T) {
+	svc, mock, _, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
+	creator := &fakeScheduleCreator{ids: []uint64{11, 12}}
+	svc.schedules = creator
+	ctx := context.Background()
+	// Schedules commit, but the ingest terminal update fails.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).WillReturnRows(doneJobRows())
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET")).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET")).WillReturnError(errors.New("finalize unavailable"))
+	mock.ExpectRollback()
+	if _, err := svc.Confirm(ctx, 1, 100, 7, []ScheduleItem{{Title: "阅读"}}, false); err == nil {
+		t.Fatal("missing finalization error")
+	}
+	if creator.jobID != 7 {
+		t.Fatalf("batch job ID=%d", creator.jobID)
+	}
+	// Worker sees the durable batch result and closes confirming, rather than reopening done.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).WillReturnRows(sqlmock.NewRows([]string{"job_id", "family_id", "status", "stats", "confirmation_version"}).AddRow(7, 100, StatusConfirming, "{}", 1))
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET `stats`=?,`status`=? WHERE job_id = ? AND status IN (?)")).
+		WithArgs(`{"confirmed":2}`, StatusConfirmed, uint64(7), StatusConfirming).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := svc.RecoverStale(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// A client retry receives the original IDs without another CreateBatch.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).WillReturnRows(sqlmock.NewRows([]string{"job_id", "family_id", "status"}).AddRow(7, 100, StatusConfirmed))
+	ids, err := svc.Confirm(ctx, 1, 100, 7, []ScheduleItem{{Title: "阅读"}}, false)
+	if err != nil || len(ids) != 2 || ids[0] != 11 || creator.calls != 1 {
+		t.Fatalf("ids=%v err=%v batch calls=%d", ids, err, creator.calls)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRecoverStaleConfirmationSafety(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		version   int
+		lookupErr error
+	}{
+		{"legacy outcome unknown", 0, nil}, {"ledger unavailable", 1, errors.New("schedule unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, mock, _, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
+			svc.schedules = &fakeScheduleCreator{lookupErr: tc.lookupErr}
+			mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).WillReturnRows(sqlmock.NewRows([]string{"job_id", "family_id", "status", "confirmation_version"}).AddRow(7, 100, StatusConfirming, tc.version))
+			err := svc.RecoverStale(context.Background())
+			if tc.lookupErr != nil && !errors.Is(err, tc.lookupErr) {
+				t.Fatalf("error=%v", err)
+			}
+			if tc.lookupErr == nil && err != nil {
+				t.Fatal(err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

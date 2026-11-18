@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"regexp"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type fakeScheduleMembership struct {
@@ -58,15 +60,23 @@ func newScheduleTestStore(t *testing.T) (*Store, sqlmock.Sqlmock) {
 	return NewStore(gdb), mock
 }
 
-func scheduleInstanceRows(owner uint64) *sqlmock.Rows {
-	return scheduleInstanceRowsWithType(owner, TypePickup)
+func scheduleInstanceRows(owner uint64, version ...uint64) *sqlmock.Rows {
+	v := uint64(0)
+	if len(version) > 0 {
+		v = version[0]
+	}
+	return scheduleInstanceRowsWithType(owner, TypePickup, v)
 }
 
-func scheduleInstanceRowsWithType(owner uint64, typ string) *sqlmock.Rows {
+func scheduleInstanceRowsWithType(owner uint64, typ string, version ...uint64) *sqlmock.Rows {
+	v := uint64(0)
+	if len(version) > 0 {
+		v = version[0]
+	}
 	day := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 	start := time.Date(2026, 11, 16, 16, 30, 0, 0, time.UTC)
-	return sqlmock.NewRows([]string{"instance_id", "schedule_id", "family_id", "child_member_id", "title", "type", "occur_date", "start_at", "end_at", "location", "note", "owner_member_id", "status"}).
-		AddRow(7, 3, 100, 10, "接孩子放学", typ, day, start, nil, "学校东门", "带水壶", owner, StatusActive)
+	return sqlmock.NewRows([]string{"instance_id", "schedule_id", "family_id", "child_member_id", "title", "type", "occur_date", "start_at", "end_at", "location", "note", "owner_member_id", "status", "change_version"}).
+		AddRow(7, 3, 100, 10, "接孩子放学", typ, day, start, nil, "学校东门", "带水壶", owner, StatusActive, v)
 }
 
 func TestRequireWriter_AdminOnly(t *testing.T) {
@@ -101,8 +111,8 @@ func TestUpdateInstanceReassignNotifiesOldAndNewOwner(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).
 		WillReturnRows(scheduleInstanceRows(20))
 	mock.ExpectBegin()
-	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `owner_member_id`=? WHERE instance_id = ? AND family_id = ?")).
-		WithArgs(uint64(21), uint64(7), uint64(100)).
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `change_version`=?,`owner_member_id`=? WHERE instance_id = ? AND family_id = ? AND change_version = ?")).
+		WithArgs(uint64(1), uint64(21), uint64(7), uint64(100), uint64(0)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	notifier := &fakeScheduleNotifier{}
@@ -133,8 +143,8 @@ func TestUpdateInstanceReassignNotifiesForNonPickup(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).
 		WillReturnRows(scheduleInstanceRowsWithType(20, TypeCourse))
 	mock.ExpectBegin()
-	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `owner_member_id`=? WHERE instance_id = ? AND family_id = ?")).
-		WithArgs(uint64(21), uint64(7), uint64(100)).
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `change_version`=?,`owner_member_id`=? WHERE instance_id = ? AND family_id = ? AND change_version = ?")).
+		WithArgs(uint64(1), uint64(21), uint64(7), uint64(100), uint64(0)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	notifier := &fakeScheduleNotifier{}
@@ -162,8 +172,8 @@ func TestUpdateInstanceCancelNotifiesOwner(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).
 		WillReturnRows(scheduleInstanceRows(20))
 	mock.ExpectBegin()
-	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `status`=? WHERE instance_id = ? AND family_id = ?")).
-		WithArgs(StatusCancelled, uint64(7), uint64(100)).
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `change_version`=?,`status`=? WHERE instance_id = ? AND family_id = ? AND change_version = ?")).
+		WithArgs(uint64(1), StatusCancelled, uint64(7), uint64(100), uint64(0)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	notifier := &fakeScheduleNotifier{}
@@ -416,5 +426,78 @@ func TestExtensionInstances_RespectsUntilAndCount(t *testing.T) {
 	count := &Schedule{StartDate: time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC), RRule: "FREQ=WEEKLY;BYDAY=MO;COUNT=10", StartTime: "08:00"}
 	if got, _ := extensionInstances(count, nil, today); len(got) != 2 {
 		t.Fatalf("COUNT instances = %d, want 2", len(got))
+	}
+}
+
+// Empty optional keys must be SQL NULL so a family can create multiple schedules.
+func TestScheduleOptionalIdempotency(t *testing.T) {
+	store, _ := newScheduleTestStore(t)
+	statement := store.db.Session(&gorm.Session{DryRun: true, SkipDefaultTransaction: true}).Create(&Schedule{FamilyID: 100}).Statement
+	values := statement.Clauses["VALUES"].Expression.(clause.Values)
+	for i, column := range values.Columns {
+		if column.Name == "idempotency_key" {
+			// INSERT order is schema field order for this model.
+			value, err := driver.DefaultParameterConverter.ConvertValue(values.Values[0][i])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if value != nil {
+				t.Fatalf("missing idempotency key = %#v, want SQL NULL", value)
+			}
+			return
+		}
+	}
+	t.Fatal("idempotency key column missing from INSERT")
+}
+
+func TestRepeatedInstanceAssignments(t *testing.T) {
+	store, mock := newScheduleTestStore(t)
+	notifier := &fakeScheduleNotifier{}
+	svc := &Service{store: store, id: fakeScheduleMembership{role: roleAdmin}, notify: notifier}
+	owners := []uint64{20, 21, 20, 21}
+	for i := 0; i < 3; i++ {
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).WillReturnRows(scheduleInstanceRows(owners[i], uint64(i)))
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET")).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectCommit()
+		if err := svc.UpdateInstance(context.Background(), 1, 100, 7, &InstanceInput{OwnerMemberID: owners[i+1]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen := map[string]bool{}
+	for _, job := range notifier.jobs {
+		if seen[job.BusinessKey] {
+			t.Fatalf("distinct assignments reuse notification key %s", job.BusinessKey)
+		}
+		seen[job.BusinessKey] = true
+	}
+	if len(notifier.jobs) != 6 {
+		t.Fatalf("jobs=%d, want 6", len(notifier.jobs))
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewInstanceShanghaiClock(t *testing.T) {
+	day := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct{ name, clock, utc string }{
+		{"afternoon", "16:30", "2026-11-18T08:30:00Z"},
+		{"previous UTC day", "00:30", "2026-11-17T16:30:00Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			end := "17:00"
+			sch := &Schedule{FamilyID: 100, Title: "阅读", StartTime: tc.clock, EndTime: &end, Status: StatusActive}
+			inst := newInstance(sch, day)
+			if inst.StartAt.Format(time.RFC3339) != tc.utc {
+				t.Fatalf("start=%s want %s", inst.StartAt, tc.utc)
+			}
+			if inst.OccurDate != day || inst.StartAt.In(appLocation).Format("15:04") != tc.clock {
+				t.Fatalf("local date/clock changed: %+v", inst)
+			}
+			if inst.EndAt.Format(time.RFC3339) != "2026-11-18T09:00:00Z" {
+				t.Fatalf("end=%s", inst.EndAt)
+			}
+		})
 	}
 }

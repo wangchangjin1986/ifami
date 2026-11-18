@@ -51,7 +51,7 @@ type Schedule struct {
 	Location       string    `gorm:"column:location"`
 	Note           string    `gorm:"column:note"`
 	OwnerMemberID  uint64    `gorm:"column:owner_member_id"`
-	IdempotencyKey string    `gorm:"column:idempotency_key"`
+	IdempotencyKey *string   `gorm:"column:idempotency_key"`
 	Status         string    `gorm:"column:status"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 }
@@ -73,9 +73,20 @@ type ScheduleInstance struct {
 	Note          string     `gorm:"column:note"`
 	OwnerMemberID uint64     `gorm:"column:owner_member_id"`
 	Status        string     `gorm:"column:status"`
+	ChangeVersion uint64     `gorm:"column:change_version"`
 }
 
 func (ScheduleInstance) TableName() string { return "schedule_instances" }
+
+// ScheduleBatch stores the committed result in the same transaction as its schedules.
+// The key belongs to the caller (e.g. ingest:<job_id>), scoped to a family.
+type ScheduleBatch struct {
+	FamilyID    uint64   `gorm:"column:family_id;primaryKey"`
+	BatchKey    string   `gorm:"column:batch_key;primaryKey"`
+	ScheduleIDs []uint64 `gorm:"column:schedule_ids;type:json;serializer:json"`
+}
+
+func (ScheduleBatch) TableName() string { return "schedule_batches" }
 
 // ScheduleFeedback 执行端反馈闭环：同一 instance 待处理反馈唯一，重复提交只更新原因和时间。
 type ScheduleFeedback struct {

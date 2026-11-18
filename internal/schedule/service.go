@@ -2,14 +2,12 @@ package schedule
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"ifami/internal/pkg/logx"
 	"net/url"
 	"strconv"
 	"time"
 
-	"gorm.io/gorm"
 	"ifami/internal/pkg/httpx"
 )
 
@@ -175,7 +173,9 @@ func (s *Service) CreateSchedule(ctx context.Context, userID, familyID uint64, i
 	if err != nil {
 		return nil, err
 	}
-	sch.IdempotencyKey = idem
+	if idem != "" {
+		sch.IdempotencyKey = &idem
+	}
 	instances, err := s.materialize(sch, dateOnly(time.Now().UTC()))
 	if err != nil {
 		return nil, err
@@ -188,7 +188,7 @@ func (s *Service) CreateSchedule(ctx context.Context, userID, familyID uint64, i
 		return nil, NewConflictError(conflicts)
 	}
 	if err := s.store.CreateSchedule(ctx, sch, instances); err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) && idem != "" {
+		if isDuplicateKey(err) && idem != "" {
 			if existing, e2 := s.store.FindScheduleByIdempotency(ctx, familyID, idem); e2 == nil && existing != nil {
 				return &CreateResult{ScheduleID: existing.ScheduleID, Conflicts: conflicts}, nil
 			}
@@ -201,9 +201,23 @@ func (s *Service) CreateSchedule(ctx context.Context, userID, familyID uint64, i
 
 // CreateSchedulesBatch 批量创建日程模板（拍照导入确认后一次入库，单事务）。
 // 冲突检测含两部分：与库内已有实例、同批条目两两之间；冲突项带入参下标便于前端定位。
-func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uint64, inputs []ScheduleInput, force bool) (*BatchCreateResult, error) {
+func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uint64, inputs []ScheduleInput, force bool, batchKey ...string) (*BatchCreateResult, error) {
 	if err := s.requireWriter(ctx, userID, familyID); err != nil {
 		return nil, err
+	}
+	key := ""
+	if len(batchKey) > 0 {
+		key = batchKey[0]
+	}
+	if len(key) > 64 {
+		return nil, ErrBadParam
+	}
+	if key != "" {
+		if ids, found, err := s.FindBatchResult(ctx, familyID, key); err != nil {
+			return nil, err
+		} else if found {
+			return &BatchCreateResult{ScheduleIDs: ids}, nil
+		}
 	}
 	if len(inputs) == 0 || len(inputs) > MaxBatchSize {
 		return nil, ErrBadParam
@@ -233,9 +247,23 @@ func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uin
 	conflicts = append(conflicts, storedConflicts...)
 	conflicts = append(conflicts, intraBatchConflicts(schedules, instances)...)
 	if len(conflicts) > 0 && !force {
+		// Another confirmation may have committed after our initial lookup.
+		// Its instances must not turn a retry into a conflict with itself.
+		if key != "" {
+			if ids, found, lookupErr := s.FindBatchResult(ctx, familyID, key); lookupErr != nil {
+				return nil, lookupErr
+			} else if found {
+				return &BatchCreateResult{ScheduleIDs: ids}, nil
+			}
+		}
 		return nil, &httpx.Err{Code: 2005, Message: "存在时间冲突", HTTP: 400, Data: map[string]any{"conflicts": conflicts}}
 	}
-	if err := s.store.CreateSchedules(ctx, schedules, instances); err != nil {
+	if err := s.store.CreateSchedules(ctx, schedules, instances, key); err != nil {
+		if key != "" && isDuplicateKey(err) {
+			if ids, found, lookupErr := s.FindBatchResult(ctx, familyID, key); lookupErr == nil && found {
+				return &BatchCreateResult{ScheduleIDs: ids}, nil
+			}
+		}
 		return nil, err
 	}
 	ids := make([]uint64, 0, len(schedules))
@@ -244,6 +272,12 @@ func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uin
 		s.notifyOwner(ctx, familyID, sch)
 	}
 	return &BatchCreateResult{ScheduleIDs: ids, Conflicts: conflicts}, nil
+}
+
+// FindBatchResult is an internal module contract for recovering committed imports.
+// Public callers must perform membership checks before using it.
+func (s *Service) FindBatchResult(ctx context.Context, familyID uint64, key string) ([]uint64, bool, error) {
+	return s.store.FindBatchResult(ctx, familyID, key)
 }
 
 // MaxBatchSize 批量创建上限（拍照导入单任务草稿上限与之一致）。
@@ -369,6 +403,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, userID, familyID, schedule
 	}
 	sch.ScheduleID = scheduleID
 	sch.CreatedAt = existing.CreatedAt
+	sch.IdempotencyKey = existing.IdempotencyKey
 
 	today := dateOnly(time.Now().UTC())
 	instances, err := s.materialize(sch, today)
@@ -471,9 +506,10 @@ func (s *Service) UpdateInstance(ctx context.Context, userID, familyID, instance
 	if len(updates) == 0 {
 		return nil // 幂等：无实际变化（如重指派到同一责任人）视为成功
 	}
-	if err := s.store.UpdateInstance(ctx, instanceID, familyID, updates); err != nil {
+	if err := s.store.UpdateInstance(ctx, inst, updates); err != nil {
 		return err
 	}
+	inst.ChangeVersion++
 	if status, ok := updates["status"].(string); ok && status == StatusCancelled {
 		s.notifyInstanceOwner(ctx, familyID, inst, "schedule_cancelled")
 	}
@@ -687,7 +723,7 @@ func (s *Service) notifyInstanceOwner(ctx context.Context, familyID uint64, inst
 			"instance_id": inst.InstanceID,
 			"page":        page,
 		},
-		BusinessKey: "schedule_instance:" + eventType + ":" + instKey(inst.InstanceID) + ":" + instKey(userID),
+		BusinessKey: "schedule_instance:" + eventType + ":" + instKey(inst.InstanceID) + ":" + instKey(inst.ChangeVersion) + ":" + instKey(userID),
 	}); err != nil {
 		logx.Errorf("[schedule] 创建改分工触达任务失败 instance=%d err=%v", inst.InstanceID, err)
 	}

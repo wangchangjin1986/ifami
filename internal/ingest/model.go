@@ -52,18 +52,19 @@ type JobStats struct {
 
 // Job 拍照导入任务。
 type Job struct {
-	JobID         uint64     `gorm:"column:job_id;primaryKey"`
-	FamilyID      uint64     `gorm:"column:family_id"`
-	CreatorUserID uint64     `gorm:"column:creator_user_id"`
-	Status        string     `gorm:"column:status"`
-	Images        []JobImage `gorm:"column:images;type:json;serializer:json"`
-	ResultEnc     []byte     `gorm:"column:result_enc"`
-	Stats         JobStats   `gorm:"column:stats;type:json;serializer:json"`
-	ErrorCode     int        `gorm:"column:error_code"`
-	Attempts      int        `gorm:"column:attempts"`
-	HeartbeatAt   *time.Time `gorm:"column:heartbeat_at"`
-	CreatedAt     time.Time  `gorm:"column:created_at;autoCreateTime"`
-	FinishedAt    *time.Time `gorm:"column:finished_at"`
+	JobID               uint64     `gorm:"column:job_id;primaryKey"`
+	FamilyID            uint64     `gorm:"column:family_id"`
+	CreatorUserID       uint64     `gorm:"column:creator_user_id"`
+	Status              string     `gorm:"column:status"`
+	Images              []JobImage `gorm:"column:images;type:json;serializer:json"`
+	ResultEnc           []byte     `gorm:"column:result_enc"`
+	Stats               JobStats   `gorm:"column:stats;type:json;serializer:json"`
+	ErrorCode           int        `gorm:"column:error_code"`
+	Attempts            int        `gorm:"column:attempts"`
+	HeartbeatAt         *time.Time `gorm:"column:heartbeat_at"`
+	CreatedAt           time.Time  `gorm:"column:created_at;autoCreateTime"`
+	FinishedAt          *time.Time `gorm:"column:finished_at"`
+	ConfirmationVersion int        `gorm:"column:confirmation_version"`
 }
 
 func (Job) TableName() string { return "ingest_jobs" }
