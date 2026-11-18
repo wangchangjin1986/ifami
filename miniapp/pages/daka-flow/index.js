@@ -41,6 +41,7 @@ Page({
     methods: METHODS,
     methodIndex: 1,
     amount: '',
+    photoPath: '',
     submitting: false,
     done: false,
     streakDays: 0
@@ -50,6 +51,7 @@ Page({
     const goalType = options.goal_type || 'timer'
     const goalValue = parseInt(options.goal_value, 10) || 0
     const key = goalType === 'photo' ? 'photo' : (goalType === 'count' ? 'count' : 'timer')
+    const methods = METHODS.filter((m) => m.key === key)
     this.setData({
       taskId: options.task_id || '',
       taskName: decodeQueryText(options.name, ''),
@@ -59,7 +61,8 @@ Page({
       goalType,
       goalValue,
       goalUnit: goalType === 'photo' ? '张' : (goalType === 'count' ? '个' : '分钟'),
-      methodIndex: METHODS.findIndex((m) => m.key === key)
+      methods,
+      methodIndex: 0
     })
     this.loadChildrenAndTasks()
   },
@@ -95,11 +98,9 @@ Page({
     const child = this.data.children[idx]
     if (!child) return
     const tasks = this._tasks || []
-    const sameName = tasks.find((t) => String(t.child_member_id) === String(child.member_id) && t.name === this.data.taskName)
-    const fallback = tasks.find((t) => String(t.child_member_id) === String(child.member_id))
-    const next = sameName || fallback
+    const next = tasks.find((t) => String(t.child_member_id) === String(child.member_id) && t.name === this.data.taskName)
     if (!next) {
-      wx.showToast({ title: child.name + ' 暂无可打卡任务', icon: 'none' })
+      wx.showToast({ title: child.name + ' 暂无同名任务', icon: 'none' })
       return
     }
     const key = next.goal_type === 'photo' ? 'photo' : (next.goal_type === 'count' ? 'count' : 'timer')
@@ -113,8 +114,10 @@ Page({
       goalType: next.goal_type,
       goalValue: next.goal_value || 0,
       goalUnit: next.goal_type === 'photo' ? '张' : (next.goal_type === 'count' ? '个' : '分钟'),
-      methodIndex: Math.max(0, METHODS.findIndex((m) => m.key === key)),
-      amount: ''
+      methods: METHODS.filter((m) => m.key === key),
+      methodIndex: 0,
+      amount: '',
+      photoPath: ''
     })
   },
 
@@ -142,6 +145,7 @@ Page({
         const file = (res.tempFiles || [])[0]
         const path = file && file.tempFilePath
         if (!path) return wx.showToast({ title: '未选择照片', icon: 'none' })
+        this.setData({ photoPath: path })
         this.uploadPhoto(path)
       },
       fail: () => wx.showToast({ title: '已取消拍照', icon: 'none' })

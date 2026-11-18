@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -31,6 +32,10 @@ func (f *fakeTaskNotifier) CreateJob(_ context.Context, in NotifyInput) (uint64,
 	f.jobs = append(f.jobs, in)
 	return uint64(len(f.jobs)), nil
 }
+
+type fakeImageSafety struct{ err error }
+
+func (f fakeImageSafety) CheckImageSafety(context.Context, []byte) error { return f.err }
 
 func newTaskTestStore(t *testing.T) (*Store, sqlmock.Sqlmock) {
 	t.Helper()
@@ -193,6 +198,22 @@ func TestValidatePayloadAllowsAlternateManualMethod(t *testing.T) {
 	}
 }
 
+func TestSubmitCheckinRejectsJsonMediaTosKey(t *testing.T) {
+	store, mock := newTaskTestStore(t)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `tasks`")).WillReturnRows(taskRows(GoalPhoto))
+	svc := &Service{store: store, id: fakeTaskMembership{role: roleAdmin}}
+	_, err := svc.SubmitCheckin(context.Background(), 1, 100, 1, &CheckinInput{
+		Payload:     map[string]any{"photo": true},
+		MediaTosKey: "wxfile://tmp.jpg",
+	}, "")
+	if err != ErrBadGoal {
+		t.Fatalf("SubmitCheckin error = %v, want ErrBadGoal", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestSubmitPhotoCheckinStoresMysqlBlob(t *testing.T) {
 	store, mock := newTaskTestStore(t)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `tasks`")).WillReturnRows(taskRows(GoalPhoto))
@@ -240,6 +261,19 @@ func TestSubmitPhotoCheckinRejectsSpoofedContentType(t *testing.T) {
 	_, err := svc.SubmitPhotoCheckin(context.Background(), 1, 100, 1, &PhotoInput{Data: []byte("not an image"), ContentType: "image/png"})
 	if err != ErrBadGoal {
 		t.Fatalf("SubmitPhotoCheckin error = %v, want ErrBadGoal", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestSubmitPhotoCheckinRejectsUnsafeImage(t *testing.T) {
+	store, mock := newTaskTestStore(t)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `tasks`")).WillReturnRows(taskRows(GoalPhoto))
+	svc := &Service{store: store, id: fakeTaskMembership{role: roleAdmin}, safety: fakeImageSafety{err: errors.New("unsafe")}}
+	_, err := svc.SubmitPhotoCheckin(context.Background(), 1, 100, 1, &PhotoInput{Data: pngBytes(), ContentType: "image/png"})
+	if err != ErrImageUnsafe {
+		t.Fatalf("SubmitPhotoCheckin error = %v, want ErrImageUnsafe", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)

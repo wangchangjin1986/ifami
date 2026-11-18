@@ -31,7 +31,7 @@ func (f fakeScheduleMembership) RequireMember(_ context.Context, _ uint64, membe
 }
 
 func (f fakeScheduleMembership) MemberUserID(context.Context, uint64, uint64) (uint64, error) {
-	return 1, nil
+	return uint64(1000), nil
 }
 
 func (f fakeScheduleMembership) AdminUserIDs(context.Context, uint64) ([]uint64, error) {
@@ -96,7 +96,7 @@ func TestUpdateInstanceReassignRejectsVirtualOwner(t *testing.T) {
 	}
 }
 
-func TestUpdateInstanceReassignNotifiesNewOwner(t *testing.T) {
+func TestUpdateInstanceReassignNotifiesOldAndNewOwner(t *testing.T) {
 	store, mock := newScheduleTestStore(t)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).
 		WillReturnRows(scheduleInstanceRows(20))
@@ -114,15 +114,14 @@ func TestUpdateInstanceReassignNotifiesNewOwner(t *testing.T) {
 	if err := svc.UpdateInstance(context.Background(), 1, 100, 7, &InstanceInput{OwnerMemberID: 21}); err != nil {
 		t.Fatalf("UpdateInstance error = %v", err)
 	}
-	if len(notifier.jobs) != 1 {
-		t.Fatalf("notify jobs = %d, want 1", len(notifier.jobs))
+	if len(notifier.jobs) != 2 {
+		t.Fatalf("notify jobs = %d, want 2", len(notifier.jobs))
 	}
-	job := notifier.jobs[0]
-	if job.TargetUserID != 1 || job.Level != levelStrong || job.BusinessKey != "" {
-		t.Fatalf("notify job = %+v", job)
+	if notifier.jobs[0].Level != levelStrong || notifier.jobs[0].BusinessKey == "" || notifier.jobs[0].Payload["type"] != "schedule_unassigned" {
+		t.Fatalf("old owner notify job = %+v", notifier.jobs[0])
 	}
-	if job.Payload["type"] != "schedule_reassigned" || job.Payload["instance_id"] != uint64(7) {
-		t.Fatalf("payload = %+v", job.Payload)
+	if notifier.jobs[1].Level != levelStrong || notifier.jobs[1].BusinessKey == "" || notifier.jobs[1].Payload["type"] != "schedule_reassigned" || notifier.jobs[1].Payload["instance_id"] != uint64(7) {
+		t.Fatalf("new owner notify job = %+v", notifier.jobs[1])
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -147,11 +146,36 @@ func TestUpdateInstanceReassignNotifiesForNonPickup(t *testing.T) {
 	if err := svc.UpdateInstance(context.Background(), 1, 100, 7, &InstanceInput{OwnerMemberID: 21}); err != nil {
 		t.Fatalf("UpdateInstance error = %v", err)
 	}
+	if len(notifier.jobs) != 2 {
+		t.Fatalf("notify jobs = %d, want 2", len(notifier.jobs))
+	}
+	if notifier.jobs[0].Payload["type"] != "schedule_unassigned" || notifier.jobs[1].Payload["type"] != "schedule_reassigned" {
+		t.Fatalf("payloads = %+v %+v", notifier.jobs[0].Payload, notifier.jobs[1].Payload)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestUpdateInstanceCancelNotifiesOwner(t *testing.T) {
+	store, mock := newScheduleTestStore(t)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `schedule_instances`")).
+		WillReturnRows(scheduleInstanceRows(20))
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `schedule_instances` SET `status`=? WHERE instance_id = ? AND family_id = ?")).
+		WithArgs(StatusCancelled, uint64(7), uint64(100)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	notifier := &fakeScheduleNotifier{}
+	svc := &Service{store: store, id: fakeScheduleMembership{role: roleAdmin}, notify: notifier}
+	if err := svc.UpdateInstance(context.Background(), 1, 100, 7, &InstanceInput{Status: StatusCancelled}); err != nil {
+		t.Fatalf("UpdateInstance error = %v", err)
+	}
 	if len(notifier.jobs) != 1 {
 		t.Fatalf("notify jobs = %d, want 1", len(notifier.jobs))
 	}
-	if notifier.jobs[0].Payload["type"] != "schedule_reassigned" {
-		t.Fatalf("payload = %+v", notifier.jobs[0].Payload)
+	if notifier.jobs[0].Payload["type"] != "schedule_cancelled" || notifier.jobs[0].BusinessKey == "" {
+		t.Fatalf("notify job = %+v", notifier.jobs[0])
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -195,6 +219,15 @@ func TestBuildSchedule_SingleOccurrence(t *testing.T) {
 	}
 	if got := instances[0].OccurDate.Format("2006-01-02"); got != "2026-11-04" {
 		t.Fatalf("occur_date = %s, want 2026-11-04", got)
+	}
+}
+
+func TestCombineDateTimeUsesShanghaiWallClock(t *testing.T) {
+	day := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	got := combineDateTime(day, "16:30")
+	want := time.Date(2026, 11, 16, 8, 30, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("combineDateTime = %s, want %s", got, want)
 	}
 }
 

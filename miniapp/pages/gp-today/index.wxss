@@ -6,3 +6,7 @@
 .done-line { color: var(--accent); font-size: 30rpx; font-weight: 700; }
 .gp-actions button.done { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); font-weight: 700; }
 .gp-actions button.adjust { border-color: var(--accent); color: var(--accent); }
+.gp-page.large-text { font-size: 34rpx; }
+.gp-page.large-text .gp-time,
+.gp-page.large-text .gp-title,
+.gp-page.large-text .empty { font-size: 40rpx; }

@@ -63,7 +63,7 @@ Page({
       logged: true,
       hasFamily: !!fid,
       familyName: wx.getStorageSync('familyName:' + fid) || '当前家庭',
-      serviceAccountStatus: '订阅消息可用'
+      serviceAccountStatus: '订阅授权需在提醒时确认'
     }, s))
     if (fid) this.loadChildren()
   },
@@ -97,7 +97,7 @@ Page({
   toggleSmsFallback() {
     const next = !this.data.smsFallback
     this.persist({ smsFallback: next })
-    wx.showToast({ title: next ? '已开启短信兜底偏好' : '已关闭短信兜底偏好', icon: 'none' })
+    wx.showToast({ title: next ? '已保存本机短信偏好' : '已关闭本机短信偏好', icon: 'none' })
   },
 
   onDndStart(e) {

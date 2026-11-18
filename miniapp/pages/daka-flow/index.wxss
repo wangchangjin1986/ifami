@@ -1,0 +1,4 @@
+.methods { display: flex; gap: 16rpx; flex-wrap: wrap; }
+.methods button { flex: 1; min-width: 180rpx; }
+.photo-preview { width: 240rpx; height: 240rpx; border-radius: 28rpx; background: #f4efe8; }
+.photo-placeholder { padding: 32rpx; border: 2rpx dashed rgba(99, 74, 55, .28); border-radius: 28rpx; color: #8a7562; background: rgba(255, 255, 255, .52); }

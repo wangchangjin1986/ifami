@@ -168,6 +168,29 @@ func TestConfirmClaimsBeforeCreateBatch(t *testing.T) {
 	}
 }
 
+func TestConfirmReturnsErrorWhenFinalStatusUpdateFails(t *testing.T) {
+	svc, mock, _, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
+	creator := &fakeScheduleCreator{ids: []uint64{11, 12}}
+	svc.schedules = creator
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).WillReturnRows(doneJobRows())
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET")).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET")).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+	_, err := svc.Confirm(context.Background(), 1, 100, 7, []ScheduleItem{{Title: "钢琴"}}, false)
+	if !errors.Is(err, ErrBadState) {
+		t.Fatalf("Confirm error = %v, want ErrBadState", err)
+	}
+	if creator.calls != 1 {
+		t.Fatalf("CreateBatch calls = %d, want 1", creator.calls)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConfirmDoesNotCreateBatchWhenClaimLost(t *testing.T) {
 	svc, mock, _, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
 	creator := &fakeScheduleCreator{ids: []uint64{11}}
@@ -182,6 +205,27 @@ func TestConfirmDoesNotCreateBatchWhenClaimLost(t *testing.T) {
 	}
 	if creator.calls != 0 {
 		t.Fatalf("CreateBatch calls = %d, want 0", creator.calls)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRecoverStaleConfirmingRestoresDone(t *testing.T) {
+	svc, mock, _, _ := newSvc(t, &fakeRecognizer{}, roleAdmin)
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	staleHeartbeat := now.Add(-4 * time.Minute)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `ingest_jobs`")).
+		WillReturnRows(sqlmock.NewRows([]string{"job_id", "family_id", "creator_user_id", "status", "images", "result_enc", "stats", "error_code", "attempts", "heartbeat_at", "created_at", "finished_at"}).
+			AddRow(7, 100, 1, StatusConfirming, "[]", nil, "{}", 0, 1, staleHeartbeat, now.Add(-10*time.Minute), now.Add(-5*time.Minute)))
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE `ingest_jobs` SET `status`=? WHERE job_id = ? AND status IN (?)")).
+		WithArgs(StatusDone, uint64(7), StatusConfirming).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := svc.RecoverStale(context.Background()); err != nil {
+		t.Fatalf("RecoverStale error = %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

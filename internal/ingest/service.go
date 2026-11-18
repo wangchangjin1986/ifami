@@ -264,9 +264,11 @@ func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, i
 		return nil, ErrBadState
 	}
 	stats := j.Stats
+	now := s.now()
 	ok, err := s.store.Transition(ctx, jobID, []string{StatusDone}, map[string]any{
-		"status": StatusConfirming,
-		"stats":  gormJSON(stats),
+		"status":       StatusConfirming,
+		"stats":        gormJSON(stats),
+		"heartbeat_at": now,
 	})
 	if err != nil {
 		return nil, err
@@ -282,10 +284,14 @@ func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, i
 		return nil, err // 冲突（2005）/ 校验错误透传给前端
 	}
 	stats.Confirmed = len(ids)
-	if _, err := s.store.Transition(ctx, jobID, []string{StatusConfirming}, map[string]any{
+	if ok, err := s.store.Transition(ctx, jobID, []string{StatusConfirming}, map[string]any{
 		"status": StatusConfirmed, "stats": gormJSON(stats),
-	}); err != nil {
-		logx.Errorf("[ingest] 任务 %d 置 confirmed 失败: %v", jobID, err)
+	}); err != nil || !ok {
+		logx.Errorf("[ingest] 任务 %d 置 confirmed 失败: ok=%t err=%v", jobID, ok, err)
+		if err != nil {
+			return nil, err
+		}
+		return nil, ErrBadState
 	}
 	return ids, nil
 }
@@ -431,6 +437,7 @@ func (s *Service) notifyDone(ctx context.Context, j *Job) {
 }
 
 // RecoverStale Worker 每轮调用：接管 pending 超时 / running 心跳中断的任务；超过次数置 failed。
+// confirming 是确认链路中间态；若进程在批量创建前/错误回滚时中断，恢复为 done 供管理员重新确认。
 func (s *Service) RecoverStale(ctx context.Context) error {
 	now := s.now()
 	pendingBefore, runningBefore := now.Add(-stalePendingAfter), now.Add(-staleHeartbeatAfter)
@@ -440,6 +447,12 @@ func (s *Service) RecoverStale(ctx context.Context) error {
 	}
 	for i := range rows {
 		j := rows[i]
+		if j.Status == StatusConfirming {
+			if ok, err := s.store.Transition(ctx, j.JobID, []string{StatusConfirming}, map[string]any{"status": StatusDone}); err != nil || !ok {
+				logx.Errorf("[ingest] 任务 %d confirming 恢复 done 失败: ok=%t err=%v", j.JobID, ok, err)
+			}
+			continue
+		}
 		if j.Attempts >= maxAttempts {
 			fin := now
 			if ok, err := s.store.Transition(ctx, j.JobID, []string{StatusPending, StatusRunning}, map[string]any{

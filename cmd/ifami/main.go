@@ -171,7 +171,7 @@ func serveAPI() {
 
 	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, newNotifyChannel(cfg))
 	schedSvc := schedule.NewService(schedule.NewStore(gdb), idSvc, scheduleNotifier{notifSvc})
-	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc})
+	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc}, wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret))
 	ingestSvc := newIngest(cfg, gdb, idSvc, schedSvc, notifSvc, field)
 
 	// 拍照导入单张图 ≤5MB，multipart 开销留余量，请求体上限调到 10MB（默认 4MB）。
@@ -245,7 +245,7 @@ func serveWorker() {
 	gdb, idSvc, _, field := initCore(cfg)
 	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, newNotifyChannel(cfg))
 	schedSvc := schedule.NewService(schedule.NewStore(gdb), idSvc, scheduleNotifier{notifSvc})
-	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc})
+	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc}, wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret))
 	ingestSvc := newIngest(cfg, gdb, idSvc, schedSvc, notifSvc, field)
 
 	logx.Infof("worker 启动，扫描间隔 30s")

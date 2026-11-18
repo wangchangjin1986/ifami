@@ -39,20 +39,21 @@ const (
 
 // Schedule 日程模板。重复规则存 rrule，实例物化到 ScheduleInstance。
 type Schedule struct {
-	ScheduleID    uint64    `gorm:"column:schedule_id;primaryKey"`
-	FamilyID      uint64    `gorm:"column:family_id"`
-	ChildMemberID uint64    `gorm:"column:child_member_id"`
-	Title         string    `gorm:"column:title"`
-	Type          string    `gorm:"column:type"`
-	StartDate     time.Time `gorm:"column:start_date"`
-	RRule         string    `gorm:"column:rrule"`
-	StartTime     string    `gorm:"column:start_time"`
-	EndTime       *string   `gorm:"column:end_time"`
-	Location      string    `gorm:"column:location"`
-	Note          string    `gorm:"column:note"`
-	OwnerMemberID uint64    `gorm:"column:owner_member_id"`
-	Status        string    `gorm:"column:status"`
-	CreatedAt     time.Time `gorm:"column:created_at"`
+	ScheduleID     uint64    `gorm:"column:schedule_id;primaryKey"`
+	FamilyID       uint64    `gorm:"column:family_id"`
+	ChildMemberID  uint64    `gorm:"column:child_member_id"`
+	Title          string    `gorm:"column:title"`
+	Type           string    `gorm:"column:type"`
+	StartDate      time.Time `gorm:"column:start_date"`
+	RRule          string    `gorm:"column:rrule"`
+	StartTime      string    `gorm:"column:start_time"`
+	EndTime        *string   `gorm:"column:end_time"`
+	Location       string    `gorm:"column:location"`
+	Note           string    `gorm:"column:note"`
+	OwnerMemberID  uint64    `gorm:"column:owner_member_id"`
+	IdempotencyKey string    `gorm:"column:idempotency_key"`
+	Status         string    `gorm:"column:status"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
 }
 
 func (Schedule) TableName() string { return "schedules" }

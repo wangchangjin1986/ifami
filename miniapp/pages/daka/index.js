@@ -78,7 +78,7 @@ Page({
     ])
       .then(([tasks, members]) => {
         const nameMap = {}
-        ;(members || []).forEach((m) => { nameMap[m.member_id] = m.name || '成员' + m.member_id })
+        ;(members || []).forEach((m) => { nameMap[m.member_id] = m.name || m.relation_label || '成员' + m.member_id })
 
         const buildTask = (t, childName) => {
           const suffix = goalSuffix(t)
