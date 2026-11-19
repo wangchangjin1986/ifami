@@ -32,6 +32,15 @@ type Notifier interface {
 	CreateJob(ctx context.Context, in NotifyInput) (uint64, error)
 }
 
+// ImageSafety 是图片内容安全审核接口。拍照打卡原图入库前必须通过审核。
+type ImageSafety interface {
+	CheckImageSafety(ctx context.Context, data []byte) error
+}
+
+type NoopImageSafety struct{}
+
+func (NoopImageSafety) CheckImageSafety(context.Context, []byte) error { return nil }
+
 // NotifyInput 触达任务入参（对齐 notify.CreateJobInput，不 import notify 保持模块边界）。
 type NotifyInput struct {
 	FamilyID     uint64         `json:"family_id"`
@@ -53,10 +62,15 @@ type Service struct {
 	store  *Store
 	id     Membership
 	notify Notifier
+	safety ImageSafety
 }
 
-func NewService(store *Store, id Membership, notify Notifier) *Service {
-	return &Service{store: store, id: id, notify: notify}
+func NewService(store *Store, id Membership, notify Notifier, safety ...ImageSafety) *Service {
+	checker := ImageSafety(NoopImageSafety{})
+	if len(safety) > 0 && safety[0] != nil {
+		checker = safety[0]
+	}
+	return &Service{store: store, id: id, notify: notify, safety: checker}
 }
 
 // ---- 对外 DTO ----
@@ -251,6 +265,9 @@ func (s *Service) SubmitCheckin(ctx context.Context, userID, familyID, taskID ui
 		return nil, ErrOwnerRequired
 	}
 
+	if in.MediaTosKey != "" {
+		return nil, ErrBadGoal
+	}
 	if err := validatePayload(task.GoalType, in.Payload, in.MediaTosKey); err != nil {
 		return nil, err
 	}
@@ -317,6 +334,14 @@ func (s *Service) SubmitPhotoCheckin(ctx context.Context, userID, familyID, task
 		return nil, ErrBadGoal
 	}
 	in.ContentType = detectedContentType
+	checker := s.safety
+	if checker == nil {
+		checker = NoopImageSafety{}
+	}
+	if err := checker.CheckImageSafety(ctx, in.Data); err != nil {
+		logx.Warnf("[task] 拍照打卡图片内容安全审核未通过 task=%d err=%v", taskID, err)
+		return nil, ErrImageUnsafe
+	}
 	if in.IdempotencyKey != "" {
 		if existing, err := s.store.FindCheckinByIdempotency(ctx, familyID, in.IdempotencyKey); err != nil {
 			return nil, err

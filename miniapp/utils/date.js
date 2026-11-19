@@ -26,10 +26,13 @@ function addDays(d, n) {
   return x
 }
 
-// RFC3339 时间点 → "HH:MM"。后端把用户时钟按字面值存为 UTC，
-// 取 [11,16) 即用户输入的原时钟值，展示往返一致。
-function hhmm(rfc3339) {
-  return (rfc3339 || '').slice(11, 16)
+// 时间展示 → "HH:MM"。支持 HH:MM[:SS] 与 RFC3339 时间点（按设备本地时区展示）。
+function hhmm(value) {
+  const s = value || ''
+  if (/^\d{2}:\d{2}/.test(s)) return s.slice(0, 5)
+  const d = new Date(s)
+  if (!isNaN(d.getTime())) return pad(d.getHours()) + ':' + pad(d.getMinutes())
+  return ''
 }
 
 // YYYY-MM-DD → RRULE 星期代码（MO..SU）。

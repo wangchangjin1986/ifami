@@ -53,6 +53,8 @@ Page({
 
   onLoad(options) {
     this._inst = options
+    this._familyId = options.family_id || app.globalData.familyId
+    if (this._familyId) app.setFamily(this._familyId)
     app.reportNotifyReceipt(options.job_id)
     const isRecurring = !!options.rrule
     this.setData({
@@ -79,7 +81,7 @@ Page({
   loadMembers() {
     app.ensureLogin()
       .then(() => {
-        const fid = app.globalData.familyId
+        const fid = this._familyId || app.globalData.familyId
         if (!fid) return []
         return app.request(`/v1/families/${fid}/members`)
       })
@@ -114,7 +116,7 @@ Page({
   completeInstance() {
     const iid = this._inst.instance_id
     if (!iid) return wx.showToast({ title: '缺少日程实例', icon: 'none' })
-    app.request(`/v1/schedules/instances/${iid}/complete`, { method: 'POST' })
+    app.request(`/v1/schedules/instances/${iid}/complete`, { method: 'POST', familyId: this._familyId })
       .then(() => wx.showToast({ title: '已完成', icon: 'success' }))
       .catch((err) => wx.showToast({ title: err.message || '提交失败', icon: 'none' }))
   },
@@ -123,7 +125,7 @@ Page({
     const iid = this._inst.instance_id
     const reason = e.currentTarget.dataset.reason
     if (!iid || !reason) return
-    app.request(`/v1/schedules/instances/${iid}/feedback`, { method: 'POST', data: { reason } })
+    app.request(`/v1/schedules/instances/${iid}/feedback`, { method: 'POST', familyId: this._familyId, data: { reason } })
       .then(() => {
         this.setData({ feedbackOpen: false })
         wx.showToast({ title: '已通知家长处理', icon: 'none' })
@@ -144,7 +146,7 @@ Page({
     const currentUserId = app.globalData.user && app.globalData.user.user_id
     const ensureSubscribe = owner && String(owner.user_id) === String(currentUserId) ? app.requestNotifySubscribe() : Promise.resolve(false)
     ensureSubscribe
-      .then(() => app.request(`/v1/schedules/instances/${iid}`, { method: 'PATCH', data: { owner_member_id: ownerId } }))
+      .then(() => app.request(`/v1/schedules/instances/${iid}`, { method: 'PATCH', familyId: this._familyId, data: { owner_member_id: ownerId } }))
       .then(() => {
         this.closeSheet()
         this._inst.owner_member_id = ownerId
@@ -170,7 +172,7 @@ Page({
       confirmColor: '#BF4A3C',
       success: (r) => {
         if (!r.confirm) return
-        app.request(`/v1/schedules/instances/${iid}`, { method: 'PATCH', data: { status: 'cancelled' } })
+        app.request(`/v1/schedules/instances/${iid}`, { method: 'PATCH', familyId: this._familyId, data: { status: 'cancelled' } })
           .then(() => {
             wx.showToast({ title: '已取消', icon: 'success' })
             setTimeout(() => wx.navigateBack(), 500)
@@ -191,7 +193,7 @@ Page({
       success: (r) => {
         if (!r.confirm) return
         const from = this._inst.occur_date ? '?from=' + this._inst.occur_date : ''
-        app.request(`/v1/schedules/${sid}${from}`, { method: 'DELETE' })
+        app.request(`/v1/schedules/${sid}${from}`, { method: 'DELETE', familyId: this._familyId })
           .then(() => {
             wx.showToast({ title: '已删除', icon: 'success' })
             setTimeout(() => wx.navigateBack(), 500)

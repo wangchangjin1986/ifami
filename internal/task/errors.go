@@ -11,4 +11,5 @@ var (
 	ErrChildRequired   = &httpx.Err{Code: 3006, Message: "任务必须绑定孩子"}
 	ErrOwnerRequired   = &httpx.Err{Code: 3007, Message: "责任人必须是家庭成员"}
 	ErrBadGoal         = &httpx.Err{Code: 3008, Message: "目标类型或目标量不合法"}
+	ErrImageUnsafe     = &httpx.Err{Code: 3009, Message: "图片内容安全审核未通过，请更换图片", HTTP: 400}
 )

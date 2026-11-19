@@ -17,6 +17,14 @@ function pickContact(members) {
   return admins.find((m) => m.phone) || parents.find((m) => m.phone) || admins[0] || parents[0] || null
 }
 
+function settingsKey(fid, uid) {
+  return 'settings:' + (fid || 'no-family') + ':' + (uid || 'no-user')
+}
+
+function loadLargeText(fid, uid) {
+  return !!((wx.getStorageSync(settingsKey(fid, uid)) || {}).largeText)
+}
+
 Page({
   data: {
     logged: false,
@@ -30,6 +38,7 @@ Page({
     contactName: '',
     contactPhone: '',
     callText: '📞 联系家长',
+    largeText: false,
     feedbackOpen: false,
     feedbackTitle: '',
     feedbackReasons: [
@@ -46,7 +55,8 @@ Page({
 
   refresh() {
     const now = new Date()
-    this.setData({ dateStr: dateLabel(now) })
+    const user = app.globalData.user || {}
+    this.setData({ dateStr: dateLabel(now), largeText: loadLargeText(app.globalData.familyId, user.user_id) })
     if (!app.globalData.token || !app.globalData.user) {
       this.setData({ logged: false, hasFamily: false, notifyReddots: [], hasReddot: false, items: [], empty: true, tomorrowText: '', contactName: '', contactPhone: '', callText: '📞 联系家长' })
       return
@@ -142,7 +152,7 @@ Page({
     app.reportNotifyReceipt(job.job_id)
       .then(() => this.loadAggregate())
     const page = job.payload && job.payload.page
-    app.openNotifyPage(page)
+    app.openNotifyPage(page, familyId)
   },
 
   completeItem(e) {

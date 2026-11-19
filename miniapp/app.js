@@ -255,9 +255,13 @@ App({
     })
   },
 
-  openNotifyPage(page) {
+  openNotifyPage(page, familyId = null) {
     if (!page) return
-    const clean = String(page).replace(/^\//, '')
+    if (familyId) this.setFamily(familyId)
+    let clean = String(page).replace(/^\//, '')
+    if (familyId && clean.indexOf('family_id=') < 0) {
+      clean += (clean.indexOf('?') >= 0 ? '&' : '?') + 'family_id=' + encodeURIComponent(familyId)
+    }
     const base = clean.split('?')[0]
     const tabPages = ['pages/today/index', 'pages/week/index', 'pages/daka/index', 'pages/family/index']
     if (tabPages.includes(base)) {

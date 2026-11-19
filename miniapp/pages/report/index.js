@@ -78,7 +78,9 @@ Page({
     nextWeekError: false
   },
 
-  onLoad() {
+  onLoad(options = {}) {
+    this._query = options || {}
+    if (options.family_id) app.setFamily(options.family_id)
     this.refresh()
   },
 
@@ -109,9 +111,9 @@ Page({
     }
 
     const now = new Date()
-    const mon = mondayOf(now)
+    const mon = this._query.week_start ? new Date(this._query.week_start + 'T00:00:00') : mondayOf(now)
     const weekStart = fmt(mon)
-    const weekEndDate = addDays(mon, 6)
+    const weekEndDate = this._query.week_end ? new Date(this._query.week_end + 'T00:00:00') : addDays(mon, 6)
     const weekEnd = fmt(weekEndDate)
     const nextStartDate = addDays(mon, 7)
     const nextEndDate = addDays(mon, 13)
@@ -121,7 +123,8 @@ Page({
     this._scopeEndDate = now < weekEndDate ? now : weekEndDate
     this._nextStart = fmt(nextStartDate)
     this._nextEnd = fmt(nextEndDate)
-    this.setData({ hasFamily: true, weekLabel: weekStart.slice(5).replace('-', '/') + ' – ' + weekEnd.slice(5).replace('-', '/') })
+    const childFilter = parseInt(this._query.child_id, 10) || 0
+    this.setData({ hasFamily: true, childFilter, weekLabel: weekStart.slice(5).replace('-', '/') + ' – ' + weekEnd.slice(5).replace('-', '/') })
 
     return Promise.all([
       withTimeout(app.request(`/v1/families/${fid}/members`), '成员信息'),
@@ -143,7 +146,7 @@ Page({
         this._nextSchedules = []
         this._checkinGroups = checkinGroups || []
         this.setData({ children })
-        this.applyFilter(this.data.childFilter)
+        this.applyFilter(childFilter || this.data.childFilter)
         this.setData({ loading: false, loadError: false })
         this.loadNextWeekItems()
       })
@@ -285,7 +288,7 @@ Page({
   onShareAppMessage() {
     return {
       title: '本周家庭小结：' + this.data.weekLabel,
-      path: '/pages/report/index'
+      path: `/pages/report/index?family_id=${app.globalData.familyId || ''}&week_start=${this._weekStart || ''}&week_end=${this._weekEnd || ''}&child_id=${this.data.childFilter || 0}`
     }
   },
 

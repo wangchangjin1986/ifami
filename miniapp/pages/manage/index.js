@@ -40,7 +40,7 @@ Page({
         const nameMap = {}
         const children = []
         ;(members || []).forEach((m) => {
-          nameMap[m.member_id] = m.name || '成员' + m.member_id
+          nameMap[m.member_id] = m.name || m.relation_label || '成员' + m.member_id
           if (m.type === 'virtual') children.push(m)
         })
 

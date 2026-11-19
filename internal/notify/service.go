@@ -247,23 +247,23 @@ func (s *Service) escalateBackup(ctx context.Context, job *NotifyJob, now time.T
 	userIDs, err := s.id.BackupUserIDs(ctx, job.FamilyID)
 	if err != nil {
 		logx.Warnf("[notify] 备份触达解析联系人失败 job=%d err=%v", job.JobID, err)
-	} else {
-		for _, userID := range userIDs {
-			if userID == job.TargetUserID {
-				continue
-			}
-			payload := cloneState(job.Payload)
-			payload["type"] = "backup_notification"
-			payload["title"] = "备份提醒：" + payloadStringForBackup(job.Payload, "title")
-			if _, err := s.CreateJob(ctx, &CreateJobInput{
-				FamilyID:     job.FamilyID,
-				TargetUserID: userID,
-				Level:        LevelMedium,
-				Payload:      payload,
-				BusinessKey:  "backup:" + instKey(job.JobID) + ":" + instKey(userID),
-			}); err != nil {
-				logx.Errorf("[notify] 创建备份触达失败 job=%d target=%d err=%v", job.JobID, userID, err)
-			}
+		return err
+	}
+	for _, userID := range userIDs {
+		if userID == job.TargetUserID {
+			continue
+		}
+		payload := cloneState(job.Payload)
+		payload["type"] = "backup_notification"
+		payload["title"] = "备份提醒：" + payloadStringForBackup(job.Payload, "title")
+		if _, err := s.CreateJob(ctx, &CreateJobInput{
+			FamilyID:     job.FamilyID,
+			TargetUserID: userID,
+			Level:        LevelMedium,
+			Payload:      payload,
+			BusinessKey:  "backup:" + instKey(job.JobID) + ":" + instKey(userID),
+		}); err != nil {
+			logx.Errorf("[notify] 创建备份触达失败 job=%d target=%d err=%v", job.JobID, userID, err)
 		}
 	}
 	cs := cloneState(job.ChannelState)

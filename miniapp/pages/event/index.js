@@ -18,6 +18,10 @@ const REPEATS = [
   { value: 'weekly', label: '每周' }
 ]
 
+function genKey() {
+  return Date.now() + '-' + Math.random().toString(36).slice(2)
+}
+
 function repeatIndexOf(rrule) {
   if (!rrule) return 0
   if (rrule.indexOf('BYDAY=MO,TU,WE,TH,FR,SA,SU') >= 0) return 1
@@ -57,6 +61,7 @@ Page({
     this._endTime = ''
     this._original = null
     this._repeatTouched = false
+    this._createIdempotencyKey = genKey()
     if (!app.globalData.isAdmin) {
       wx.showToast({ title: '只有管理员才能录入', icon: 'none' })
       setTimeout(() => wx.navigateBack(), 500)
@@ -175,8 +180,9 @@ Page({
     this.setData({ submitting: true })
     const url = scheduleId ? `/v1/schedules/${scheduleId}` : '/v1/schedules'
     const method = scheduleId ? 'PATCH' : 'POST'
+    const header = scheduleId ? {} : { 'Idempotency-Key': this._createIdempotencyKey }
     app.requestNotifySubscribe()
-      .then(() => app.request(url, { method, data: Object.assign({}, payload, { force }) }))
+      .then(() => app.request(url, { method, data: Object.assign({}, payload, { force }), header }))
       .then(() => {
         wx.showToast({ title: '已保存', icon: 'success' })
         // 编辑来自详情页（日历→详情→编辑），保存后直接回日历；新建回上一页。

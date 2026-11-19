@@ -13,7 +13,7 @@
       <view class="group-label">触达通道</view>
       <view class="card">
         <view class="rowline"><text>微信服务号</text><text class="v">{{serviceAccountStatus}}</text></view>
-        <view class="rowline"><text>短信兜底</text><view class="toggle {{smsFallback ? 'on' : ''}}" bindtap="toggleSmsFallback"></view></view>
+        <view class="rowline"><text>短信兜底（本机偏好）</text><view class="toggle {{smsFallback ? 'on' : ''}}" bindtap="toggleSmsFallback"></view></view>
         <view class="rowline"><text>App 推送</text><text class="v">未安装 App（V2）</text></view>
       </view>
 
@@ -27,7 +27,7 @@
             <picker mode="time" value="{{dndEnd}}" bindchange="onDndEnd"><text class="v accent">{{dndEnd}}</text></picker>
           </view>
         </view>
-        <view class="rowline"><text>免打扰期间仅强触达</text><view class="toggle {{strongOnlyInDnd ? 'on' : ''}}" bindtap="toggleStrongOnly"></view></view>
+        <view class="rowline"><text>免打扰期间仅强触达（本机偏好）</text><view class="toggle {{strongOnlyInDnd ? 'on' : ''}}" bindtap="toggleStrongOnly"></view></view>
       </view>
 
       <view class="group-label">通用</view>

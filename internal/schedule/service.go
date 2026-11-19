@@ -15,6 +15,8 @@ import (
 const materializeWindowDays = 90
 const scheduleReminderLead = 15 * time.Minute
 
+var appLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
 // Membership 是 schedule 对 identity 模块的最小依赖（消费方定义接口，跨模块只走接口）。
 type Membership interface {
 	// RequireActive 校验 user 是 family 的 active 成员，返回 member_id 与 role。
@@ -136,14 +138,43 @@ type FeedbackInput struct {
 	Reason string `json:"reason"`
 }
 
+type FeedbackResolveInput struct {
+	Status string `json:"status"`
+}
+
+type FeedbackView struct {
+	FeedbackID     uint64 `json:"feedback_id"`
+	InstanceID     uint64 `json:"instance_id"`
+	ScheduleID     uint64 `json:"schedule_id"`
+	ReporterID     uint64 `json:"reporter_member_id"`
+	Reason         string `json:"reason"`
+	Status         string `json:"status"`
+	LastReportedAt string `json:"last_reported_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
 // CreateSchedule 创建日程：物化未来 90 天 + 冲突检测（force 跳过冲突拦截）。
-func (s *Service) CreateSchedule(ctx context.Context, userID, familyID uint64, in *ScheduleInput, force bool) (*CreateResult, error) {
+func (s *Service) CreateSchedule(ctx context.Context, userID, familyID uint64, in *ScheduleInput, force bool, idempotencyKey ...string) (*CreateResult, error) {
 	if err := s.requireWriter(ctx, userID, familyID); err != nil {
 		return nil, err
+	}
+	idem := ""
+	if len(idempotencyKey) > 0 {
+		idem = idempotencyKey[0]
+	}
+	if idem != "" {
+		if existing, err := s.store.FindScheduleByIdempotency(ctx, familyID, idem); err != nil {
+			return nil, err
+		} else if existing != nil {
+			return &CreateResult{ScheduleID: existing.ScheduleID}, nil
+		}
 	}
 	sch, err := s.buildSchedule(ctx, familyID, in)
 	if err != nil {
 		return nil, err
+	}
+	if idem != "" {
+		sch.IdempotencyKey = &idem
 	}
 	instances, err := s.materialize(sch, dateOnly(time.Now().UTC()))
 	if err != nil {
@@ -157,6 +188,11 @@ func (s *Service) CreateSchedule(ctx context.Context, userID, familyID uint64, i
 		return nil, NewConflictError(conflicts)
 	}
 	if err := s.store.CreateSchedule(ctx, sch, instances); err != nil {
+		if isDuplicateKey(err) && idem != "" {
+			if existing, e2 := s.store.FindScheduleByIdempotency(ctx, familyID, idem); e2 == nil && existing != nil {
+				return &CreateResult{ScheduleID: existing.ScheduleID, Conflicts: conflicts}, nil
+			}
+		}
 		return nil, err
 	}
 	s.notifyOwner(ctx, familyID, sch)
@@ -165,9 +201,23 @@ func (s *Service) CreateSchedule(ctx context.Context, userID, familyID uint64, i
 
 // CreateSchedulesBatch 批量创建日程模板（拍照导入确认后一次入库，单事务）。
 // 冲突检测含两部分：与库内已有实例、同批条目两两之间；冲突项带入参下标便于前端定位。
-func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uint64, inputs []ScheduleInput, force bool) (*BatchCreateResult, error) {
+func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uint64, inputs []ScheduleInput, force bool, batchKey ...string) (*BatchCreateResult, error) {
 	if err := s.requireWriter(ctx, userID, familyID); err != nil {
 		return nil, err
+	}
+	key := ""
+	if len(batchKey) > 0 {
+		key = batchKey[0]
+	}
+	if len(key) > 64 {
+		return nil, ErrBadParam
+	}
+	if key != "" {
+		if ids, found, err := s.FindBatchResult(ctx, familyID, key); err != nil {
+			return nil, err
+		} else if found {
+			return &BatchCreateResult{ScheduleIDs: ids}, nil
+		}
 	}
 	if len(inputs) == 0 || len(inputs) > MaxBatchSize {
 		return nil, ErrBadParam
@@ -197,9 +247,23 @@ func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uin
 	conflicts = append(conflicts, storedConflicts...)
 	conflicts = append(conflicts, intraBatchConflicts(schedules, instances)...)
 	if len(conflicts) > 0 && !force {
+		// Another confirmation may have committed after our initial lookup.
+		// Its instances must not turn a retry into a conflict with itself.
+		if key != "" {
+			if ids, found, lookupErr := s.FindBatchResult(ctx, familyID, key); lookupErr != nil {
+				return nil, lookupErr
+			} else if found {
+				return &BatchCreateResult{ScheduleIDs: ids}, nil
+			}
+		}
 		return nil, &httpx.Err{Code: 2005, Message: "存在时间冲突", HTTP: 400, Data: map[string]any{"conflicts": conflicts}}
 	}
-	if err := s.store.CreateSchedules(ctx, schedules, instances); err != nil {
+	if err := s.store.CreateSchedules(ctx, schedules, instances, key); err != nil {
+		if key != "" && isDuplicateKey(err) {
+			if ids, found, lookupErr := s.FindBatchResult(ctx, familyID, key); lookupErr == nil && found {
+				return &BatchCreateResult{ScheduleIDs: ids}, nil
+			}
+		}
 		return nil, err
 	}
 	ids := make([]uint64, 0, len(schedules))
@@ -208,6 +272,12 @@ func (s *Service) CreateSchedulesBatch(ctx context.Context, userID, familyID uin
 		s.notifyOwner(ctx, familyID, sch)
 	}
 	return &BatchCreateResult{ScheduleIDs: ids, Conflicts: conflicts}, nil
+}
+
+// FindBatchResult is an internal module contract for recovering committed imports.
+// Public callers must perform membership checks before using it.
+func (s *Service) FindBatchResult(ctx context.Context, familyID uint64, key string) ([]uint64, bool, error) {
+	return s.store.FindBatchResult(ctx, familyID, key)
 }
 
 // MaxBatchSize 批量创建上限（拍照导入单任务草稿上限与之一致）。
@@ -333,6 +403,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, userID, familyID, schedule
 	}
 	sch.ScheduleID = scheduleID
 	sch.CreatedAt = existing.CreatedAt
+	sch.IdempotencyKey = existing.IdempotencyKey
 
 	today := dateOnly(time.Now().UTC())
 	instances, err := s.materialize(sch, today)
@@ -346,7 +417,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, userID, familyID, schedule
 	if len(conflicts) > 0 && !force {
 		return nil, NewConflictError(conflicts)
 	}
-	if err := s.store.ReplaceFutureInstances(ctx, sch, instances, today); err != nil {
+	if err := s.store.ReplaceFutureInstances(ctx, sch, instances, today, existing.OwnerMemberID); err != nil {
 		return nil, err
 	}
 	s.notifyOwner(ctx, familyID, sch)
@@ -435,10 +506,18 @@ func (s *Service) UpdateInstance(ctx context.Context, userID, familyID, instance
 	if len(updates) == 0 {
 		return nil // 幂等：无实际变化（如重指派到同一责任人）视为成功
 	}
-	if err := s.store.UpdateInstance(ctx, instanceID, familyID, updates); err != nil {
+	if err := s.store.UpdateInstance(ctx, inst, updates); err != nil {
 		return err
 	}
+	inst.ChangeVersion++
+	if status, ok := updates["status"].(string); ok && status == StatusCancelled {
+		s.notifyInstanceOwner(ctx, familyID, inst, "schedule_cancelled")
+	}
 	if ownerID, ok := updates["owner_member_id"].(uint64); ok {
+		oldOwnerID := inst.OwnerMemberID
+		if oldOwnerID != 0 {
+			s.notifyInstanceOwner(ctx, familyID, inst, "schedule_unassigned")
+		}
 		inst.OwnerMemberID = ownerID
 		s.notifyInstanceOwner(ctx, familyID, inst, "schedule_reassigned")
 	}
@@ -484,6 +563,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 		}
 		page := fmt.Sprintf("pages/event-detail/index?instance_id=%d&schedule_id=%d&child_member_id=%d&owner_member_id=%d&occur_date=%s&start_at=%s&title=%s&rrule=&location=%s&note=%s",
 			inst.InstanceID, inst.ScheduleID, inst.ChildMemberID, inst.OwnerMemberID, inst.OccurDate.Format("2006-01-02"), url.QueryEscape(inst.StartAt.Format(time.RFC3339)), url.QueryEscape(inst.Title), url.QueryEscape(inst.Location), url.QueryEscape(inst.Note))
+		page += "&family_id=" + instKey(inst.FamilyID)
 		if _, err := s.notify.CreateJob(ctx, NotifyInput{
 			FamilyID:     inst.FamilyID,
 			TargetUserID: userID,
@@ -491,7 +571,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 			Payload: map[string]any{
 				"type":        "schedule_reminder",
 				"title":       inst.Title,
-				"time_text":   inst.StartAt.Format("15:04"),
+				"time_text":   inst.StartAt.In(appLocation).Format("15:04"),
 				"start_at":    inst.StartAt.Format(time.RFC3339),
 				"location":    inst.Location,
 				"instance_id": inst.InstanceID,
@@ -536,6 +616,37 @@ func (s *Service) SubmitFeedback(ctx context.Context, userID, familyID, instance
 	}
 	s.notifyAdminsFeedback(ctx, familyID, inst, in.Reason)
 	return nil
+}
+
+func (s *Service) ListFeedbacks(ctx context.Context, userID, familyID uint64, status string) ([]FeedbackView, error) {
+	if err := s.requireWriter(ctx, userID, familyID); err != nil {
+		return nil, err
+	}
+	if status == "" {
+		status = StatusPending
+	}
+	if !validFeedbackStatus(status) {
+		return nil, ErrBadParam
+	}
+	rows, err := s.store.ListFeedbacks(ctx, familyID, status)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FeedbackView, 0, len(rows))
+	for i := range rows {
+		out = append(out, toFeedbackView(&rows[i]))
+	}
+	return out, nil
+}
+
+func (s *Service) ResolveFeedback(ctx context.Context, userID, familyID, feedbackID uint64, in *FeedbackResolveInput) error {
+	if err := s.requireWriter(ctx, userID, familyID); err != nil {
+		return err
+	}
+	if in.Status != StatusHandled && in.Status != StatusIgnored {
+		return ErrBadParam
+	}
+	return s.store.UpdateFeedbackStatus(ctx, familyID, feedbackID, in.Status)
 }
 
 // ---- 内部辅助 ----
@@ -598,6 +709,7 @@ func (s *Service) notifyInstanceOwner(ctx context.Context, familyID uint64, inst
 	}
 	page := fmt.Sprintf("pages/event-detail/index?instance_id=%d&schedule_id=%d&child_member_id=%d&owner_member_id=%d&occur_date=%s&start_at=%s&title=%s&rrule=&location=%s&note=%s",
 		inst.InstanceID, inst.ScheduleID, inst.ChildMemberID, inst.OwnerMemberID, inst.OccurDate.Format("2006-01-02"), url.QueryEscape(inst.StartAt.Format(time.RFC3339)), url.QueryEscape(inst.Title), url.QueryEscape(inst.Location), url.QueryEscape(inst.Note))
+	page += "&family_id=" + instKey(familyID)
 	if _, err := s.notify.CreateJob(ctx, NotifyInput{
 		FamilyID:     familyID,
 		TargetUserID: userID,
@@ -605,12 +717,13 @@ func (s *Service) notifyInstanceOwner(ctx context.Context, familyID uint64, inst
 		Payload: map[string]any{
 			"type":        eventType,
 			"title":       inst.Title,
-			"time_text":   inst.StartAt.Format("15:04"),
+			"time_text":   inst.StartAt.In(appLocation).Format("15:04"),
 			"start_at":    inst.StartAt.Format(time.RFC3339),
 			"location":    inst.Location,
 			"instance_id": inst.InstanceID,
 			"page":        page,
 		},
+		BusinessKey: "schedule_instance:" + eventType + ":" + instKey(inst.InstanceID) + ":" + instKey(inst.ChangeVersion) + ":" + instKey(userID),
 	}); err != nil {
 		logx.Errorf("[schedule] 创建改分工触达任务失败 instance=%d err=%v", inst.InstanceID, err)
 	}
@@ -655,6 +768,23 @@ func validFeedbackReason(reason string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func validFeedbackStatus(status string) bool {
+	return status == StatusPending || status == StatusHandled || status == StatusIgnored
+}
+
+func toFeedbackView(f *ScheduleFeedback) FeedbackView {
+	return FeedbackView{
+		FeedbackID:     f.FeedbackID,
+		InstanceID:     f.InstanceID,
+		ScheduleID:     f.ScheduleID,
+		ReporterID:     f.ReporterID,
+		Reason:         f.Reason,
+		Status:         f.Status,
+		LastReportedAt: f.LastReportedAt.Format(time.RFC3339),
+		UpdatedAt:      f.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -985,13 +1115,13 @@ func parseClock(s string) (time.Time, error) {
 	return time.Parse("15:04", s)
 }
 
-// combineDateTime 把日期与时钟合并为时间点（UTC）。
+// combineDateTime 把上海本地日期与时钟合并后转为 UTC 存储。
 func combineDateTime(d time.Time, clock string) time.Time {
 	t, err := parseClock(clock)
 	if err != nil {
 		return d
 	}
-	return time.Date(d.Year(), d.Month(), d.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
+	return time.Date(d.Year(), d.Month(), d.Day(), t.Hour(), t.Minute(), t.Second(), 0, appLocation).UTC()
 }
 
 // dateOnly 归一化到 UTC 当天 00:00（物化/删除窗口的边界比较用）。

@@ -26,11 +26,18 @@
       <view class="methods">
         <button class="{{methodIndex === mi ? 'on' : ''}}" wx:for="{{methods}}" wx:for-index="mi" wx:key="key" bindtap="selectMethod" data-i="{{mi}}" disabled="{{submitting}}">{{item.label}}</button>
       </view>
+      <view class="muted">当前任务需使用 {{methods[methodIndex].label}} 打卡。</view>
     </view>
 
     <view wx:if="{{methods[methodIndex].key !== 'photo'}}" class="field">
       <text class="label">本次{{goalUnit}}数</text>
       <input class="input" type="number" placeholder="{{goalUnit === '个' ? '本次数量' : '本次分钟数'}}" model:value="{{amount}}" disabled="{{submitting}}" />
+    </view>
+
+    <view wx:if="{{methods[methodIndex].key === 'photo'}}" class="field">
+      <text class="label">照片</text>
+      <image wx:if="{{photoPath}}" class="photo-preview" src="{{photoPath}}" mode="aspectFill"></image>
+      <view wx:else class="photo-placeholder">点击完成打卡后选择或拍摄照片</view>
     </view>
 
     <view class="muted">孩子没有账号，在父母设备上切换身份提交；也可由家长代打。</view>

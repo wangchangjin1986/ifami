@@ -28,6 +28,8 @@ func (h *Handler) Register(g *route.RouterGroup) {
 	authed.POST("/schedules", h.CreateSchedule)
 	authed.POST("/schedules/batch", h.CreateSchedulesBatch)
 	authed.GET("/schedules", h.ListSchedules)
+	authed.GET("/schedules/feedbacks", h.ListFeedbacks)
+	authed.PATCH("/schedules/feedbacks/:fid", h.ResolveFeedback)
 	authed.PATCH("/schedules/:sid", h.UpdateSchedule)
 	authed.DELETE("/schedules/:sid", h.DeleteSchedule)
 	authed.GET("/schedules/instances", h.ListInstances)
@@ -50,7 +52,7 @@ func (h *Handler) CreateSchedule(ctx context.Context, c *app.RequestContext) {
 		httpx.Fail(c, ErrBadParam)
 		return
 	}
-	res, err := h.svc.CreateSchedule(ctx, auth.UserID(ctx), fid, &req.ScheduleInput, req.Force)
+	res, err := h.svc.CreateSchedule(ctx, auth.UserID(ctx), fid, &req.ScheduleInput, req.Force, string(c.GetHeader("Idempotency-Key")))
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -224,6 +226,43 @@ func (h *Handler) SubmitFeedback(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	if err := h.svc.SubmitFeedback(ctx, auth.UserID(ctx), fid, iid, &req); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *Handler) ListFeedbacks(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	rows, err := h.svc.ListFeedbacks(ctx, auth.UserID(ctx), fid, c.Query("status"))
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, rows)
+}
+
+func (h *Handler) ResolveFeedback(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	feedbackID, err := strconv.ParseUint(c.Param("fid"), 10, 64)
+	if err != nil || feedbackID == 0 {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	var req FeedbackResolveInput
+	if err := c.BindJSON(&req); err != nil {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	if err := h.svc.ResolveFeedback(ctx, auth.UserID(ctx), fid, feedbackID, &req); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

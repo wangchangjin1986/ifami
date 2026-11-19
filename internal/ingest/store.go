@@ -127,12 +127,13 @@ func (s *Store) SaveFinal(ctx context.Context, j *Job) (bool, error) {
 	return res.RowsAffected > 0, res.Error
 }
 
-// ListStale 需 Worker 接管的任务：pending / running 且心跳（pending 时为开始时间）早于 before。
+// ListStale 需 Worker 接管的任务：pending / running 且心跳（pending 时为开始时间）早于 before；
+// confirming 使用 heartbeat_at 作为中间态更新时间，确认异常后可恢复为 done。
 func (s *Store) ListStale(ctx context.Context, pendingBefore, runningBefore time.Time) ([]Job, error) {
 	var rows []Job
 	err := s.db.WithContext(ctx).
-		Where("(status = ? AND heartbeat_at < ?) OR (status = ? AND heartbeat_at < ?)",
-			StatusPending, pendingBefore, StatusRunning, runningBefore).
+		Where("(status = ? AND heartbeat_at < ?) OR (status = ? AND heartbeat_at < ?) OR (status = ? AND heartbeat_at < ?)",
+			StatusPending, pendingBefore, StatusRunning, runningBefore, StatusConfirming, runningBefore).
 		Limit(20).Find(&rows).Error
 	return rows, err
 }

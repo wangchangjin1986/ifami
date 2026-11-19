@@ -10,8 +10,9 @@ import (
 )
 
 type fakeIdentity struct {
-	active map[uint64]map[uint64]bool
-	backup map[uint64][]uint64
+	active    map[uint64]map[uint64]bool
+	backup    map[uint64][]uint64
+	backupErr error
 }
 
 var testNow = time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
@@ -49,6 +50,9 @@ func (f fakeIdentity) AdminUserIDs(_ context.Context, familyID uint64) ([]uint64
 }
 
 func (f fakeIdentity) BackupUserIDs(ctx context.Context, familyID uint64) ([]uint64, error) {
+	if f.backupErr != nil {
+		return nil, f.backupErr
+	}
 	if f.backup != nil {
 		return f.backup[familyID], nil
 	}
@@ -143,5 +147,20 @@ func TestEscalateBackupUsesBackupContacts(t *testing.T) {
 	}
 	if store.updatedStatus != StatusEscalated {
 		t.Fatalf("updatedStatus = %s, want %s", store.updatedStatus, StatusEscalated)
+	}
+}
+
+func TestEscalateBackupKeepsReddotWhenBackupLookupFails(t *testing.T) {
+	store := &fakeNotifyStore{}
+	svc := &Service{store: store, id: fakeIdentity{backupErr: errors.New("identity unavailable")}, channel: &fakeChannel{}}
+	job := &NotifyJob{JobID: 10, FamilyID: 100, TargetUserID: 2, Level: LevelStrong, Status: StatusReddot, Payload: map[string]any{"title": "接送"}, ChannelState: map[string]any{}}
+	if err := svc.escalateBackup(context.Background(), job, testNow); err == nil {
+		t.Fatalf("escalateBackup error = nil, want lookup error")
+	}
+	if len(store.created) != 0 {
+		t.Fatalf("created backup jobs = %d, want 0", len(store.created))
+	}
+	if store.updatedStatus != "" {
+		t.Fatalf("updatedStatus = %s, want unchanged", store.updatedStatus)
 	}
 }

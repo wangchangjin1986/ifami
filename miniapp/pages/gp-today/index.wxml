@@ -1,6 +1,6 @@
-<view class="page gp-page">
+<view class="page gp-page {{largeText ? 'large-text' : ''}}">
   <block wx:if="{{!logged}}">
-    <view class="empty">请先登录</view>
+    <view class="empty">请用微信授权后查看今天安排</view>
   </block>
 
   <block wx:elif="{{!hasFamily}}">
