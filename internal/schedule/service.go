@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"ifami/internal/pkg/logx"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -112,6 +111,7 @@ type ScheduleView struct {
 
 // InstanceView 实例视图（今日/周/月视图与冲突列表共用）。
 type InstanceView struct {
+	FamilyID      uint64  `json:"family_id"`
 	InstanceID    uint64  `json:"instance_id"`
 	ScheduleID    uint64  `json:"schedule_id"`
 	ChildMemberID uint64  `json:"child_member_id"`
@@ -424,10 +424,14 @@ func (s *Service) UpdateSchedule(ctx context.Context, userID, familyID, schedule
 	return &CreateResult{ScheduleID: scheduleID, Conflicts: conflicts}, nil
 }
 
-// ListSchedules 列家庭日程模板（任意 active 成员可读）。
+// ListSchedules 仅管理员与普通家长可读取全家庭模板。
 func (s *Service) ListSchedules(ctx context.Context, userID, familyID uint64) ([]ScheduleView, error) {
-	if _, _, err := s.id.RequireActive(ctx, userID, familyID); err != nil {
+	_, role, err := s.id.RequireActive(ctx, userID, familyID)
+	if err != nil {
 		return nil, err
+	}
+	if role != "admin" && role != "parent" {
+		return nil, ErrForbidden
 	}
 	rows, err := s.store.ListSchedules(ctx, familyID)
 	if err != nil {
@@ -448,12 +452,13 @@ func (s *Service) DeleteSchedule(ctx context.Context, userID, familyID, schedule
 	return s.store.RemoveSchedule(ctx, familyID, scheduleID, dateOnly(from))
 }
 
-// ListInstances 按日期范围列实例（今日/周/月视图，任意 active 成员可读）。
+// ListInstances 按 membership 生成本人或全家庭范围，再查询日期内实例。
 func (s *Service) ListInstances(ctx context.Context, userID, familyID uint64, start, end time.Time) ([]InstanceView, error) {
-	if _, _, err := s.id.RequireActive(ctx, userID, familyID); err != nil {
+	owner, err := s.executionScope(ctx, userID, familyID)
+	if err != nil {
 		return nil, err
 	}
-	rows, err := s.store.ListInstances(ctx, familyID, start, end)
+	rows, err := s.store.ListInstances(ctx, familyID, start, end, owner...)
 	if err != nil {
 		return nil, err
 	}
@@ -524,25 +529,13 @@ func (s *Service) UpdateInstance(ctx context.Context, userID, familyID, instance
 	return nil
 }
 
-// CompleteInstance 执行端确认日程已完成：任意 active 成员可提交，写入事件流。
+// CompleteInstance 在实例锁事务内校验当前 owner、状态并写入完成事件。
 func (s *Service) CompleteInstance(ctx context.Context, userID, familyID, instanceID uint64) error {
-	if _, _, err := s.id.RequireActive(ctx, userID, familyID); err != nil {
-		return err
-	}
-	inst, err := s.store.FindInstance(ctx, familyID, instanceID)
+	owner, err := s.executionScope(ctx, userID, familyID)
 	if err != nil {
 		return err
 	}
-	if inst == nil {
-		return ErrInstanceNotFound
-	}
-	if inst.Status == StatusDone {
-		return nil
-	}
-	if inst.Status == StatusCancelled {
-		return ErrBadParam
-	}
-	return s.store.CompleteInstanceWithEvent(ctx, familyID, instanceID)
+	return s.store.CompleteInstanceWithEvent(ctx, familyID, instanceID, owner...)
 }
 
 // RemindDue 扫描即将开始的日程实例并创建触达任务（Worker 每 30s 调用）。
@@ -561,9 +554,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 			logx.Warnf("[schedule] 触达解析 owner user_id 失败 instance=%d err=%v", inst.InstanceID, err)
 			continue
 		}
-		page := fmt.Sprintf("pages/event-detail/index?instance_id=%d&schedule_id=%d&child_member_id=%d&owner_member_id=%d&occur_date=%s&start_at=%s&title=%s&rrule=&location=%s&note=%s",
-			inst.InstanceID, inst.ScheduleID, inst.ChildMemberID, inst.OwnerMemberID, inst.OccurDate.Format("2006-01-02"), url.QueryEscape(inst.StartAt.Format(time.RFC3339)), url.QueryEscape(inst.Title), url.QueryEscape(inst.Location), url.QueryEscape(inst.Note))
-		page += "&family_id=" + instKey(inst.FamilyID)
+		page := instancePage(inst)
 		if _, err := s.notify.CreateJob(ctx, NotifyInput{
 			FamilyID:     inst.FamilyID,
 			TargetUserID: userID,
@@ -575,6 +566,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 				"start_at":    inst.StartAt.Format(time.RFC3339),
 				"location":    inst.Location,
 				"instance_id": inst.InstanceID,
+				"schedule_id": inst.ScheduleID,
 				"page":        page,
 			},
 			BusinessKey: fmt.Sprintf("schedule_remind:%d:%d", inst.InstanceID, userID),
@@ -587,7 +579,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 
 // SubmitFeedback 执行端提交「要调整」反馈：待处理状态下重复提交只更新原因和时间，并强触达管理员。
 func (s *Service) SubmitFeedback(ctx context.Context, userID, familyID, instanceID uint64, in *FeedbackInput) error {
-	reporterID, _, err := s.id.RequireActive(ctx, userID, familyID)
+	reporterID, role, err := s.id.RequireActive(ctx, userID, familyID)
 	if err != nil {
 		return err
 	}
@@ -601,8 +593,9 @@ func (s *Service) SubmitFeedback(ctx context.Context, userID, familyID, instance
 	if inst == nil {
 		return ErrInstanceNotFound
 	}
-	if inst.Status == StatusCancelled {
-		return ErrBadParam
+	owner := []uint64{}
+	if role != "admin" && role != "parent" {
+		owner = append(owner, reporterID)
 	}
 	if err := s.store.UpsertPendingFeedbackWithEvent(ctx, &ScheduleFeedback{
 		FamilyID:   familyID,
@@ -611,7 +604,7 @@ func (s *Service) SubmitFeedback(ctx context.Context, userID, familyID, instance
 		ReporterID: reporterID,
 		Reason:     in.Reason,
 		Status:     StatusPending,
-	}); err != nil {
+	}, owner...); err != nil {
 		return err
 	}
 	s.notifyAdminsFeedback(ctx, familyID, inst, in.Reason)
@@ -678,24 +671,15 @@ func (s *Service) notifyOwner(ctx context.Context, familyID uint64, sch *Schedul
 	if s.notify == nil || sch.Type != TypePickup || sch.OwnerMemberID == 0 {
 		return
 	}
-	userID, err := s.id.MemberUserID(ctx, familyID, sch.OwnerMemberID)
+	inst, err := s.store.FirstOwnedInstance(ctx, familyID, sch.ScheduleID, sch.OwnerMemberID)
 	if err != nil {
-		logx.Warnf("[schedule] 触达解析 owner user_id 失败: %v", err)
+		logx.Warnf("[schedule] instance notification lookup: %v", err)
 		return
 	}
-	if _, err := s.notify.CreateJob(ctx, NotifyInput{
-		FamilyID:     familyID,
-		TargetUserID: userID,
-		Level:        levelStrong,
-		Payload: map[string]any{
-			"title":      sch.Title,
-			"start_time": sch.StartTime,
-			"location":   sch.Location,
-			"note":       sch.Note,
-		},
-	}); err != nil {
-		logx.Errorf("[schedule] 创建触达任务失败: %v", err)
+	if inst != nil {
+		s.notifyInstanceOwner(ctx, familyID, inst, "schedule_updated")
 	}
+
 }
 
 func (s *Service) notifyInstanceOwner(ctx context.Context, familyID uint64, inst *ScheduleInstance, eventType string) {
@@ -707,23 +691,27 @@ func (s *Service) notifyInstanceOwner(ctx context.Context, familyID uint64, inst
 		logx.Warnf("[schedule] 改分工触达解析 owner user_id 失败 instance=%d err=%v", inst.InstanceID, err)
 		return
 	}
-	page := fmt.Sprintf("pages/event-detail/index?instance_id=%d&schedule_id=%d&child_member_id=%d&owner_member_id=%d&occur_date=%s&start_at=%s&title=%s&rrule=&location=%s&note=%s",
-		inst.InstanceID, inst.ScheduleID, inst.ChildMemberID, inst.OwnerMemberID, inst.OccurDate.Format("2006-01-02"), url.QueryEscape(inst.StartAt.Format(time.RFC3339)), url.QueryEscape(inst.Title), url.QueryEscape(inst.Location), url.QueryEscape(inst.Note))
-	page += "&family_id=" + instKey(familyID)
+	page := instancePage(inst)
+	payload := map[string]any{
+		"type":        eventType,
+		"title":       inst.Title,
+		"time_text":   inst.StartAt.In(appLocation).Format("15:04"),
+		"start_at":    inst.StartAt.Format(time.RFC3339),
+		"location":    inst.Location,
+		"instance_id": inst.InstanceID,
+		"schedule_id": inst.ScheduleID,
+		"page":        page,
+	}
+	if eventType == "schedule_unassigned" {
+		payload = map[string]any{"type": eventType, "title": "分工已调整", "page": "pages/gp-today/index"}
+	}
+
 	if _, err := s.notify.CreateJob(ctx, NotifyInput{
 		FamilyID:     familyID,
 		TargetUserID: userID,
 		Level:        levelStrong,
-		Payload: map[string]any{
-			"type":        eventType,
-			"title":       inst.Title,
-			"time_text":   inst.StartAt.In(appLocation).Format("15:04"),
-			"start_at":    inst.StartAt.Format(time.RFC3339),
-			"location":    inst.Location,
-			"instance_id": inst.InstanceID,
-			"page":        page,
-		},
-		BusinessKey: "schedule_instance:" + eventType + ":" + instKey(inst.InstanceID) + ":" + instKey(inst.ChangeVersion) + ":" + instKey(userID),
+		Payload:      payload,
+		BusinessKey:  "schedule_instance:" + eventType + ":" + instKey(inst.InstanceID) + ":" + instKey(inst.ChangeVersion) + ":" + instKey(userID),
 	}); err != nil {
 		logx.Errorf("[schedule] 创建改分工触达任务失败 instance=%d err=%v", inst.InstanceID, err)
 	}
@@ -752,6 +740,7 @@ func (s *Service) notifyAdminsFeedback(ctx context.Context, familyID uint64, ins
 				"start_at":    inst.StartAt.Format(time.RFC3339),
 				"location":    inst.Location,
 				"instance_id": inst.InstanceID,
+				"schedule_id": inst.ScheduleID,
 				"page":        "pages/today/index",
 			},
 		}); err != nil {
@@ -1088,6 +1077,7 @@ func toScheduleView(s *Schedule) ScheduleView {
 
 func toInstanceView(inst *ScheduleInstance) InstanceView {
 	v := InstanceView{
+		FamilyID:      inst.FamilyID,
 		InstanceID:    inst.InstanceID,
 		ScheduleID:    inst.ScheduleID,
 		ChildMemberID: inst.ChildMemberID,
@@ -1127,4 +1117,52 @@ func combineDateTime(d time.Time, clock string) time.Time {
 // dateOnly 归一化到 UTC 当天 00:00（物化/删除窗口的边界比较用）。
 func dateOnly(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func (s *Service) executionScope(ctx context.Context, userID, familyID uint64) ([]uint64, error) {
+	member, role, err := s.id.RequireActive(ctx, userID, familyID)
+	if err != nil {
+		return nil, err
+	}
+	if role == "admin" || role == "parent" {
+		return nil, nil
+	}
+	return []uint64{member}, nil
+}
+func (s *Service) GetInstance(ctx context.Context, userID, familyID, instanceID uint64) (*InstanceView, error) {
+	owner, err := s.executionScope(ctx, userID, familyID)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := s.store.FindInstance(ctx, familyID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if inst == nil {
+		return nil, ErrInstanceNotFound
+	}
+	if len(owner) > 0 && owner[0] != inst.OwnerMemberID {
+		return nil, ErrForbidden
+	}
+	view := toInstanceView(inst)
+	rules, err := s.rrulesForInstances(ctx, familyID, []ScheduleInstance{*inst})
+	if err != nil {
+		return nil, err
+	}
+	view.RRule = rules[inst.ScheduleID]
+	return &view, nil
+}
+func (s *Service) NotificationVisibility(ctx context.Context, userID, familyID, instanceID uint64) (bool, error) {
+	owner, err := s.executionScope(ctx, userID, familyID)
+	if err != nil {
+		return false, err
+	}
+	inst, err := s.store.FindInstance(ctx, familyID, instanceID)
+	if err != nil {
+		return false, err
+	}
+	return inst != nil && (len(owner) == 0 || owner[0] == inst.OwnerMemberID), nil
+}
+func instancePage(inst *ScheduleInstance) string {
+	return fmt.Sprintf("pages/event-detail/index?instance_id=%d&family_id=%d", inst.InstanceID, inst.FamilyID)
 }

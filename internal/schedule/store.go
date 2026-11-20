@@ -208,12 +208,13 @@ func (s *Store) RemoveSchedule(ctx context.Context, familyID, scheduleID uint64,
 }
 
 // ListInstances 按日期范围列家庭实例（今日/周/月视图读本表）。
-func (s *Store) ListInstances(ctx context.Context, familyID uint64, start, end time.Time) ([]ScheduleInstance, error) {
+func (s *Store) ListInstances(ctx context.Context, familyID uint64, start, end time.Time, ownerID ...uint64) ([]ScheduleInstance, error) {
 	var rows []ScheduleInstance
-	err := s.db.WithContext(ctx).
-		Where("family_id = ? AND occur_date >= ? AND occur_date <= ?", familyID, start, end).
-		Order("start_at ASC").
-		Find(&rows).Error
+	q := s.db.WithContext(ctx).Where("family_id = ? AND occur_date >= ? AND occur_date <= ?", familyID, start, end)
+	if len(ownerID) > 0 {
+		q = q.Where("owner_member_id = ?", ownerID[0])
+	}
+	err := q.Order("start_at ASC").Find(&rows).Error
 	return rows, err
 }
 
@@ -261,8 +262,16 @@ func (s *Store) UpdateInstance(ctx context.Context, inst *ScheduleInstance, upda
 }
 
 // CompleteInstanceWithEvent 事务：标记实例完成 + 写 schedule_done 事件。
-func (s *Store) CompleteInstanceWithEvent(ctx context.Context, familyID, instanceID uint64) error {
+func (s *Store) CompleteInstanceWithEvent(ctx context.Context, familyID, instanceID uint64, ownerID ...uint64) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		inst, err := lockExecutionInstance(tx, familyID, instanceID, ownerID)
+		if err != nil {
+			return err
+		}
+		if inst.Status == StatusDone {
+			return nil
+		}
+
 		res := tx.Model(&ScheduleInstance{}).
 			Where("instance_id = ? AND family_id = ?", instanceID, familyID).
 			Updates(map[string]any{"status": StatusDone, "change_version": gorm.Expr("change_version + 1")})
@@ -278,11 +287,17 @@ func (s *Store) CompleteInstanceWithEvent(ctx context.Context, familyID, instanc
 }
 
 // UpsertPendingFeedbackWithEvent 事务：同一实例 pending 反馈去重更新 + 写 schedule_feedback 事件。
-func (s *Store) UpsertPendingFeedbackWithEvent(ctx context.Context, f *ScheduleFeedback) error {
+func (s *Store) UpsertPendingFeedbackWithEvent(ctx context.Context, f *ScheduleFeedback, ownerID ...uint64) error {
 	now := time.Now().UTC()
 	f.Status = StatusPending
 	f.LastReportedAt = now
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		inst, err := lockExecutionInstance(tx, f.FamilyID, f.InstanceID, ownerID)
+		if err != nil {
+			return err
+		}
+		f.ScheduleID = inst.ScheduleID
+
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "family_id"}, {Name: "pending_instance_id"}},
 			DoUpdates: clause.Assignments(map[string]any{
@@ -403,4 +418,31 @@ func (s *Store) InsertInstances(ctx context.Context, instances []ScheduleInstanc
 		return nil
 	}
 	return s.db.WithContext(ctx).CreateInBatches(&instances, 200).Error
+}
+
+// Authorization and event writes share the instance row lock with reassignment.
+func lockExecutionInstance(tx *gorm.DB, familyID, instanceID uint64, ownerID []uint64) (*ScheduleInstance, error) {
+	var inst ScheduleInstance
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("family_id = ? AND instance_id = ?", familyID, instanceID).First(&inst).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrInstanceNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(ownerID) > 0 && inst.OwnerMemberID != ownerID[0] {
+		return nil, ErrForbidden
+	}
+	if inst.Status == StatusCancelled {
+		return nil, ErrBadParam
+	}
+	return &inst, nil
+}
+func (s *Store) FirstOwnedInstance(ctx context.Context, familyID, scheduleID, ownerID uint64) (*ScheduleInstance, error) {
+	var inst ScheduleInstance
+	err := s.db.WithContext(ctx).Where("family_id = ? AND schedule_id = ? AND owner_member_id = ? AND status = ? AND occur_date >= ?", familyID, scheduleID, ownerID, StatusActive, dateOnly(time.Now().UTC())).Order("start_at ASC").First(&inst).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &inst, err
 }

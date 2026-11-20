@@ -151,6 +151,9 @@ func TestMySQLCommittedBatch(t *testing.T) {
 
 func TestMySQLFeedbackRounds(t *testing.T) {
 	store := mysqlTestStore(t)
+	if err := store.db.Create(&ScheduleInstance{InstanceID: 7, FamilyID: 100, ScheduleID: 3, OwnerMemberID: 20, OccurDate: time.Now().UTC(), StartAt: time.Now().UTC(), Status: StatusActive}).Error; err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	for _, status := range []string{StatusHandled, StatusHandled, StatusIgnored, StatusIgnored} {
 		for range 2 {

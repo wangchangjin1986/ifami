@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"regexp"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,10 +17,14 @@ import (
 
 type fakeScheduleMembership struct {
 	role    string
+	actorID uint64
 	members map[uint64]string
 }
 
 func (f fakeScheduleMembership) RequireActive(context.Context, uint64, uint64) (uint64, string, error) {
+	if f.actorID != 0 {
+		return f.actorID, f.role, nil
+	}
 	return 1, f.role, nil
 }
 
@@ -32,17 +37,22 @@ func (f fakeScheduleMembership) RequireMember(_ context.Context, _ uint64, membe
 	return memberTypeReal, f.role, nil
 }
 
-func (f fakeScheduleMembership) MemberUserID(context.Context, uint64, uint64) (uint64, error) {
-	return uint64(1000), nil
+func (f fakeScheduleMembership) MemberUserID(_ context.Context, _ uint64, memberID uint64) (uint64, error) {
+	return memberID + 1000, nil
 }
 
 func (f fakeScheduleMembership) AdminUserIDs(context.Context, uint64) ([]uint64, error) {
 	return []uint64{1}, nil
 }
 
-type fakeScheduleNotifier struct{ jobs []NotifyInput }
+type fakeScheduleNotifier struct {
+	mu   sync.Mutex
+	jobs []NotifyInput
+}
 
 func (f *fakeScheduleNotifier) CreateJob(_ context.Context, in NotifyInput) (uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.jobs = append(f.jobs, in)
 	return uint64(len(f.jobs)), nil
 }
@@ -499,5 +509,30 @@ func TestNewInstanceShanghaiClock(t *testing.T) {
 				t.Fatalf("end=%s", inst.EndAt)
 			}
 		})
+	}
+}
+
+func TestCaregiverCannotReadTemplates(t *testing.T) {
+	store, _ := newScheduleTestStore(t)
+	svc := &Service{store: store, id: fakeScheduleMembership{role: "grandparent", actorID: 20}}
+	if _, err := svc.ListSchedules(context.Background(), 1020, 100); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("want denied templates, got %v", err)
+	}
+}
+func TestCaregiverForeignCompleteWritesNothing(t *testing.T) {
+	store, mock := newScheduleTestStore(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT .*schedule_instances.*FOR UPDATE").WillReturnRows(scheduleInstanceRows(21))
+	mock.ExpectRollback()
+	notifier := &fakeScheduleNotifier{}
+	svc := &Service{store: store, id: fakeScheduleMembership{role: "grandparent", actorID: 20}, notify: notifier}
+	if err := svc.CompleteInstance(context.Background(), 1020, 100, 7); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("foreign complete = %v", err)
+	}
+	if len(notifier.jobs) != 0 {
+		t.Fatal("denied operation notified")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
