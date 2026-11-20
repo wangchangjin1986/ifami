@@ -212,6 +212,11 @@ body {
 .sheet.tall { max-height: 88%; overflow-y: auto; }
 .progress { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; width: 100%; }
 .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 1.4s ease; }
+.identity { display: flex; flex-direction: column; gap: 8px; }
+.identity-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); text-align: left; cursor: pointer; }
+.identity-card b { font-size: 15px; }
+.identity-card span { font-size: 13px; color: var(--muted); font-weight: 400; }
+.identity-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 </style>
 </head>
 <body>
@@ -252,7 +257,7 @@ body {
       </div>
       <div class="tomorrow">明天 · 乐乐家 07:30 送乐乐上学</div>
       <button class="big-call" id="gp-call">📞 联系家长</button>
-      <div class="note">这里不会显示复杂的日历和家庭管理；「完成」用于快速确认已执行，「要调整」会通知家长处理。</div>
+      <div class="note">这里只显示分配给本人的事项，不显示家庭其他成员安排；「完成」用于快速确认已执行，「要调整」会通知家长处理。</div>
     </div>
   </section>
 
@@ -640,6 +645,17 @@ body {
     </div>
   </section>
 
+  <!-- 首次进入：创建 / 加入 -->
+  <section class="screen" id="scr-onboard" hidden>
+    <div class="app-head"><h1>ifami</h1></div>
+    <div class="body">
+      <div class="card"><div class="ev-title">欢迎使用家庭协作</div><div class="ev-meta">用日历分工和打卡记录，一起把孩子的每一天安排清楚。</div></div>
+      <button class="btn" id="onboard-create">创建我的家庭</button>
+      <button class="btn ghost" id="onboard-join">加入家人的家庭</button>
+      <div class="muted" style="margin-top:6px">加入需家人当面展示「家庭加入码」；码不通过微信转发。</div>
+    </div>
+  </section>
+
   <!-- 家庭 -->
   <section class="screen" id="scr-family" hidden>
     <div class="app-head"><h1>家庭</h1><span class="sub">乐乐家 ▾</span></div>
@@ -650,7 +666,7 @@ body {
       <div class="card member" data-member="接送阿姨"><div class="avatar">姨</div><div class="ev-main"><div class="ev-title">接送阿姨 <span class="chip gray">照护人</span></div><div class="ev-meta">只看今日安排 · 可完成/要调整</div></div></div>
       <div class="card member" data-member="乐乐"><div class="avatar">乐</div><div class="ev-main"><div class="ev-title">乐乐 <span class="chip gray">孩子档案</span></div><div class="ev-meta">三年级 · 虚拟成员，由父母代管</div></div></div>
       <div class="card member" data-member="果果"><div class="avatar">果</div><div class="ev-main"><div class="ev-title">果果 <span class="chip gray">孩子档案</span></div><div class="ev-meta">幼儿园大班 · 虚拟成员</div></div></div>
-      <button class="btn" id="btn-invite">＋ 邀请家人</button>
+      <button class="btn" id="btn-invite">＋ 家人加入码</button>
       <div class="row" style="gap:10px">
         <button class="btn ghost" style="flex:1" id="btn-manage">全部安排</button>
         <button class="btn ghost" style="flex:1" id="btn-report">家庭周报</button>
@@ -703,19 +719,39 @@ body {
     </div>
   </section>
 
-  <!-- 邀请落地 -->
+  <!-- 加入家人落地：输入加入码（扫码/手输）→ 选身份 → 选称谓 → 进入 -->
   <section class="screen" id="scr-invite" hidden>
-    <div class="app-head"><button class="back">‹ 返回</button><h1>加入「乐乐家」</h1></div>
+    <div class="app-head"><button class="back">‹ 返回</button><h1>加入家人的家庭</h1></div>
     <div class="body">
-      <div class="muted" id="invite-desc">妈妈邀请你加入家庭协作。另一位家长进入四 Tab；祖辈/保姆阿姨进入简化今日安排。</div>
-      <div class="card"><div class="ev-title">第 1 步 · 微信授权</div><div class="ev-meta">✅ 已完成</div></div>
-      <div class="card"><div class="ev-title">第 2 步 · 提醒通道</div><div class="ev-meta">可在设置中补充手机号；服务号提醒后续开放</div></div>
-      <div class="card"><div class="ev-title" style="margin-bottom:8px" id="invite-rel-title">第 3 步 · 你的身份是？</div>
-        <div class="filters" id="invite-rel">
-          <span class="chip on">妈妈</span><span class="chip">爸爸</span><span class="chip">奶奶</span><span class="chip">爷爷</span><span class="chip">阿姨</span><span class="chip">接送阿姨</span>
+      <div class="muted" id="invite-desc">输入家人当面展示的「家庭加入码」；确认加入前会显示实际家庭名称和你的身份。</div>
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">第 1 步 · 输入家庭加入码</div>
+        <button class="btn ghost" id="join-scan">📷 扫码加入（扫管理员屏幕上的码）</button>
+        <div class="muted" style="margin-top:4px">或手输 6 位加入码</div>
+        <div class="field" style="margin-top:8px">
+          <input id="join-code" placeholder="6 位加入码，如 482913" inputmode="numeric" maxlength="6">
         </div>
       </div>
-      <button class="btn" id="btn-join">完成，进入家庭</button>
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">第 2 步 · 你的身份是？</div>
+        <div class="identity" id="join-identities">
+          <button class="identity-card on" data-identity="parent"><b>家长</b><span>一起管理日程和打卡，进入完整四 Tab</span></button>
+          <button class="identity-card" data-identity="grandparent"><b>祖辈</b><span>只看分配给本人的接送/陪课安排，完成或要调整</span></button>
+          <button class="identity-card" data-identity="caregiver"><b>阿姨</b><span>只看今天需要你处理的安排，文案显示为照护人</span></button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">第 3 步 · 你的称谓是？</div>
+        <div class="filters" id="join-rel"></div>
+      </div>
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">第 4 步 · 确认加入</div>
+        <div class="rowline"><span>家庭</span><span class="v">乐乐家</span></div>
+        <div class="rowline"><span>身份</span><span class="v" id="join-confirm-identity">家长</span></div>
+        <div class="rowline"><span>称谓</span><span class="v" id="join-confirm-rel">妈妈</span></div>
+        <div class="muted" style="margin-top:6px">家长加入后默认普通家长；管理员权限由管理员在成员管理中单独授予。</div>
+      </div>
+      <button class="btn" id="btn-join">确认，加入家庭</button>
     </div>
   </section>
 
@@ -836,18 +872,19 @@ body {
     </div>
   </div>
 
-  <!-- 动作面板：邀请家人 -->
+  <!-- 动作面板：家庭加入码（当面扫码加入，不走微信转发） -->
   <div class="sheet-mask" id="sheet-invite" hidden>
     <div class="sheet tall">
-      <div class="ev-title">邀请家人</div>
-      <div class="muted">邀请共同照顾孩子的人加入家庭协作。</div>
-      <button class="opt" data-invite-kind="parent"><b>另一位家长</b><span>一起管理日程、查看打卡、接收提醒；可选普通家长/管理员</span></button>
-      <button class="opt" data-invite-kind="grandparent"><b>爷爷奶奶 / 姥姥姥爷</b><span>看今天安排，完成接送反馈</span></button>
-      <button class="opt" data-invite-kind="caregiver"><b>保姆阿姨 / 接送阿姨</b><span>只看今天安排，完成接送反馈，文案显示为照护人</span></button>
-      <div class="seg" id="invite-admin-seg"><button class="on">普通家长</button><button>管理员</button></div>
-      <button class="btn" id="invite-share">微信分享给家人</button>
-      <button class="btn ghost" id="invite-copy">复制邀请链接</button>
-      <button class="btn ghost" id="invite-cancel">取消</button>
+      <div class="ev-title">家庭加入码</div>
+      <div class="muted">让家人当面扫这个码加入；码不通过微信转发，24 小时有效。</div>
+      <div style="width:180px;height:180px;margin:14px auto;border:1px solid var(--line);border-radius:12px;background:repeating-linear-gradient(0deg,#2b2b2b 0 6px,transparent 6px 12px),repeating-linear-gradient(90deg,#2b2b2b 0 6px,transparent 6px 12px);position:relative;">
+        <div style="position:absolute;inset:0;margin:auto;width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:8px;font-size:12px;color:#2b2b2b;box-shadow:0 0 0 6px #fff;">扫码加入</div>
+      </div>
+      <div class="rowline"><span>加入码（可手输）</span><span class="v" style="font-family:ui-monospace,Menlo,monospace;letter-spacing:2px">482 913</span></div>
+      <div class="muted" style="margin-top:6px">加入身份：家长 / 祖辈 / 阿姨（照护人）。家长加入后默认普通家长，管理员权限在成员管理中单独授予。</div>
+      <button class="btn" id="invite-regen">重新生成</button>
+      <button class="btn ghost" id="invite-void">作废</button>
+      <button class="btn ghost" id="invite-cancel">关闭</button>
     </div>
   </div>
 
@@ -928,7 +965,7 @@ body {
     document.getElementById('role-new').classList.toggle('on', r === 'new');
     phone.classList.toggle('gp', r === 'gp');
     var pb = document.getElementById('preview-bar'); if (pb) pb.hidden = true;
-    navStack = [r === 'gp' ? 'scr-gp' : (r === 'new' ? 'scr-week' : 'scr-today')];
+    navStack = [r === 'gp' ? 'scr-gp' : (r === 'new' ? 'scr-onboard' : 'scr-today')];
     render(navStack[0]);
   }
   document.getElementById('role-parent').addEventListener('click', function () { setRole('parent'); });
@@ -1107,7 +1144,7 @@ body {
       });
     });
   }
-  chipWire('task-tpl'); chipWire('invite-rel'); chipWire('manage-filter'); chipWire('tl-filter');
+  chipWire('task-tpl'); chipWire('manage-filter'); chipWire('tl-filter');
   // 「自定义/每周 N 次」选项展开输入框（模板名 / 目标量 / 频次）
   function customToggle(wireId, inputId, triggerText) {
     var box = document.getElementById(wireId), input = document.getElementById(inputId);
@@ -1273,16 +1310,54 @@ body {
     navTab('scr-week'); toast('已保存，并通知责任人「' + document.getElementById('f-owner').value + '」');
   });
 
-  // 家庭相关
+  // 家庭相关：家庭加入码（当面扫码加入，不走微信转发）
   var inviteSheet = document.getElementById('sheet-invite');
   document.getElementById('btn-invite').addEventListener('click', function () { inviteSheet.hidden = false; });
   document.getElementById('invite-cancel').addEventListener('click', function () { inviteSheet.hidden = true; });
-  document.getElementById('invite-share').addEventListener('click', function () { inviteSheet.hidden = true; toast('已调起微信分享卡片（原型演示）'); nav('scr-invite'); });
-  document.getElementById('invite-copy').addEventListener('click', function () { toast('已复制邀请路径（原型演示）'); });
-  Array.prototype.forEach.call(document.querySelectorAll('[data-invite-kind]'), function (b) {
-    b.addEventListener('click', function () { toast('邀请类型：' + b.querySelector('b').textContent); });
+  document.getElementById('invite-regen').addEventListener('click', function () { toast('已重新生成加入码，旧码立即作废'); });
+  document.getElementById('invite-void').addEventListener('click', function () { toast('加入码已作废，需重新生成才能加入'); });
+  document.getElementById('onboard-create').addEventListener('click', function () { navTab('scr-week'); });
+  document.getElementById('onboard-join').addEventListener('click', function () { nav('scr-invite'); });
+  document.getElementById('join-scan').addEventListener('click', function () { toast('原型演示：扫码成功，已填入加入码'); });
+
+  // 加入身份选择：家长/祖辈/阿姨，切换对应称谓
+  var JOIN_REL = { parent: ['妈妈', '爸爸', '其他家长'], grandparent: ['奶奶', '爷爷', '姥姥', '姥爷'], caregiver: ['阿姨', '保姆阿姨', '接送阿姨'] };
+  var JOIN_IDENTITY_LABEL = { parent: '家长', grandparent: '祖辈', caregiver: '阿姨（照护人）' };
+  var joinIdentity = 'parent';
+  var joinRelText = '妈妈';
+  function renderJoinRel() {
+    var box = document.getElementById('join-rel');
+    joinRelText = (JOIN_REL[joinIdentity] || [])[0];
+    box.innerHTML = (JOIN_REL[joinIdentity] || []).map(function (x, i) {
+      return '<span class="chip' + (i === 0 ? ' on' : '') + '">' + x + '</span>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (c) {
+      c.onclick = function () {
+        Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (x) { x.classList.remove('on'); });
+        c.classList.add('on');
+        joinRelText = c.textContent;
+        renderJoinConfirm();
+      };
+    });
+    renderJoinConfirm();
+  }
+  function renderJoinConfirm() {
+    document.getElementById('join-confirm-identity').textContent = JOIN_IDENTITY_LABEL[joinIdentity];
+    document.getElementById('join-confirm-rel').textContent = joinRelText;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('#join-identities .identity-card'), function (b) {
+    b.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('#join-identities .identity-card'), function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      joinIdentity = b.dataset.identity;
+      renderJoinRel();
+    });
   });
-  document.getElementById('btn-join').addEventListener('click', function () { setRole('gp'); toast('已加入「乐乐家」'); });
+  renderJoinRel();
+  document.getElementById('btn-join').addEventListener('click', function () {
+    setRole(joinIdentity === 'parent' ? 'parent' : 'gp');
+    toast('已加入「乐乐家」');
+  });
   document.getElementById('btn-manage').addEventListener('click', function () { nav('scr-manage'); });
   document.getElementById('btn-report').addEventListener('click', function () { nav('scr-report'); });
   document.getElementById('btn-timeline').addEventListener('click', function () { nav('scr-timeline'); });
