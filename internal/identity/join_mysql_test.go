@@ -205,7 +205,9 @@ func TestMySQLServiceJoinDirectAndPermissions(t *testing.T) {
 		t.Fatalf("preview %+v %v", preview, e)
 	}
 	var count int64
-	store.db.Model(&Member{}).Where("user_id = ?", 2).Count(&count)
+	if e = store.db.Model(&Member{}).Where("user_id = ?", 2).Count(&count).Error; e != nil {
+		t.Fatal(e)
+	}
 	if count != 0 {
 		t.Fatal("preview wrote member")
 	}
