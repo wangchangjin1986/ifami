@@ -451,9 +451,9 @@ body {
       <div class="note">归档后不再出现在今日打卡和提醒中；历史打卡保留在周报和时间线里。</div>
       <div class="group-label">最近打卡记录</div>
       <div class="card">
-        <div class="rowline"><span>今天 20:12 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="今天 20:12">删除</button></span></div>
-        <div class="rowline"><span>昨天 19:50 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="昨天 19:50">删除</button></span></div>
-        <div class="rowline"><span>10/24 20:05 · 爸爸提交</span><span class="v"><button class="link-action danger" data-del-checkin="10/24 20:05">删除</button></span></div>
+        <div class="rowline"><span>今天 20:12 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="今天 20:12" data-submit-member="妈妈">删除</button></span></div>
+        <div class="rowline"><span>昨天 19:50 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="昨天 19:50" data-submit-member="妈妈">删除</button></span></div>
+        <div class="rowline"><span>10/24 20:05 · 爸爸提交</span><span class="v"><button class="link-action danger" data-del-checkin="10/24 20:05" data-submit-member="爸爸">删除</button></span></div>
       </div>
       <div class="muted">错打卡先删除后重新打卡；删除会影响连续天数、周报和成长时间线统计。</div>
     </div>
@@ -793,9 +793,10 @@ body {
     <div class="app-head"><button class="back">‹ 返回</button><h1>成长时间线</h1></div>
     <div class="body">
       <div class="filters" id="tl-filter"><span class="chip on">全部</span><span class="chip">乐乐</span><span class="chip">果果</span></div>
-      <div class="tl"><div class="tl-date">10/26</div><div class="tl-body"><div class="ev-title">📖 阅读打卡 20 分钟</div><div class="ev-meta">乐乐 · 连续 5 天</div><div class="inline-actions"><span class="link-action danger" data-del-checkin="阅读打卡 20 分钟">删除打卡</span></div></div></div>
+      <div class="tl"><div class="tl-date">10/26</div><div class="tl-body"><div class="ev-title">📖 阅读打卡 20 分钟</div><div class="ev-meta">乐乐 · 妈妈提交 · 连续 5 天</div><div class="inline-actions"><span class="link-action danger" data-del-checkin="阅读打卡 20 分钟" data-submit-member="妈妈">删除打卡</span></div></div></div>
       <div class="tl"><div class="tl-date">10/25</div><div class="tl-body"><div class="ev-title">🏊 里程碑：独立游 10 米</div><div class="ev-meta">果果 · 游泳课第 8 节</div></div></div>
       <div class="tl"><div class="tl-date">10/24</div><div class="tl-body"><div class="ev-title">🎹 钢琴课出勤</div><div class="ev-meta">乐乐 · 奶奶送</div></div></div>
+      <div class="tl"><div class="tl-date">10/23</div><div class="tl-body"><div class="ev-title">📚 绘本共读 15 分钟</div><div class="ev-meta">果果 · 爸爸提交</div><div class="inline-actions"><span class="link-action danger" data-del-checkin="绘本共读 15 分钟" data-submit-member="爸爸">删除打卡</span></div></div></div>
       <div class="tl"><div class="tl-date">10/22</div><div class="tl-body"><div class="ev-title">🤸 里程碑：跳绳首次连续 100 个</div><div class="ev-meta">乐乐</div></div></div>
       <div class="tl"><div class="tl-date">10/20</div><div class="tl-body"><div class="ev-title">📷 周末香山出游</div><div class="ev-meta">全家 · 12 张照片</div></div></div>
       <div class="muted">打卡、里程碑、照片自动沉淀，无需手动整理；源记录删除后会同步从时间线和周报统计中消失。</div>
@@ -936,6 +937,7 @@ body {
   var toastTimer = null;
   var navStack = [];
   var currentRole = 'admin';
+  var currentActorMember = '妈妈';
   var feedbackEvent = '';
 
   function toast(msg) {
@@ -965,11 +967,13 @@ body {
     Array.prototype.forEach.call(document.querySelectorAll('.member'), function (el) { el.classList.toggle('readonly', currentRole === 'parent'); });
     document.getElementById('event-parent-note').hidden = currentRole !== 'parent';
     document.getElementById('parent-family-note').hidden = currentRole !== 'parent';
+    applyCheckinDeletePermissions();
   }
 
   // 角色切换
   function setRole(r) {
     currentRole = r;
+    if (r === 'admin') currentActorMember = '妈妈';
     newFamily = r === 'new';
     document.getElementById('role-parent').classList.toggle('on', r === 'admin');
     document.getElementById('role-gp').classList.toggle('on', r === 'gp');
@@ -1241,10 +1245,27 @@ body {
   document.getElementById('btn-task-edit').addEventListener('click', function () { openTaskForm(true, document.getElementById('task-detail-title').textContent); });
   document.getElementById('btn-task-pause').addEventListener('click', function () { if (requireAdminAction('暂停任务提醒')) toast('已暂停提醒，任务仍可手动打卡（原型演示）'); });
   document.getElementById('btn-task-archive').addEventListener('click', function () { if (requireAdminAction('归档任务')) toast('已归档任务；历史打卡保留（原型演示）'); });
+  function canDeleteCheckin(submitMember) {
+    return !!submitMember && (isAdmin() || submitMember === currentActorMember);
+  }
+  function applyCheckinDeletePermissions() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-del-checkin]'), function (el) {
+      el.hidden = !canDeleteCheckin(el.dataset.submitMember || '');
+    });
+  }
+  function deleteCheckin(el) {
+    var submitMember = el.dataset.submitMember || '';
+    if (!canDeleteCheckin(submitMember)) {
+      toast(submitMember ? '只能删除自己提交的打卡' : '缺少提交人信息，不能删除打卡');
+      return false;
+    }
+    toast('已删除打卡；连续天数、周报和时间线将重新统计（原型演示）');
+    return true;
+  }
   Array.prototype.forEach.call(document.querySelectorAll('[data-del-checkin]'), function (el) {
     el.addEventListener('click', function (e) {
       e.stopPropagation();
-      toast('已删除打卡；连续天数、周报和时间线将重新统计（原型演示）');
+      deleteCheckin(el);
     });
   });
 
@@ -1385,6 +1406,7 @@ body {
       return false;
     }
     var confirmedFamilyName = joinFamilyName;
+    currentActorMember = joinRelText;
     setRole(joinIdentity === 'parent' ? 'parent' : 'gp');
     toast('已加入「' + confirmedFamilyName + '」');
     return true;
@@ -1417,6 +1439,7 @@ body {
   var currentMember = '妈妈';
   var previewBar = document.getElementById('preview-bar');
   var previewActive = false;
+  var previewReturnRole = 'admin';
   // 成员管理面板：名称/身份、角色、管理员三者分离（虚拟孩子无角色/管理员行）
   function syncMemberPanel() {
     var isChild = currentMember === '乐乐' || currentMember === '果果';
@@ -1463,24 +1486,38 @@ body {
       nav('scr-member');
     });
   });
-  document.getElementById('btn-preview').addEventListener('click', function () {
+  function memberPreviewRole(memberName) {
+    if (memberName === '妈妈') return 'admin';
+    if (memberName === '爸爸') return 'parent';
+    if (memberName === '奶奶' || memberName === '接送阿姨') return 'gp';
+    return '';
+  }
+  function openMemberPreview() {
     if (!requireAdminAction('预览成员视图')) return;
-    if (currentMember === '妈妈' || currentMember === '爸爸') {
-      toast('父母是完整视图，与你当前看到的一致');
-    } else if (currentMember === '奶奶') {
-      previewActive = true;
-      document.getElementById('preview-label').textContent = '预览模式 · 奶奶的视图';
-      previewBar.hidden = false;
-      phone.classList.add('gp');
-      render('scr-gp');
-    } else {
-      toast('孩子无独立端，在父母设备上打卡');
+    var previewRole = memberPreviewRole(currentMember);
+    if (previewRole === 'admin') {
+      toast('妈妈是管理员，使用完整四 Tab 与管理视图');
+      return true;
     }
-  });
+    if (previewRole === 'parent' || previewRole === 'gp') {
+      previewActive = true;
+      previewReturnRole = currentRole;
+      currentActorMember = currentMember;
+      setRole(previewRole);
+      document.getElementById('preview-label').textContent = '预览模式 · ' + currentMember + '的视图';
+      previewBar.hidden = false;
+      render(previewRole === 'gp' ? 'scr-gp' : 'scr-today');
+      return true;
+    }
+    toast('孩子无独立端，在父母设备上打卡');
+    return false;
+  }
+  document.getElementById('btn-preview').addEventListener('click', openMemberPreview);
   document.getElementById('preview-exit').addEventListener('click', function () {
     previewActive = false;
+    setRole(previewReturnRole || 'admin');
+    currentActorMember = '妈妈';
     previewBar.hidden = true;
-    phone.classList.remove('gp');
     render('scr-member');
   });
   document.getElementById('btn-save-member').addEventListener('click', function () {
