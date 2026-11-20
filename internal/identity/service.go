@@ -2,12 +2,9 @@ package identity
 
 import (
 	"context"
-	"errors"
-	"time"
 
 	"ifami/internal/pkg/auth"
 	"ifami/internal/pkg/crypto"
-	"ifami/internal/pkg/invite"
 	"ifami/internal/pkg/logx"
 	"ifami/internal/pkg/wechat"
 )
@@ -21,6 +18,7 @@ type Service struct {
 	sessions     auth.SessionStore
 	field        *crypto.FieldCipher
 	inviteSecret string
+	joinRegistry JoinCodeRegistry
 }
 
 func NewService(store *Store, wx *wechat.MiniClient, appid string, sessions auth.SessionStore, field *crypto.FieldCipher, inviteSecret string) *Service {
@@ -159,71 +157,14 @@ func (s *Service) ListFamilies(ctx context.Context, userID uint64) ([]FamilyRole
 	return rows, nil
 }
 
-// CreateInvitation 生成邀请 token（仅管理员可邀请）。
+// CreateInvitation retains the legacy signature but no longer issues invitations.
 func (s *Service) CreateInvitation(ctx context.Context, userID, familyID uint64, in InvitationInput) (string, error) {
-	if _, err := s.requireRole(ctx, userID, familyID, RoleAdmin); err != nil {
-		return "", err
-	}
-	if in.InviteType == "" {
-		in.InviteType = invite.TypeGrandparent
-	}
-	if in.Role == "" {
-		if in.InviteType == invite.TypeParent {
-			in.Role = RoleParent
-		} else {
-			in.Role = RoleGrandparent
-		}
-	}
-	if !invite.ValidClaims(in.InviteType, in.Role, in.IsAdmin) {
-		return "", ErrBadParam
-	}
-	return invite.SignClaims(s.inviteSecret, invite.Claims{FamilyID: familyID, InviteType: in.InviteType, Role: in.Role, IsAdmin: in.IsAdmin}, time.Now())
+	return "", ErrOldClient
 }
 
-// JoinFamily 接受邀请：验证 token + code → 建/查 user → 加 grandparent 成员 → 自动登录。
+// JoinFamily rejects legacy redemption before any login or membership side effect.
 func (s *Service) JoinFamily(ctx context.Context, code, token, relationLabel string) (*JoinResult, error) {
-	claims, err := invite.VerifyClaims(s.inviteSecret, token)
-	if err != nil {
-		if errors.Is(err, invite.ErrExpired) {
-			return nil, ErrInviteExpired
-		}
-		return nil, ErrBadInvite
-	}
-	familyID := claims.FamilyID
-	f, err := s.store.FindFamily(ctx, familyID)
-	if err != nil {
-		return nil, err
-	}
-	if f == nil {
-		return nil, ErrFamilyNotFound
-	}
-	sess, err := s.wx.Code2Session(ctx, code)
-	if err != nil {
-		logx.Errorf("加入家庭 code2session 失败: %v", err)
-		return nil, ErrBadCode
-	}
-	userID, err := s.getOrCreateUser(ctx, sess)
-	if err != nil {
-		logx.Errorf("加入家庭查找或创建用户失败: family_id=%d err=%v", familyID, err)
-		return nil, err
-	}
-	if existing, _ := s.store.FindMember(ctx, userID, familyID); existing != nil {
-		return nil, ErrAlreadyMember
-	}
-	uid := userID
-	m := &Member{
-		FamilyID: familyID, UserID: &uid, Type: TypeReal,
-		Role: claims.Role, IsAdmin: claims.IsAdmin, RelationLabel: relationLabel, Status: StatusActive,
-	}
-	if err := s.store.CreateMember(ctx, m); err != nil {
-		return nil, err
-	}
-	sessionToken, err := s.newSession(ctx, userID)
-	if err != nil {
-		logx.Errorf("加入家庭创建会话失败: family_id=%d user_id=%d err=%v", familyID, userID, err)
-		return nil, err
-	}
-	return &JoinResult{Token: sessionToken, FamilyID: familyID, Role: claims.Role, InviteType: claims.InviteType, IsAdmin: claims.IsAdmin}, nil
+	return nil, ErrOldClient
 }
 
 // ListMembers 家庭成员列表（含虚拟孩子，孩子姓名解密返回）。
@@ -244,7 +185,7 @@ func (s *Service) ListMembers(ctx context.Context, userID, familyID uint64) ([]M
 
 // AddChild 添加虚拟成员（孩子），姓名字段级加密。
 func (s *Service) AddChild(ctx context.Context, userID, familyID uint64, name, relationLabel string) (uint64, error) {
-	if _, err := s.requireRole(ctx, userID, familyID, RoleAdmin, RoleParent); err != nil {
+	if _, err := s.requireRole(ctx, userID, familyID, RoleAdmin); err != nil {
 		return 0, err
 	}
 	if name == "" {

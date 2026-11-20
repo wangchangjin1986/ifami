@@ -2,7 +2,11 @@
 // 配置项清单与含义见 deploy/.env.example。
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+	"time"
+)
 
 type Config struct {
 	APIAddr string
@@ -23,7 +27,10 @@ type Config struct {
 	FieldEncKey string
 
 	// 邀请 token 签名密钥（HMAC-SHA256）
-	InviteSecret string
+	InviteSecret        string
+	JoinFailedUserLimit int
+	JoinFailedIPLimit   int
+	JoinFailedWindow    time.Duration
 
 	// 火山方舟（拍照导入日程，豆包多模态）
 	ArkAPIKey  string
@@ -48,6 +55,9 @@ func Load() *Config {
 		RedisAddr:                   getenv("REDIS_ADDR", "localhost:6379"),
 		FieldEncKey:                 getenv("FIELD_ENC_KEY", ""),
 		InviteSecret:                getenv("INVITE_SECRET", ""),
+		JoinFailedUserLimit:         positiveInt("JOIN_FAILED_USER_LIMIT", 10),
+		JoinFailedIPLimit:           positiveInt("JOIN_FAILED_IP_LIMIT", 30),
+		JoinFailedWindow:            time.Duration(positiveInt("JOIN_FAILED_WINDOW_SECONDS", 900)) * time.Second,
 		ArkAPIKey:                   getenv("ARK_API_KEY", ""),
 		ArkBaseURL:                  getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
 		ArkModel:                    getenv("ARK_MODEL", ""),
@@ -60,4 +70,12 @@ func getenv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func positiveInt(key string, def int) int {
+	v, e := strconv.Atoi(os.Getenv(key))
+	if e != nil || v <= 0 || v > 86400 {
+		return def
+	}
+	return v
 }

@@ -88,6 +88,9 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 		identity.NewStore(gdb), wx, cfg.WXMiniAppID,
 		sessions, field, cfg.InviteSecret,
 	)
+	idSvc.SetJoinCodeRegistry(identity.NewRedisJoinCodeRegistry(rdb, field, cfg.InviteSecret, "ifami:", identity.JoinProtectionOptions{
+		UserLimit: cfg.JoinFailedUserLimit, IPLimit: cfg.JoinFailedIPLimit, Window: cfg.JoinFailedWindow,
+	}))
 	return gdb, idSvc, sessions, field
 }
 
