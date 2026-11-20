@@ -256,18 +256,21 @@ Page({
     })
   },
 
-  openFab() { this.setData({ sheetOpen: true }) },
+  openFab() { if (this.data.isAdmin) this.setData({ sheetOpen: true }) },
   closeFab() { this.setData({ sheetOpen: false }) },
   noop() {},
   goEvent() {
+    if (!this.data.isAdmin) return
     this.closeFab()
     wx.navigateTo({ url: '/pages/event/index' })
   },
   goTask() {
+    if (!this.data.isAdmin) return
     this.closeFab()
     wx.navigateTo({ url: '/pages/task/index' })
   },
   goImport() {
+    if (!this.data.isAdmin) return
     this.closeFab()
     wx.navigateTo({ url: '/pages/import/index' })
   },

@@ -31,7 +31,7 @@
       <view wx:if="{{!enoughData}}" class="card empty-card">
         <view class="ev-title">这周还没有足够数据生成周报</view>
         <view class="muted">完成打卡、安排日程后，周报会自动汇总本周事实记录；不会编造总结，也不会做排名或打榜。</view>
-        <view class="row report-actions">
+        <view wx:if="{{isAdmin}}" class="row report-actions">
           <button class="btn ghost sm" bindtap="goTaskTemplates">任务模板</button>
         </view>
       </view>
@@ -46,7 +46,7 @@
         <view class="card">
           <view class="ev-title">坚持事实</view>
           <block wx:if="{{taskRows.length === 0}}">
-            <view class="muted">还没有打卡任务；可先从任务模板批量启用阅读、跳绳、练琴等任务。</view>
+            <view class="muted">{{isAdmin ? '还没有打卡任务；可先从任务模板批量启用阅读、跳绳、练琴等任务。' : '还没有打卡任务。'}}</view>
           </block>
           <block wx:else>
             <view class="rowline" wx:for="{{taskRows}}" wx:key="id">
@@ -78,7 +78,7 @@
             <view class="muted">下周日程加载失败，下拉刷新可重试。</view>
           </block>
           <block wx:elif="{{nextWeekItems.length === 0}}">
-            <view class="muted">下周暂未安排日程；可点 ＋ 安排一件事，或拍照导入课表。</view>
+            <view class="muted">{{isAdmin ? '下周暂未安排日程；可从录入入口安排或导入课表。' : '下周暂未安排日程。'}}</view>
           </block>
           <block wx:else>
             <view class="rowline" wx:for="{{nextWeekItems}}" wx:key="id">

@@ -10,7 +10,7 @@
   <block wx:else>
     <view class="app-head">
       <text class="title">今天</text>
-      <text class="sub link">{{dateStr}} · {{familyName}} ▾</text>
+      <text class="sub">{{dateStr}} · {{familyName}}</text>
     </view>
 
     <view class="body">

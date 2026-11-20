@@ -11,6 +11,11 @@ Component({
   },
   methods: {
     switchTab(e) {
+      const app = getApp()
+      if (app.globalData.role === 'grandparent' && !app.globalData.isAdmin) {
+        wx.reLaunch({ url: '/pages/gp-today/index' })
+        return
+      }
       const idx = Number(e.currentTarget.dataset.index)
       if (idx === this.data.selected) return
       wx.switchTab({ url: this.data.list[idx].pagePath })

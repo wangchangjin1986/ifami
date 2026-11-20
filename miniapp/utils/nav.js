@@ -1,4 +1,4 @@
-// 日程实例 → 详情页导航 URL：把实例字段透传给 pages/event-detail，由详情页按需展示/操作。
+// 日程实例 → 详情页导航 URL：只传稳定标识，业务数据必须由详情 GET 授权后返回。
 function repeatLabel(rrule) {
   if (!rrule) return '单次'
   if (rrule.indexOf('BYDAY=MO,TU,WE,TH,FR,SA,SU') >= 0) return '每天'
@@ -12,18 +12,7 @@ function detailUrl(it) {
   const q = []
   const put = (k, v) => { if (v !== undefined && v !== null) q.push(k + '=' + encodeURIComponent(v)) }
   put('instance_id', it.instanceId)
-  put('schedule_id', it.scheduleId)
-  put('title', it.title)
-  put('type', it.type)
-  put('occur_date', it.occurDate)
-  put('start_at', it.startAt)
-  put('end_at', it.endAt)
-  put('rrule', it.rrule)
-  put('repeat_label', it.repeatLabel || repeatLabel(it.rrule))
-  put('location', it.location)
-  put('note', it.note)
-  put('child_member_id', it.childMemberId)
-  put('owner_member_id', it.ownerMemberId)
+  put('family_id', it.familyId)
   return '/pages/event-detail/index?' + q.join('&')
 }
 

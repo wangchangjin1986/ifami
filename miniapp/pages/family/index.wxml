@@ -7,7 +7,9 @@
     <view class="hero">
       <text class="hero-title">ifami</text>
       <text class="hero-sub">以家庭为单位的学习与生活协作</text>
-      <button class="btn" bindtap="doLogin">微信登录</button>
+      <button class="btn" bindtap="startCreate">创建我的家庭</button>
+      <button class="btn ghost" bindtap="startJoin">加入家人的家庭</button>
+      <text class="muted">点击后完成微信授权；加入需家人当面展示家庭加入码。</text>
     </view>
   </block>
 
@@ -20,13 +22,15 @@
         <input class="input" placeholder="家庭名，如「我们的家」" model:value="{{newFamilyName}}" />
         <button class="btn" bindtap="createFamily">创建家庭</button>
       </view>
+      <button class="btn ghost" bindtap="startJoin">加入家人的家庭</button>
+      <view class="muted">加入需家人当面展示「家庭加入码」，不通过微信转发。</view>
     </view>
   </block>
 
   <block wx:else>
     <view class="app-head">
       <text class="title">家庭</text>
-      <text class="sub link">{{familyName}} ▾</text>
+      <text class="sub">{{familyName}}</text>
     </view>
 
     <view class="body">
@@ -39,7 +43,7 @@
         <view wx:if="{{isAdmin}}" class="muted">›</view>
       </view>
 
-      <view class="card">
+      <view wx:if="{{isAdmin}}" class="card">
         <view class="ev-title">添加孩子</view>
         <view class="ev-meta">孩子是虚拟成员，无独立登录，数据由监护人管理。</view>
         <input class="input" placeholder="孩子姓名" model:value="{{childName}}" />
@@ -47,10 +51,10 @@
         <button class="btn ghost" bindtap="addChild">＋ 添加孩子</button>
       </view>
 
-      <button wx:if="{{isAdmin}}" class="btn" bindtap="genInvite">＋ 邀请家人</button>
+      <button wx:if="{{isAdmin}}" class="btn" bindtap="genInvite">＋ 家人加入码</button>
 
       <view class="row">
-        <button class="btn ghost row-btn" bindtap="goManage">全部安排</button>
+        <button wx:if="{{isAdmin}}" class="btn ghost row-btn" bindtap="goManage">全部安排</button>
         <button class="btn ghost row-btn" bindtap="goReport">家庭周报</button>
       </view>
       <view class="row">
@@ -109,26 +113,24 @@
     </view>
 
     <view class="sheet-mask" wx:if="{{inviteSheet}}" bindtap="closeInvite">
-      <view class="sheet" catchtap="noop">
-        <view class="group-label">邀请家人</view>
-        <view class="muted">邀请共同照顾孩子的人加入家庭协作。</view>
-        <button
-          wx:for="{{inviteOptions}}"
-          wx:key="kind"
-          class="opt {{inviteKind === item.kind ? 'picked' : ''}}"
-          bindtap="pickInviteKind"
-          data-kind="{{item.kind}}"
-        >
-          <text class="opt-b">{{item.title}}</text>
-          <text class="opt-s">{{item.desc}}</text>
-        </button>
-        <view wx:if="{{inviteKind === 'parent'}}" class="rowline">
-          <text>管理员权限</text>
-          <button class="toggle {{inviteAdmin ? 'on' : ''}}" bindtap="toggleInviteAdmin" aria-label="管理员权限"></button>
+      <view class="sheet join-code-sheet" catchtap="noop">
+        <view class="group-label">家庭加入码</view>
+        <view class="muted">让家人当面扫码或手输数字码加入；不通过微信转发，24 小时有效。</view>
+
+        <view wx:if="{{joinCodeStatus === 'loading'}}" class="empty">正在读取家庭加入码…</view>
+        <view wx:elif="{{joinCodeStatus === 'active'}}">
+          <canvas class="join-code-canvas" canvas-id="join-code-qr" style="width:420rpx;height:420rpx"></canvas>
+          <view class="rowline"><text>加入码（可手输）</text><text class="join-code-number">{{joinCodeDisplay}}</text></view>
+          <view class="muted">有效至 {{joinCodeExpiresText}}</view>
+          <view class="muted">加入者会自行选择家长 / 祖辈 / 阿姨；新成员默认不是管理员。</view>
+          <button class="btn" bindtap="regenerateJoinCode">重新生成</button>
+          <button class="btn danger" bindtap="revokeJoinCode">作废</button>
         </view>
-        <button class="btn" open-type="share" disabled="{{!inviteReady}}">微信分享给家人</button>
-        <button class="btn ghost" bindtap="copyInvite" disabled="{{!inviteReady}}">复制邀请链接</button>
-        <button class="btn ghost" bindtap="closeInvite">取消</button>
+        <view wx:else class="empty">
+          <view>{{joinCodeError || (joinCodeStatus === 'expired' ? '家庭加入码已过期' : '当前没有有效加入码')}}</view>
+          <button class="btn" bindtap="retryJoinCode">{{joinCodeStatus === 'empty' || joinCodeStatus === 'expired' ? '生成加入码' : '重试'}}</button>
+        </view>
+        <button class="btn ghost" bindtap="closeInvite">关闭</button>
       </view>
     </view>
   </block>

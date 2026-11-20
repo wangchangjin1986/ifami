@@ -35,7 +35,7 @@
     <!-- 周视图：时段 × 星期网格，格子=责任人+事项，冲突橙框 -->
     <view wx:if="{{mode === 'week'}}">
       <view wx:for="{{schoolLines}}" wx:key="*this" class="school-line">🏫 {{item}}</view>
-      <view wx:if="{{weekSlots.length === 0}}" class="empty"><text>本周暂无日程，点右下角 ＋ 添加</text></view>
+      <view wx:if="{{weekSlots.length === 0}}" class="empty"><text>{{isAdmin ? '本周暂无日程，点右下角 ＋ 添加' : '本周暂无日程'}}</text></view>
       <view wx:else class="week-grid">
         <view class="slot"></view>
         <view class="dow" wx:for="{{weekDows}}" wx:key="*this">{{item}}</view>

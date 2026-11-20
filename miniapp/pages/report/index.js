@@ -75,7 +75,8 @@ Page({
     taskRows: [],
     childHighlights: [],
     nextWeekItems: [],
-    nextWeekError: false
+    nextWeekError: false,
+    isAdmin: false
   },
 
   onLoad(options = {}) {
@@ -104,7 +105,7 @@ Page({
 
   loadReport() {
     const fid = app.globalData.familyId
-    this.setData({ logged: true })
+    this.setData({ logged: true, isAdmin: !!app.globalData.isAdmin })
     if (!fid) {
       this.setData({ hasFamily: false, loading: false })
       return Promise.resolve()
@@ -280,6 +281,7 @@ Page({
   },
 
   goTaskTemplates() {
+    if (!this.data.isAdmin) return wx.showToast({ title: '只有管理员可以创建任务', icon: 'none' })
     wx.navigateTo({ url: '/pages/task/index?batch=1' })
   },
 

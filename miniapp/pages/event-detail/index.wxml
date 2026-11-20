@@ -1,62 +1,57 @@
 <view class="page">
   <view class="app-head">
     <text class="back" bindtap="goBack">‹ 返回</text>
-    <text class="title">{{title}}</text>
+    <text class="title">{{loaded ? title : '日程详情'}}</text>
   </view>
 
   <view class="body">
-    <view class="card">
-      <view class="rowline"><text>时间</text><text class="v">{{time}}</text></view>
-      <view class="rowline"><text>重复</text><text class="v">{{repeatLabel}}</text></view>
-      <view class="rowline"><text>孩子</text><text class="v">{{childName}}</text></view>
-      <view class="rowline"><text>责任人</text><text class="v">{{ownerName}}</text></view>
-      <view class="rowline"><text>地点</text><text class="v">{{location || '—'}}</text></view>
-      <view class="rowline"><text>备注</text><text class="v">{{note || '—'}}</text></view>
-    </view>
-
-    <block wx:if="{{canManage}}">
-      <button class="btn" bindtap="openReassign">改分工</button>
-      <view class="row">
-        <button class="btn ghost" style="flex:1" bindtap="edit">编辑</button>
-        <button wx:if="{{hasInstance}}" class="btn danger" style="flex:1" bindtap="cancelInstance">取消本次</button>
+    <view wx:if="{{loading}}" class="empty">正在核对日程权限…</view>
+    <view wx:elif="{{!loaded}}" class="empty">{{errorText || '无法查看这条安排'}}</view>
+    <block wx:else>
+      <view class="card">
+        <view class="rowline"><text>时间</text><text class="v">{{time}}</text></view>
+        <view class="rowline"><text>重复</text><text class="v">{{repeatLabel}}</text></view>
+        <view class="rowline"><text>孩子</text><text class="v">{{childName}}</text></view>
+        <view class="rowline"><text>责任人</text><text class="v">{{ownerName}}</text></view>
+        <view class="rowline"><text>地点</text><text class="v">{{location || '—'}}</text></view>
+        <view class="rowline"><text>备注</text><text class="v">{{note || '—'}}</text></view>
       </view>
-      <button class="btn danger" bindtap="deleteSchedule">{{deleteButtonText}}</button>
-      <view class="note">{{deleteNote}}</view>
+
+      <block wx:if="{{canManage}}">
+        <button wx:if="{{canAct}}" class="btn" bindtap="openReassign">改分工</button>
+        <view class="row">
+          <button class="btn ghost" style="flex:1" bindtap="edit">编辑</button>
+          <button wx:if="{{canAct}}" class="btn danger" style="flex:1" bindtap="cancelInstance">取消本次</button>
+        </view>
+        <button class="btn danger" bindtap="deleteSchedule">{{deleteButtonText}}</button>
+        <view class="note">{{deleteNote}}</view>
+      </block>
+
+      <block wx:elif="{{isGrandparent && canAct}}">
+        <view class="row">
+          <button class="btn" style="flex:1" bindtap="completeInstance">完成</button>
+          <button class="btn ghost" style="flex:1" bindtap="openFeedback">要调整</button>
+        </view>
+        <view class="note">你不能直接改日程；完成会记录执行结果，要调整会通知家长处理。</view>
+      </block>
+      <view wx:elif="{{isGrandparent}}" class="note">这条安排已结束或取消，不再提供完成与调整操作。</view>
+
+      <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeSheet">
+        <view class="sheet" catchtap="noop">
+          <view class="group-label">改分工：本次由谁负责？</view>
+          <button class="opt {{item.picked ? 'picked' : ''}}" wx:for="{{owners}}" wx:key="member_id" bindtap="reassign" data-id="{{item.member_id}}"><text class="opt-b">{{item.name}}</text></button>
+          <button class="btn ghost" bindtap="closeSheet">取消</button>
+        </view>
+      </view>
+
+      <view class="sheet-mask" wx:if="{{feedbackOpen}}" bindtap="closeFeedback">
+        <view class="sheet" catchtap="noop">
+          <view class="group-label">{{title}}</view>
+          <view class="muted">要告诉家长哪里需要处理？</view>
+          <button class="opt" wx:for="{{feedbackReasons}}" wx:key="value" bindtap="submitFeedback" data-reason="{{item.value}}"><text class="opt-b">{{item.label}}</text><text class="opt-s">{{item.desc}}</text></button>
+          <button class="btn ghost" bindtap="closeFeedback">取消</button>
+        </view>
+      </view>
     </block>
-
-    <block wx:elif="{{isGrandparent && hasInstance}}">
-      <view class="row">
-        <button class="btn" style="flex:1" bindtap="completeInstance">完成</button>
-        <button class="btn ghost" style="flex:1" bindtap="openFeedback">要调整</button>
-      </view>
-      <view class="note">你不能直接改日程；完成会记录执行结果，要调整会通知家长处理。</view>
-    </block>
-
-    <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="closeSheet">
-      <view class="sheet" catchtap="noop">
-        <view class="group-label">改分工：本次由谁负责？</view>
-        <button
-          class="opt {{o.picked ? 'picked' : ''}}"
-          wx:for="{{owners}}"
-          wx:for-item="o"
-          wx:key="member_id"
-          bindtap="reassign"
-          data-id="{{o.member_id}}"
-        ><text class="opt-b">{{o.name}}</text></button>
-        <button class="btn ghost" bindtap="closeSheet">取消</button>
-      </view>
-    </view>
-
-    <view class="sheet-mask" wx:if="{{feedbackOpen}}" bindtap="closeFeedback">
-      <view class="sheet" catchtap="noop">
-        <view class="group-label">{{title}}</view>
-        <view class="muted">要告诉家长哪里需要处理？</view>
-        <button class="opt" wx:for="{{feedbackReasons}}" wx:key="value" bindtap="submitFeedback" data-reason="{{item.value}}">
-          <text class="opt-b">{{item.label}}</text>
-          <text class="opt-s">{{item.desc}}</text>
-        </button>
-        <button class="btn ghost" bindtap="closeFeedback">取消</button>
-      </view>
-    </view>
   </view>
 </view>

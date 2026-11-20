@@ -45,7 +45,7 @@
           </picker>
         </view>
         <view class="rowline tappable" bindtap="exportChildData"><text>导出孩子数据</text><text class="v accent">{{exporting ? '导出中…' : '复制 JSON'}}</text></view>
-        <view class="rowline tappable" bindtap="deleteChildProfile"><text>删除孩子档案</text><text class="v danger">{{deletingChild ? '删除中…' : '需管理员确认'}}</text></view>
+        <view wx:if="{{isAdmin}}" class="rowline tappable" bindtap="deleteChildProfile"><text>删除孩子档案</text><text class="v danger">{{deletingChild ? '删除中…' : '需管理员确认'}}</text></view>
       </view>
 
       <view class="note">设置会先保存在当前设备；孩子数据导出会复制 JSON 到剪贴板。删除孩子档案只移除虚拟成员档案，历史日程/打卡事实记录保留。</view>

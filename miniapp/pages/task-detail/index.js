@@ -58,7 +58,8 @@ Page({
     goalLabel: '',
     freqLabel: '',
     remindLabel: '未设置',
-    checkins: []
+    checkins: [],
+    canManage: false
   },
 
   onLoad(options = {}) {
@@ -80,7 +81,8 @@ Page({
       title: task.title || (task.name ? task.name + ' ' + goalLabel(task.goal_type, task.goal_value) : '打卡任务详情'),
       goalLabel: goalLabel(task.goal_type, task.goal_value),
       freqLabel: freqLabel(task.freq, task.weekly_target),
-      remindLabel: task.remind_time ? task.remind_time + ' 未完成提醒' : '未设置'
+      remindLabel: task.remind_time ? task.remind_time + ' 未完成提醒' : '未设置',
+      canManage: !!app.globalData.isAdmin
     })
     this.refresh()
   },
@@ -99,11 +101,17 @@ Page({
     ])
       .then(([members, checkins]) => {
         const nameMap = {}
-        ;(members || []).forEach((m) => { nameMap[m.member_id] = m.name || m.relation_label || ('成员' + m.member_id) })
+        const currentUserID = app.globalData.user && app.globalData.user.user_id
+        this._currentMemberId = null
+        ;(members || []).forEach((m) => {
+          nameMap[m.member_id] = m.name || m.relation_label || ('成员' + m.member_id)
+          if (m.type !== 'virtual' && currentUserID != null && String(m.user_id) === String(currentUserID)) this._currentMemberId = m.member_id
+        })
         const rows = (checkins || []).slice().reverse().slice(0, 20).map((c) => Object.assign({}, c, {
           timeLabel: timeLabel(c.created_at),
           submitName: nameMap[c.submit_member_id] || '家人',
-          amountLabel: amountLabel(task.goal_type, c.payload)
+          amountLabel: amountLabel(task.goal_type, c.payload),
+          canDelete: !!app.globalData.isAdmin || (this._currentMemberId != null && String(c.submit_member_id) === String(this._currentMemberId))
         }))
         this.setData({
           childName: nameMap[task.child_member_id] || '孩子',
@@ -119,6 +127,7 @@ Page({
   },
 
   editTask() {
+    if (!this.data.canManage) return wx.showToast({ title: '只有管理员可以编辑任务', icon: 'none' })
     const t = this.data.task
     wx.navigateTo({
       url: '/pages/task/index?edit=1' +
@@ -135,6 +144,7 @@ Page({
   },
 
   pauseTask() {
+    if (!this.data.canManage) return wx.showToast({ title: '只有管理员可以暂停提醒', icon: 'none' })
     const t = this.data.task
     wx.showModal({
       title: '暂停提醒',
@@ -166,6 +176,7 @@ Page({
   },
 
   archiveTask() {
+    if (!this.data.canManage) return wx.showToast({ title: '只有管理员可以归档任务', icon: 'none' })
     const t = this.data.task
     wx.showModal({
       title: '归档任务',
@@ -187,6 +198,8 @@ Page({
   deleteCheckin(e) {
     const id = e.currentTarget.dataset.id
     if (!id) return
+    const row = (this.data.checkins || []).find((item) => String(item.checkin_id) === String(id))
+    if (!this.canDeleteCheckin(row)) return wx.showToast({ title: '只能删除自己提交的打卡记录', icon: 'none' })
     wx.showModal({
       title: '删除打卡记录',
       content: '删除后会影响连续天数、周报和成长时间线统计，确认删除？',
@@ -202,6 +215,10 @@ Page({
           .catch((e) => wx.showToast({ title: e.message || '删除失败', icon: 'none' }))
       }
     })
+  },
+
+  canDeleteCheckin(checkin) {
+    return !!checkin && (!!app.globalData.isAdmin || (this._currentMemberId != null && String(checkin.submit_member_id) === String(this._currentMemberId)))
   },
 
   goBack() { wx.navigateBack() }

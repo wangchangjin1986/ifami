@@ -1,27 +1,49 @@
 <view class="page">
   <view class="app-head">
     <text class="back" bindtap="goBack">‹ 返回</text>
-    <text class="title">加入「{{familyName}}」</text>
+    <text class="title">加入家人的家庭</text>
   </view>
 
   <view class="body">
-    <view class="muted">{{desc}}</view>
-    <view wx:if="{{isAdminInvite}}" class="banner"><text class="bt">管理员邀请</text><text>加入后可录入和编辑日程、管理成员。</text></view>
+    <view class="muted">输入家人当面展示的「家庭加入码」；确认前会显示服务端校验出的实际家庭。</view>
 
     <view class="card">
-      <view class="ev-title">第 1 步 · 微信授权</view>
-      <view class="ev-meta">✅ 已完成</view>
+      <view class="ev-title">第 1 步 · 输入家庭加入码</view>
+      <button class="btn ghost" bindtap="scanCode">📷 扫码加入（只扫管理员屏幕上的码）</button>
+      <view class="muted">或手输 6 位数字码</view>
+      <input class="code-input" type="number" maxlength="6" placeholder="如 482913" model:value="{{joinCode}}" bindinput="onCodeInput" />
+      <button class="btn ghost" bindtap="previewJoinCode" disabled="{{previewing || joinCode.length !== 6}}">{{previewing ? '正在校验…' : '校验加入码'}}</button>
+      <view wx:if="{{errorText}}" class="error-text">{{errorText}}</view>
     </view>
+
     <view class="card">
-      <view class="ev-title">第 2 步 · 提醒通道</view>
-      <view class="ev-meta">可在设置中补充手机号；服务号提醒后续开放</view>
+      <view class="ev-title">第 2 步 · 你的身份是？</view>
+      <button wx:for="{{identityOptions}}" wx:key="value" class="identity-card {{identity === item.value ? 'on' : ''}}" data-identity="{{item.value}}" bindtap="selectIdentity">
+        <text class="identity-title">{{item.label}}</text>
+        <text class="identity-desc">{{item.desc}}</text>
+      </button>
     </view>
+
     <view class="card">
-      <view class="ev-title">第 3 步 · {{relationTitle}}</view>
-      <view class="filters" style="margin-top:12rpx">
-        <view class="chip {{relationIndex === i ? 'on' : ''}}" wx:for="{{relations}}" wx:for-index="i" wx:key="*this" bindtap="selectRelation" data-i="{{i}}">{{item}}</view>
+      <view class="ev-title">第 3 步 · 你的称谓是？</view>
+      <view class="filters">
+        <view wx:for="{{relations}}" wx:key="*this" class="chip {{relation === item ? 'on' : ''}}" data-relation="{{item}}" bindtap="selectRelation">{{item}}</view>
       </view>
     </view>
-    <button class="btn" bindtap="join" disabled="{{joining}}">完成，进入家庭</button>
+
+    <view class="card confirm-card {{previewReady ? '' : 'pending'}}">
+      <view class="ev-title">第 4 步 · 确认加入</view>
+      <view class="rowline"><text>家庭</text><text class="v">{{previewReady ? familyName : '校验加入码后显示'}}</text></view>
+      <view class="rowline"><text>身份</text><text class="v">{{identity === 'parent' ? '家长' : (identity === 'grandparent' ? '祖辈' : '阿姨')}}</text></view>
+      <view class="rowline"><text>称谓</text><text class="v">{{relation}}</text></view>
+      <view wx:if="{{previewReady && expiresText}}" class="muted">加入码有效至 {{expiresText}}</view>
+      <view class="muted">家长加入后默认普通家长；管理员权限只能由家庭管理员另行授予。</view>
+    </view>
+
+    <button class="btn" bindtap="confirmJoin" disabled="{{joining || !previewReady}}">{{joining ? '正在确认…' : '确认，加入家庭'}}</button>
+    <view wx:if="{{joinedNeedsRefresh}}" class="banner">
+      <view class="bt">{{joinedMessage}}</view>
+      <button class="btn ghost" bindtap="retryRefresh">重试刷新家庭信息</button>
+    </view>
   </view>
 </view>

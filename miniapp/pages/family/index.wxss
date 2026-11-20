@@ -9,3 +9,6 @@
 .invite-row { display: flex; align-items: center; gap: 16rpx; }
 .invite-token { flex: 1; font-size: 22rpx; color: var(--muted); word-break: break-all; }
 .invite-copy { color: var(--accent); font-size: 26rpx; }
+.join-code-sheet { max-height: 88vh; overflow-y: auto; }
+.join-code-canvas { display: block; width: 420rpx; height: 420rpx; margin: 24rpx auto; background: #fff; border-radius: 16rpx; }
+.join-code-number { font-family: monospace; font-size: 38rpx; font-weight: 700; letter-spacing: 8rpx; color: var(--text); }
