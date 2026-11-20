@@ -237,7 +237,7 @@ body {
     <button id="preview-exit">退出预览</button>
   </div>
 
-  <!-- 照护人：跨家庭聚合今日视图（无 Tab，祖辈/保姆阿姨共用） -->
+  <!-- 照护人：当前家庭本人分工今日视图（无 Tab，祖辈/保姆阿姨共用） -->
   <section class="screen" id="scr-gp" hidden>
     <div class="app-head"><h1 class="gp-head-date">今天 10月26日 星期一</h1><span class="sub" id="gp-settings" style="margin-left:auto;color:var(--accent)">设置</span></div>
     <div class="body">
@@ -248,13 +248,6 @@ body {
         <div class="gp-meta">📍 实验二小 东门<br>🎒 带：水壶、外套</div>
         <div class="gp-actions"><button class="done" data-complete="接乐乐放学">完成</button><button class="adjust" data-feedback="接乐乐放学" data-reason="要调整">要调整</button></div>
       </div>
-      <div class="gp-card">
-        <div class="gp-family">果果家 · 果果</div>
-        <div class="gp-time">17:30</div>
-        <div class="gp-title">送果果上舞蹈课</div>
-        <div class="gp-meta">📍 少儿艺术中心 2 楼<br>🎒 带：舞蹈鞋</div>
-        <div class="gp-actions"><button class="done" data-complete="送果果上舞蹈课">完成</button><button class="adjust" data-feedback="送果果上舞蹈课" data-reason="要调整">要调整</button></div>
-      </div>
       <div class="tomorrow">明天 · 乐乐家 07:30 送乐乐上学</div>
       <button class="big-call" id="gp-call">📞 联系家长</button>
       <div class="note">这里只显示分配给本人的事项，不显示家庭其他成员安排；「完成」用于快速确认已执行，「要调整」会通知家长处理。</div>
@@ -263,7 +256,7 @@ body {
 
   <!-- 父母：今日 -->
   <section class="screen" id="scr-today" hidden>
-    <div class="app-head"><h1>今天</h1><span class="sub">10月26日 周一 · <a href="#" id="fam-switch1" style="color:var(--accent)">乐乐家 ▾</a></span></div>
+    <div class="app-head"><h1>今天</h1><span class="sub">10月26日 周一 · 乐乐家</span></div>
     <div class="body">
       <div class="card tappable" data-event="送果果上幼儿园"><div class="ev"><div class="ev-time">07:30</div><div class="ev-main"><div class="ev-title">送果果上幼儿园 <span class="chip">爸爸</span></div><div class="ev-meta">蓝天幼儿园 · 带汗巾</div></div></div></div>
       <div class="card tappable" data-event="接乐乐放学"><div class="ev"><div class="ev-time">16:30</div><div class="ev-main"><div class="ev-title">接乐乐放学 <span class="chip">奶奶</span></div><div class="ev-meta">实验二小 东门 · 带水壶、外套</div></div></div></div>
@@ -658,10 +651,10 @@ body {
 
   <!-- 家庭 -->
   <section class="screen" id="scr-family" hidden>
-    <div class="app-head"><h1>家庭</h1><span class="sub">乐乐家 ▾</span></div>
+    <div class="app-head"><h1>家庭</h1><span class="sub">乐乐家</span></div>
     <div class="body">
       <div class="card member" data-member="妈妈"><div class="avatar">妈</div><div class="ev-main"><div class="ev-title">妈妈 <span class="chip">管理员</span></div><div class="ev-meta">138****1234 · 服务号已绑</div></div></div>
-      <div class="card member" data-member="爸爸"><div class="avatar">爸</div><div class="ev-main"><div class="ev-title">爸爸</div><div class="ev-meta">139****5678 · 服务号已绑</div></div></div>
+      <div class="card member" data-member="爸爸"><div class="avatar">爸</div><div class="ev-main"><div class="ev-title">爸爸 <span class="chip gray">普通家长</span></div><div class="ev-meta">四 Tab · 查看家庭安排、参与打卡 · 无录入/编辑权限</div></div></div>
       <div class="card member" data-member="奶奶"><div class="avatar">奶</div><div class="ev-main"><div class="ev-title">奶奶 <span class="chip gray">照护人</span></div><div class="ev-meta">136****9012 · 服务号 + 短信兜底</div></div></div>
       <div class="card member" data-member="接送阿姨"><div class="avatar">姨</div><div class="ev-main"><div class="ev-title">接送阿姨 <span class="chip gray">照护人</span></div><div class="ev-meta">只看今日安排 · 可完成/要调整</div></div></div>
       <div class="card member" data-member="乐乐"><div class="avatar">乐</div><div class="ev-main"><div class="ev-title">乐乐 <span class="chip gray">孩子档案</span></div><div class="ev-meta">三年级 · 虚拟成员，由父母代管</div></div></div>
@@ -735,7 +728,7 @@ body {
       <div class="card">
         <div class="ev-title" style="margin-bottom:8px">第 2 步 · 你的身份是？</div>
         <div class="identity" id="join-identities">
-          <button class="identity-card on" data-identity="parent"><b>家长</b><span>一起管理日程和打卡，进入完整四 Tab</span></button>
+          <button class="identity-card on" data-identity="parent"><b>家长</b><span>查看家庭安排、参与打卡，进入完整四 Tab；默认无录入/编辑入口</span></button>
           <button class="identity-card" data-identity="grandparent"><b>祖辈</b><span>只看分配给本人的接送/陪课安排，完成或要调整</span></button>
           <button class="identity-card" data-identity="caregiver"><b>阿姨</b><span>只看今天需要你处理的安排，文案显示为照护人</span></button>
         </div>
@@ -746,10 +739,10 @@ body {
       </div>
       <div class="card">
         <div class="ev-title" style="margin-bottom:8px">第 4 步 · 确认加入</div>
-        <div class="rowline"><span>家庭</span><span class="v">乐乐家</span></div>
+        <div class="rowline"><span>家庭</span><span class="v" id="join-confirm-family">输入加入码后显示</span></div>
         <div class="rowline"><span>身份</span><span class="v" id="join-confirm-identity">家长</span></div>
         <div class="rowline"><span>称谓</span><span class="v" id="join-confirm-rel">妈妈</span></div>
-        <div class="muted" style="margin-top:6px">家长加入后默认普通家长；管理员权限由管理员在成员管理中单独授予。</div>
+        <div class="muted" style="margin-top:6px">家庭名称由加入码校验结果填入；原型使用示例家庭。家长加入后默认普通家长，仅可查看四 Tab、参与打卡；管理员权限由管理员在成员管理中单独授予。</div>
       </div>
       <button class="btn" id="btn-join">确认，加入家庭</button>
     </div>
@@ -1318,13 +1311,13 @@ body {
   document.getElementById('invite-void').addEventListener('click', function () { toast('加入码已作废，需重新生成才能加入'); });
   document.getElementById('onboard-create').addEventListener('click', function () { navTab('scr-week'); });
   document.getElementById('onboard-join').addEventListener('click', function () { nav('scr-invite'); });
-  document.getElementById('join-scan').addEventListener('click', function () { toast('原型演示：扫码成功，已填入加入码'); });
 
   // 加入身份选择：家长/祖辈/阿姨，切换对应称谓
   var JOIN_REL = { parent: ['妈妈', '爸爸', '其他家长'], grandparent: ['奶奶', '爷爷', '姥姥', '姥爷'], caregiver: ['阿姨', '保姆阿姨', '接送阿姨'] };
   var JOIN_IDENTITY_LABEL = { parent: '家长', grandparent: '祖辈', caregiver: '阿姨（照护人）' };
   var joinIdentity = 'parent';
   var joinRelText = '妈妈';
+  var joinFamilyName = '';
   function renderJoinRel() {
     var box = document.getElementById('join-rel');
     joinRelText = (JOIN_REL[joinIdentity] || [])[0];
@@ -1342,9 +1335,22 @@ body {
     renderJoinConfirm();
   }
   function renderJoinConfirm() {
+    document.getElementById('join-confirm-family').textContent = joinFamilyName || '输入加入码后显示';
     document.getElementById('join-confirm-identity').textContent = JOIN_IDENTITY_LABEL[joinIdentity];
     document.getElementById('join-confirm-rel').textContent = joinRelText;
   }
+  function previewJoinCode(code) {
+    joinFamilyName = code.length === 6 ? '乐乐家（原型示例）' : '';
+    renderJoinConfirm();
+  }
+  document.getElementById('join-code').addEventListener('input', function (e) {
+    previewJoinCode(e.target.value.trim());
+  });
+  document.getElementById('join-scan').addEventListener('click', function () {
+    document.getElementById('join-code').value = '482913';
+    previewJoinCode('482913');
+    toast('原型演示：扫码成功，已展示示例家庭');
+  });
   Array.prototype.forEach.call(document.querySelectorAll('#join-identities .identity-card'), function (b) {
     b.addEventListener('click', function () {
       Array.prototype.forEach.call(document.querySelectorAll('#join-identities .identity-card'), function (x) { x.classList.remove('on'); });
@@ -1364,7 +1370,6 @@ body {
   document.getElementById('btn-settings').addEventListener('click', function () { nav('scr-settings'); });
   document.getElementById('entry-permission-card').addEventListener('click', function () { toast('只有管理员才能录入'); });
   document.getElementById('btn-share-report').addEventListener('click', function () { toast('原型演示：转发到微信（略）'); });
-  document.getElementById('fam-switch1').addEventListener('click', function (e) { e.preventDefault(); toast('原型演示：多家庭切换（略）'); });
   // 成员详情 + 预览 Ta 的视图
   var currentMember = '妈妈';
   var previewBar = document.getElementById('preview-bar');
