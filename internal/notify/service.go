@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"ifami/internal/pkg/httpx"
 	"ifami/internal/pkg/logx"
 	"strconv"
 	"strings"
@@ -15,6 +16,8 @@ import (
 // Identity 是 notify 对 identity 模块的最小依赖（消费方定义接口，发订阅消息需 openid）。
 type Identity interface {
 	OpenID(ctx context.Context, userID uint64) (string, error)
+	// RequireActive returns public identity membership denial codes 1005/1014;
+	// operational errors remain retryable and must propagate.
 	RequireActive(ctx context.Context, userID, familyID uint64) (uint64, string, error)
 	AdminUserIDs(ctx context.Context, familyID uint64) ([]uint64, error)
 	BackupUserIDs(ctx context.Context, familyID uint64) ([]uint64, error)
@@ -368,7 +371,11 @@ func (s *Service) scheduleJobVisibility(ctx context.Context, job *NotifyJob) (bo
 	}
 	_, role, err := s.id.RequireActive(ctx, job.TargetUserID, job.FamilyID)
 	if err != nil {
-		return false, nil
+		var denial *httpx.Err
+		if errors.As(err, &denial) && denial.HTTP == 403 && (denial.Code == 1005 || denial.Code == 1014) {
+			return false, nil
+		}
+		return false, err
 	}
 	if typ == "schedule_unassigned" {
 		job.Payload = genericSchedulePayload("schedule_unassigned", role)

@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 )
 
 type fakeIdentity struct {
+	activeErr error
 	roles     map[uint64]string
 	active    map[uint64]map[uint64]bool
 	backup    map[uint64][]uint64
@@ -38,6 +40,9 @@ func (f fakeIdentity) OpenID(_ context.Context, userID uint64) (string, error) {
 }
 
 func (f fakeIdentity) RequireActive(_ context.Context, userID, familyID uint64) (uint64, string, error) {
+	if f.activeErr != nil {
+		return 0, "", f.activeErr
+	}
 	if f.active[familyID] != nil && f.active[familyID][userID] {
 		role := "parent"
 		if f.roles[userID] != "" {
@@ -68,6 +73,7 @@ func (f fakeIdentity) BackupUserIDs(ctx context.Context, familyID uint64) ([]uin
 
 type fakeNotifyStore struct {
 	created       []*NotifyJob
+	updateCount   int
 	updatedStatus string
 	reddots       []NotifyJob
 }
@@ -92,6 +98,7 @@ func (f *fakeNotifyStore) ListReddotJobs(context.Context, uint64, uint64) ([]Not
 }
 
 func (f *fakeNotifyStore) UpdateJob(_ context.Context, _ uint64, updates map[string]any) error {
+	f.updateCount++
 	if s, ok := updates["status"].(string); ok {
 		f.updatedStatus = s
 	}
@@ -269,5 +276,61 @@ func TestTaskNotificationRetainsPayload(t *testing.T) {
 	}
 	if len(ch.sent) != 1 || ch.payloads[0]["title"] != "阅读" {
 		t.Fatal(ch.payloads)
+	}
+}
+
+func TestScheduleIdentityOperationalErrorKeepsJobsRetryable(t *testing.T) {
+	for _, failure := range []error{errors.New("database connection unavailable"), context.Canceled, context.DeadlineExceeded, &httpx.Err{Code: 1006, HTTP: 403, Message: "other permission error"}} {
+		for _, phase := range []string{"pending", "sent", "reddot", "read"} {
+			t.Run(fmt.Sprintf("%v/%s", failure, phase), func(t *testing.T) {
+				store := &fakeNotifyStore{}
+				ch := &fakeChannel{}
+				scope := &scopeDecision{allowed: true}
+				svc := &Service{store: store, id: fakeIdentity{activeErr: failure}, channel: ch, schedules: scope}
+				job := &NotifyJob{JobID: 7, FamilyID: 100, TargetUserID: 20, Level: LevelStrong, Status: phase, Payload: map[string]any{"type": "schedule_reminder", "instance_id": uint64(7)}}
+				var err error
+				switch phase {
+				case "pending":
+					err = svc.processPending(context.Background(), job, testNow)
+				case "sent":
+					err = svc.escalateReddot(context.Background(), job, testNow)
+				case "reddot":
+					err = svc.escalateBackup(context.Background(), job, testNow)
+				case "read":
+					store.reddots = []NotifyJob{*job}
+					_, err = svc.ListReddotJobs(context.Background(), 20, 100)
+				}
+				if !errors.Is(err, failure) {
+					t.Fatalf("operational error=%v want%v", err, failure)
+				}
+				if store.updateCount != 0 || len(store.created) != 0 || len(ch.sent) != 0 || len(scope.calls) != 0 {
+					t.Fatalf("operational failure changed job: updates%d created%d sends%v scope%v", store.updateCount, len(store.created), ch.sent, scope.calls)
+				}
+			})
+		}
+	}
+}
+func TestScheduleExplicitMembershipDenialTerminatesHiddenJobs(t *testing.T) {
+	for _, code := range []int{1005, 1014} {
+		for _, phase := range []string{"pending", "sent", "reddot"} {
+			t.Run(fmt.Sprintf("%d/%s", code, phase), func(t *testing.T) {
+				store := &fakeNotifyStore{}
+				ch := &fakeChannel{}
+				svc := &Service{store: store, id: fakeIdentity{activeErr: fmt.Errorf("membership: %w", &httpx.Err{Code: code, HTTP: 403, Message: "membership denied"})}, channel: ch, schedules: &scopeDecision{allowed: true}}
+				job := &NotifyJob{JobID: 7, FamilyID: 100, TargetUserID: 20, Level: LevelStrong, Status: phase, Payload: map[string]any{"type": "schedule_reminder", "instance_id": uint64(7)}}
+				var err error
+				switch phase {
+				case "pending":
+					err = svc.processPending(context.Background(), job, testNow)
+				case "sent":
+					err = svc.escalateReddot(context.Background(), job, testNow)
+				case "reddot":
+					err = svc.escalateBackup(context.Background(), job, testNow)
+				}
+				if err != nil || store.updatedStatus != StatusDone || store.updateCount != 1 || len(store.created) != 0 || len(ch.sent) != 0 {
+					t.Fatalf("membership denial err%v status%s updates%d", err, store.updatedStatus, store.updateCount)
+				}
+			})
+		}
 	}
 }

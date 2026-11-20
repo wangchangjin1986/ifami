@@ -106,3 +106,28 @@ $ git diff --check
 - 待发送/红点/升级 scope 读取与外部发送不是跨模块长事务；本实现遵循确认方案，在每次操作前重验，不持 MySQL 锁跨网络发送。成员撤权与业务事务也未引入跨模块锁。
 - 真实 MySQL 用于实例事务、持锁交错、HTTP业务数据、事件/反馈实际行数与新消息稳定 ID；notification 出站通过 fake notifier/channel 验证，未发送微信订阅消息，未声称真机到达/回执通过。
 - 无小程序代码改动；Task4 必须同步新详情加载契约、空态与失效消息状态。此任务没有真机/开发者工具测试。
+
+## 评审修复第 1 轮（基线 2675296）
+
+评审指出 `scheduleJobVisibility` 将所有 identity.RequireActive 错误当作确定不可见，worker 随后置 done，可能永久丢弃临时数据库故障下的有效提醒。已修复：消费公开 `httpx.Err` 错误契约，仅 `HTTP403 + Code1005(不是家庭成员)/1014(已移出家庭)`（支持 errors.As 包装）视为确定 membership denial；其他错误原样返回，保持原 job 可重试。没有 import identity 或修改 identity/前端，ScheduleVisibility/HTTP 契约不变。
+
+新增 `TestScheduleIdentityOperationalErrorKeepsJobsRetryable` 覆盖数据库连接错误、context.Canceled、context.DeadlineExceeded 和其他403错误；每种分别覆盖 pending、sent 升红点、reddot 升备份及红点读取。断言原错误传播、零 UpdateJob（含非状态更新）、零发送、零备份创建及不调用日程 scope。新增 `TestScheduleExplicitMembershipDenialTerminatesHiddenJobs` 覆盖包装后的1005/1014，确认三个 worker 阶段终止为 done、不发送、不创建备份。
+
+验证：
+
+```text
+# 实现前 RED
+$ go test ./internal/notify -run 'TestScheduleIdentityOperationalError|TestScheduleExplicitMembershipDenial' -count=1
+FAIL exit1：四类非 membership-denial 错误在三个 worker 阶段被吞，12个子用例失败；read 子用例本就正确传播。
+
+# 实现后 GREEN
+$ go test ./internal/notify -run 'TestScheduleIdentityOperationalError|TestScheduleExplicitMembershipDenial' -count=1
+ok ifami/internal/notify 0.811s
+$ go test ./internal/notify -count=1
+ok ifami/internal/notify 0.671s
+$ go vet ./internal/notify
+$ git diff --check
+# 均 exit0，后两者无错误输出。
+```
+
+本轮仅修改 notify/service.go、notify/service_test.go 及此报告；遵照控制器安排，没有重复全仓套件或改动其他模块。
