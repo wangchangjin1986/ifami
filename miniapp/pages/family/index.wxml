@@ -119,7 +119,7 @@
 
         <view wx:if="{{joinCodeStatus === 'loading'}}" class="empty">正在读取家庭加入码…</view>
         <view wx:elif="{{joinCodeStatus === 'active'}}">
-          <canvas class="join-code-canvas" canvas-id="join-code-qr" style="width:420rpx;height:420rpx"></canvas>
+          <canvas class="join-code-canvas" canvas-id="join-code-qr" style="width:{{joinCodeCanvasSize}}px;height:{{joinCodeCanvasSize}}px"></canvas>
           <view class="rowline"><text>加入码（可手输）</text><text class="join-code-number">{{joinCodeDisplay}}</text></view>
           <view class="muted">有效至 {{joinCodeExpiresText}}</view>
           <view class="muted">加入者会自行选择家长 / 祖辈 / 阿姨；新成员默认不是管理员。</view>

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
-const jsQR = require('/tmp/ifami_join_validation_tools/node_modules/jsqr')
+const jsQR = require('jsqr')
 
 const ROOT = path.resolve(__dirname, '..')
 
@@ -109,6 +109,36 @@ function qrPixels(matrix, scale = 6, quiet = 4) {
   return { data, size }
 }
 
+function rasterCanvas(size) {
+  const data = new Uint8ClampedArray(size * size * 4)
+  data.fill(255)
+  let color = '#FFFFFF'
+  const ctx = {
+    setFillStyle(value) { color = value },
+    fillRect(left, top, width, height) {
+      const value = color === '#FFFFFF' ? 255 : 0
+      const x0 = Math.max(0, Math.floor(left)); const y0 = Math.max(0, Math.floor(top))
+      const x1 = Math.min(size, Math.ceil(left + width)); const y1 = Math.min(size, Math.ceil(top + height))
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const p = (y * size + x) * 4
+          data[p] = data[p + 1] = data[p + 2] = value
+          data[p + 3] = 255
+        }
+      }
+    },
+    draw() {}
+  }
+  return { ctx, data, size }
+}
+
+function deferred() {
+  let resolve
+  let reject
+  const promise = new Promise((ok, fail) => { resolve = ok; reject = fail })
+  return { promise, resolve, reject }
+}
+
 const tests = []
 function test(name, fn) { tests.push({ name, fn }) }
 
@@ -119,6 +149,42 @@ test('本地二维码可被独立 jsQR 解出完整协议', () => {
   const decoded = jsQR(pixels.data, pixels.size, pixels.size, { inversionAttempts: 'dontInvert' })
   assert.ok(decoded)
   assert.equal(decoded.data, payload)
+})
+
+test('家庭码页面按320/375/414设备实际canvas像素绘制且均可解码', () => {
+  const payload = 'IFAMI_JOIN_V1:004219:0123456789abcdef0123456789abcdef:42.1795200000.signature'
+  const markup = fs.readFileSync(path.join(ROOT, 'pages/family/index.wxml'), 'utf8')
+  assert.match(markup, /width:\{\{joinCodeCanvasSize\}\}px;height:\{\{joinCodeCanvasSize\}\}px/)
+  for (const windowWidth of [320, 375, 414]) {
+    const app = baseApp({ globalData: { token: 't', user: { user_id: 7 }, memberships: [], familyId: 42, role: 'parent', isAdmin: true } })
+    let raster
+    const loaded = loadPage('pages/family/index', app, {
+      getSystemInfoSync: () => ({ windowWidth }),
+      hideShareMenu: () => {},
+      createCanvasContext: () => raster.ctx
+    })
+    loaded.page.onLoad()
+    loaded.page.data.inviteSheet = true
+    loaded.page.data.isAdmin = true
+    raster = rasterCanvas(loaded.page.data.joinCodeCanvasSize)
+    const previousWx = global.wx
+    global.wx = { createCanvasContext: () => raster.ctx }
+    try {
+      assert.equal(loaded.page.showJoinCode({
+        has_code: true,
+        join_code: '004219',
+        generation_id: '0123456789abcdef0123456789abcdef',
+        qr_content: payload,
+        expires_at: new Date(Date.now() + 3600000).toISOString()
+      }), true)
+    } finally {
+      global.wx = previousWx
+    }
+    assert.equal(raster.size, Math.floor(windowWidth * 420 / 750))
+    const decoded = jsQR(raster.data, raster.size, raster.size, { inversionAttempts: 'dontInvert' })
+    assert.ok(decoded, `windowWidth=${windowWidth} 应可解码`)
+    assert.equal(decoded.data, payload)
+  }
 })
 
 test('扫码仅接受完整 IFAMI 协议，拒绝外链和残缺字段', () => {
@@ -241,6 +307,63 @@ test('confirm 已成功但 refreshMe 失败时明确保留成功并可重试落�
   assert.deepEqual(navigations, ['/pages/today/index'])
 })
 
+test('未知结果恢复期间双击只启动一条/me链并保持锁到恢复成功', async () => {
+  const me = deferred()
+  let meCalls = 0
+  let confirmCalls = 0
+  const app = baseApp({
+    refreshMe() {
+      meCalls++
+      return me.promise.then(() => {
+        this.globalData.memberships = [{ family_id: 42, member_id: 99, role: 'parent', is_admin: false }]
+      })
+    },
+    request: () => { confirmCalls++; return Promise.resolve() }
+  })
+  const { page } = loadPage('pages/invite/index', app, { reLaunch: () => {} })
+  Object.assign(page.data, {
+    joinCode: '482913', identity: 'parent', relation: '爸爸', previewReady: true, joinOutcomeUnknown: true,
+    preview: { family_id: 42, join_code: '482913', generation_id: 'a'.repeat(32), credential: 'cred' }
+  })
+  const first = page.confirmJoin()
+  const second = page.confirmJoin()
+  assert.equal(page.data.joining, true)
+  assert.equal(meCalls, 1)
+  assert.equal(confirmCalls, 0)
+  me.resolve()
+  await Promise.all([first, second])
+  assert.equal(confirmCalls, 0)
+  assert.equal(page.data.joining, false)
+})
+
+test('未知结果恢复未找到membership时双击只confirm一次且链结束后可重试', async () => {
+  const me = deferred()
+  let meCalls = 0
+  let confirmCalls = 0
+  const app = baseApp({
+    refreshMe() { meCalls++; return me.promise },
+    request: () => {
+      confirmCalls++
+      return Promise.reject(Object.assign(new Error('暂时不可用'), { code: 1012, statusCode: 503 }))
+    }
+  })
+  const { page } = loadPage('pages/invite/index', app)
+  Object.assign(page.data, {
+    joinCode: '482913', identity: 'parent', relation: '爸爸', previewReady: true, joinOutcomeUnknown: true,
+    preview: { family_id: 42, join_code: '482913', generation_id: 'a'.repeat(32), credential: 'cred' }
+  })
+  const first = page.confirmJoin()
+  const second = page.confirmJoin()
+  assert.equal(page.data.joining, true)
+  assert.equal(meCalls, 1)
+  me.resolve()
+  await Promise.all([first, second])
+  assert.equal(confirmCalls, 1)
+  assert.equal(page.data.joining, false)
+  assert.equal(page.data.joinCode, '482913')
+  assert.equal(page.data.previewReady, true)
+})
+
 test('详情在授权 GET 成功前不采用 URL 业务数据，403 后保持安全错误态', async () => {
   let rejectDetail
   const app = baseApp({ request: (url) => url.includes('/v1/schedules/instances/')
@@ -285,6 +408,45 @@ test('打卡删除只给管理员或稳定 submit_member_id 对应本人', async
   ]
   assert.equal(page.canDeleteCheckin(page.data.checkins[0]), true)
   assert.equal(page.canDeleteCheckin(page.data.checkins[1]), false)
+})
+
+test('timeline实际页面仅允许管理员或稳定原提交者纠错且缺元数据失败关闭', async () => {
+  let deleteRequests = 0
+  const app = baseApp({
+    globalData: { token: 't', user: { user_id: 7 }, memberships: [], familyId: 1, role: 'parent', isAdmin: false },
+    refreshMe: () => Promise.resolve(),
+    request: (url, options = {}) => {
+      if (url.includes('/members')) return Promise.resolve([
+        { member_id: 11, type: 'virtual', name: '乐乐' },
+        { member_id: 22, type: 'real', user_id: 7, relation_label: '妈妈' },
+        { member_id: 23, type: 'real', user_id: 8, relation_label: '爸爸' }
+      ])
+      if (url === '/v1/tasks') return Promise.resolve([{ task_id: 1, name: '阅读', goal_type: 'timer', goal_value: 20 }])
+      if (url.includes('/schedules/instances')) return Promise.resolve([])
+      if (url.startsWith('/v1/checkins?')) return Promise.resolve([
+        { checkin_id: 1, task_id: 1, child_member_id: 11, submit_member_id: 22, created_at: '2026-11-20T08:00:00Z' },
+        { checkin_id: 2, task_id: 1, child_member_id: 11, submit_member_id: 23, created_at: '2026-11-20T09:00:00Z' },
+        { checkin_id: 3, task_id: 1, child_member_id: 11, created_at: '2026-11-20T10:00:00Z' }
+      ])
+      if (url.startsWith('/v1/checkins/')) { deleteRequests++; return Promise.resolve() }
+      return Promise.resolve([])
+    }
+  })
+  const loaded = loadPage('pages/timeline/index', app)
+  await loaded.page.loadTimeline()
+  const byID = Object.fromEntries(loaded.page.data.entries.filter((x) => x.kind === 'checkin').map((x) => [x.checkinId, x]))
+  assert.equal(byID[1].canDelete, true)
+  assert.equal(byID[2].canDelete, false)
+  assert.equal(byID[3].canDelete, false)
+  loaded.page.refresh = () => Promise.resolve()
+  loaded.page.deleteCheckin({ currentTarget: { dataset: { id: 2 } } })
+  loaded.page.deleteCheckin({ currentTarget: { dataset: { id: 3 } } })
+  assert.equal(deleteRequests, 0)
+  loaded.page.deleteCheckin({ currentTarget: { dataset: { id: 1 } } })
+  await settle()
+  assert.equal(deleteRequests, 1)
+  const markup = fs.readFileSync(path.join(ROOT, 'pages/timeline/index.wxml'), 'utf8')
+  assert.match(markup, /item\.canDelete/)
 })
 
 test('照护人今日只请求当前家庭，空态文案固定为本人分工', async () => {

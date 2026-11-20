@@ -1,7 +1,7 @@
 // 家庭页：登录入口 + 建家庭 + 成员列表（avatar + 角色 chip），对齐 prototype scr-family。
 // 管理员可点成员卡片进入管理面板：名称/身份配置 + 角色选择 + 管理员设置 + 移除（对齐 prototype scr-member）。
 const app = getApp()
-const { drawCanvas } = require('../../utils/qrcode')
+const { canvasPixelSize, drawCanvas } = require('../../utils/qrcode')
 
 const ROLE_LABEL = { admin: '管理员', parent: '家长', grandparent: '照护人', child: '孩子' }
 const ROLE_OPTIONS_REAL = [
@@ -69,6 +69,7 @@ Page({
     joinCodeDisplay: '',
     joinCodeGeneration: '',
     joinCodeQR: '',
+    joinCodeCanvasSize: 210,
     joinCodeExpiresText: '',
     joinCodeError: '',
     sheetOpen: false,
@@ -80,6 +81,12 @@ Page({
   onLoad() {
     if (wx.hideShareMenu) wx.hideShareMenu({ menus: ['shareAppMessage', 'shareTimeline'] })
     this._joinCodeSerial = 0
+    let windowInfo = null
+    try { if (wx.getWindowInfo) windowInfo = wx.getWindowInfo() } catch (e) {}
+    if (!windowInfo || !windowInfo.windowWidth) {
+      try { if (wx.getSystemInfoSync) windowInfo = wx.getSystemInfoSync() } catch (e) {}
+    }
+    this.setData({ joinCodeCanvasSize: canvasPixelSize(windowInfo && windowInfo.windowWidth) })
   },
 
   onShow() {
@@ -285,7 +292,9 @@ Page({
       joinCodeError: ''
     }, () => {
       const render = () => {
-        if (this.data.joinCodeStatus === 'active' && this.data.joinCodeQR === view.qr_content) drawCanvas('join-code-qr', view.qr_content, 420, 4)
+        if (this.data.joinCodeStatus === 'active' && this.data.joinCodeQR === view.qr_content) {
+          drawCanvas('join-code-qr', view.qr_content, this.data.joinCodeCanvasSize, 4)
+        }
       }
       if (wx.nextTick) wx.nextTick(render); else setTimeout(render, 0)
     })

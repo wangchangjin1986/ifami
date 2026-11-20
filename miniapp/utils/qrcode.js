@@ -14,6 +14,13 @@ function createMatrix(content) {
     Array.from({ length: count }, (_, col) => qr.isDark(row, col)))
 }
 
+function canvasPixelSize(windowWidth, canvasRpx = 420) {
+  const width = Number(windowWidth)
+  if (!Number.isFinite(width) || width <= 0) return 210
+  // rpx 按 750 设计宽换算；向下取整确保任何亚像素布局都不会裁掉右/下 quiet zone。
+  return Math.max(1, Math.floor(width * canvasRpx / 750))
+}
+
 function drawCanvas(canvasId, content, size = 420, quietZone = 4) {
   const matrix = createMatrix(content)
   const count = matrix.length
@@ -35,4 +42,4 @@ function drawCanvas(canvasId, content, size = 420, quietZone = 4) {
   return matrix
 }
 
-module.exports = { createMatrix, drawCanvas }
+module.exports = { createMatrix, canvasPixelSize, drawCanvas }
