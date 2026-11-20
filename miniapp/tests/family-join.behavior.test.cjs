@@ -2,6 +2,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
+const crypto = require('node:crypto')
 const jsQR = require('jsqr')
 
 const ROOT = path.resolve(__dirname, '..')
@@ -109,6 +110,15 @@ function qrPixels(matrix, scale = 6, quiet = 4) {
   return { data, size }
 }
 
+function realJoinPayload(familyId, joinCode, generationId, expiresAt) {
+  const unsigned = `${familyId}.${expiresAt}`
+  const signature = crypto.createHmac('sha256', 'test-invite-secret')
+    .update(`IFAMI_JOIN_V1:${unsigned}`)
+    .digest('base64url')
+  assert.match(signature, /^[A-Za-z0-9_-]{43}$/)
+  return `IFAMI_JOIN_V1:${joinCode}:${generationId}:${unsigned}.${signature}`
+}
+
 function rasterCanvas(size) {
   const data = new Uint8ClampedArray(size * size * 4)
   data.fill(255)
@@ -183,6 +193,48 @@ test('家庭码页面按320/375/414设备实际canvas像素绘制且均可解码
     assert.equal(raster.size, Math.floor(windowWidth * 420 / 750))
     const decoded = jsQR(raster.data, raster.size, raster.size, { inversionAttempts: 'dontInvert' })
     assert.ok(decoded, `windowWidth=${windowWidth} 应可解码`)
+    assert.equal(decoded.data, payload)
+  }
+})
+
+test('家庭码页面在三种设备尺寸均可解码真实长度HMAC凭证', () => {
+  const generationId = '9a21702983277463fd8e474967e2607f'
+  const cases = [
+    { windowWidth: 320, familyId: 100, joinCode: '540298', expiresAt: 1795242255, payloadBytes: 112 },
+    { windowWidth: 375, familyId: 42, joinCode: '004219', expiresAt: 1795242256, payloadBytes: 111 },
+    { windowWidth: 414, familyId: 7, joinCode: '900001', expiresAt: 1795242257, payloadBytes: 110 }
+  ]
+  for (const item of cases) {
+    const payload = realJoinPayload(item.familyId, item.joinCode, generationId, item.expiresAt)
+    assert.equal(Buffer.byteLength(payload), item.payloadBytes)
+    assert.equal(require('../utils/qrcode').createMatrix(payload).length, 45)
+
+    const app = baseApp({ globalData: { token: 't', user: { user_id: 7 }, memberships: [], familyId: item.familyId, role: 'parent', isAdmin: true } })
+    let raster
+    const loaded = loadPage('pages/family/index', app, {
+      getSystemInfoSync: () => ({ windowWidth: item.windowWidth }),
+      hideShareMenu: () => {},
+      createCanvasContext: () => raster.ctx
+    })
+    loaded.page.onLoad()
+    loaded.page.data.inviteSheet = true
+    loaded.page.data.isAdmin = true
+    raster = rasterCanvas(loaded.page.data.joinCodeCanvasSize)
+    const previousWx = global.wx
+    global.wx = { createCanvasContext: () => raster.ctx }
+    try {
+      assert.equal(loaded.page.showJoinCode({
+        has_code: true,
+        join_code: item.joinCode,
+        generation_id: generationId,
+        qr_content: payload,
+        expires_at: new Date(Date.now() + 3600000).toISOString()
+      }), true)
+    } finally {
+      global.wx = previousWx
+    }
+    const decoded = jsQR(raster.data, raster.size, raster.size, { inversionAttempts: 'dontInvert' })
+    assert.ok(decoded, `windowWidth=${item.windowWidth}, payloadBytes=${item.payloadBytes} 应可解码`)
     assert.equal(decoded.data, payload)
   }
 })

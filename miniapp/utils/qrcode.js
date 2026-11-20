@@ -25,18 +25,18 @@ function drawCanvas(canvasId, content, size = 420, quietZone = 4) {
   const matrix = createMatrix(content)
   const count = matrix.length
   const total = count + quietZone * 2
-  const cell = size / total
+  // 二维码模块必须落在完整物理像素上；分数模块逐格取整会让相邻模块宽度不一致，
+  // 高密度码在小画布上会因此无法识别。将含 quiet zone 的整体居中，余量留白。
+  const cell = Math.floor(size / total)
+  if (cell < 1) throw new Error('二维码画布过小')
+  const offset = Math.floor((size - total * cell) / 2) + quietZone * cell
   const ctx = wx.createCanvasContext(canvasId)
   ctx.setFillStyle('#FFFFFF')
   ctx.fillRect(0, 0, size, size)
   ctx.setFillStyle('#1F1D1A')
   matrix.forEach((row, y) => row.forEach((dark, x) => {
     if (!dark) return
-    const left = Math.floor((x + quietZone) * cell)
-    const top = Math.floor((y + quietZone) * cell)
-    const right = Math.ceil((x + quietZone + 1) * cell)
-    const bottom = Math.ceil((y + quietZone + 1) * cell)
-    ctx.fillRect(left, top, right - left, bottom - top)
+    ctx.fillRect(offset + x * cell, offset + y * cell, cell, cell)
   }))
   ctx.draw()
   return matrix
