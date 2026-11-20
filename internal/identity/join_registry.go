@@ -3,11 +3,13 @@ package identity
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -32,8 +34,8 @@ type JoinCodeRegistry interface {
 	Rotate(context.Context, *JoinRegistration, string, time.Time) (*JoinRegistration, error)
 	Revoke(context.Context, uint64, string, time.Time) error
 	Resolve(context.Context, string, time.Time) (*JoinRegistration, error)
-	Allow(context.Context, uint64, string) error
-	Failed(context.Context, uint64, string) error
+	Reserve(context.Context, uint64, string) (*JoinLookupReservation, error)
+	Finish(context.Context, *JoinLookupReservation, bool) error
 }
 
 type RedisJoinCodeRegistry struct {
@@ -196,28 +198,79 @@ func (r *RedisJoinCodeRegistry) guardKeys(uid uint64, ip string) []string {
 	return []string{r.prefix + "failed:user:" + strconv.FormatUint(uid, 10), r.prefix + "failed:ip:" + r.digest(ip)}
 }
 
-const allowJoinLua = `if tonumber(redis.call('GET',KEYS[1]) or '0')>=tonumber(ARGV[1]) or tonumber(redis.call('GET',KEYS[2]) or '0')>=tonumber(ARGV[2]) then return 0 end;return 1`
-const failedJoinLua = `for _,key in ipairs(KEYS) do if redis.call('INCR',key)==1 then redis.call('EXPIRE',key,ARGV[1]) end end;return 1`
-
-func (r *RedisJoinCodeRegistry) Allow(ctx context.Context, uid uint64, ip string) error {
-	if !r.ready() {
-		return ErrJoinUnavailable
-	}
-	v, e := r.client.Eval(ctx, allowJoinLua, r.guardKeys(uid, ip), r.protection.UserLimit, r.protection.IPLimit).Int()
-	if e != nil {
-		return ErrJoinUnavailable
-	}
-	if v == 0 {
-		return ErrJoinLimited
-	}
-	return nil
+// A reservation counts an in-flight lookup against both budgets. Successful
+// validation and operational failures return it; bad input retains it. Epochs
+// keep late completions from subtracting a later window's failures.
+type JoinLookupReservation struct {
+	keys       []string
+	epochs     []string
+	finishOnce sync.Once
+	finishErr  error
 }
-func (r *RedisJoinCodeRegistry) Failed(ctx context.Context, uid uint64, ip string) error {
+
+const reserveJoinLua = `
+if tonumber(redis.call('GET',KEYS[1]) or '0')>=tonumber(ARGV[1]) or tonumber(redis.call('GET',KEYS[2]) or '0')>=tonumber(ARGV[2]) then return {} end
+local function reserve(key, epochKey)
+ local exists=redis.call('EXISTS',key)
+ redis.call('INCR',key)
+ local ttl=redis.call('PTTL',key)
+ if exists==0 or ttl<0 then
+  redis.call('PEXPIRE',key,ARGV[3])
+  ttl=tonumber(ARGV[3])
+ end
+ if exists==0 or redis.call('EXISTS',epochKey)==0 then
+  redis.call('SET',epochKey,ARGV[4],'PX',math.max(ttl,1))
+ end
+ return redis.call('GET',epochKey)
+end
+return {reserve(KEYS[1],KEYS[3]),reserve(KEYS[2],KEYS[4])}`
+
+const finishJoinLua = `
+if ARGV[1]=='1' then return 1 end
+for i=1,2 do
+ if redis.call('GET',KEYS[i+2])==ARGV[i+1] and tonumber(redis.call('GET',KEYS[i]) or '0')>0 then
+  if redis.call('DECR',KEYS[i])==0 then redis.call('DEL',KEYS[i],KEYS[i+2]) end
+ end
+end
+return 1`
+
+func (r *RedisJoinCodeRegistry) Reserve(ctx context.Context, uid uint64, ip string) (*JoinLookupReservation, error) {
 	if !r.ready() {
+		return nil, ErrJoinUnavailable
+	}
+	token := make([]byte, 16)
+	if _, err := rand.Read(token); err != nil {
+		return nil, ErrJoinUnavailable
+	}
+	keys := r.guardKeys(uid, ip)
+	keys = append(keys, keys[0]+":epoch", keys[1]+":epoch")
+	epochs, err := r.client.Eval(ctx, reserveJoinLua, keys, r.protection.UserLimit, r.protection.IPLimit, r.protection.Window.Milliseconds(), hex.EncodeToString(token)).StringSlice()
+	if err != nil {
+		return nil, ErrJoinUnavailable
+	}
+	if len(epochs) == 0 {
+		return nil, ErrJoinLimited
+	}
+	if len(epochs) != 2 {
+		return nil, ErrJoinUnavailable
+	}
+	return &JoinLookupReservation{keys: keys, epochs: epochs}, nil
+}
+
+// Finish retains failed-input reservations and refunds all other outcomes.
+// Redis outages remain fail closed, and no completion renews either window.
+func (r *RedisJoinCodeRegistry) Finish(ctx context.Context, reservation *JoinLookupReservation, failed bool) error {
+	if !r.ready() || reservation == nil || len(reservation.keys) != 4 || len(reservation.epochs) != 2 {
 		return ErrJoinUnavailable
 	}
-	if e := r.client.Eval(ctx, failedJoinLua, r.guardKeys(uid, ip), int64(r.protection.Window/time.Second)).Err(); e != nil {
-		return ErrJoinUnavailable
-	}
-	return nil
+	reservation.finishOnce.Do(func() {
+		keep := 0
+		if failed {
+			keep = 1
+		}
+		if err := r.client.Eval(ctx, finishJoinLua, reservation.keys, keep, reservation.epochs[0], reservation.epochs[1]).Err(); err != nil {
+			reservation.finishErr = ErrJoinUnavailable
+		}
+	})
+	return reservation.finishErr
 }

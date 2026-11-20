@@ -43,6 +43,8 @@ Page({
     expiresText: '',
     joining: false,
     joinOutcomeUnknown: false,
+    joinRecoveryFamilyId: 0,
+    joinRecoveryFamilyName: '',
     joinedNeedsRefresh: false,
     joinedMessage: '',
     errorText: ''
@@ -56,6 +58,10 @@ Page({
   },
 
   onCodeInput(e) {
+    if (this.data.joining || this.data.joinedNeedsRefresh) {
+      this.setData({ joinCode: this._lockedJoinCode || this._submittedJoinCode || this.data.joinCode })
+      return
+    }
     const next = String((e.detail && e.detail.value) || '').replace(/\D/g, '').slice(0, 6)
     this._previewSerial++
     this._scanPayload = null
@@ -66,7 +72,6 @@ Page({
       previewing: false,
       familyName: '',
       expiresText: '',
-      joinOutcomeUnknown: false,
       joinedNeedsRefresh: false,
       joinedMessage: '',
       errorText: ''
@@ -74,10 +79,12 @@ Page({
   },
 
   scanCode() {
+    if (this.data.joining || this.data.joinedNeedsRefresh) return
     wx.scanCode({
       onlyFromCamera: true,
       scanType: ['qrCode'],
       success: (result) => {
+        if (this.data.joining || this.data.joinedNeedsRefresh) return
         const parsed = parseJoinQRCode(result.result)
         if (!parsed) {
           wx.showToast({ title: '不是有效的家庭加入码', icon: 'none' })
@@ -96,6 +103,19 @@ Page({
   },
 
   previewJoinCode() {
+    if (this.data.joining) return Promise.resolve(false)
+    if (this.data.joinedNeedsRefresh) return this.retryRefresh()
+    if (this.data.joinOutcomeUnknown) {
+      return this.withJoinLock(() => this.recoverJoinedMembership(this.recoveryFamilyId()).then((outcome) => {
+        if (outcome === 'joined') return true
+        if (outcome === 'unavailable') return false
+        return this.loadJoinPreview()
+      }))
+    }
+    return this.loadJoinPreview()
+  },
+
+  loadJoinPreview() {
     const joinCode = String(this.data.joinCode || '')
     if (!/^\d{6}$/.test(joinCode)) {
       wx.showToast({ title: '请输入六位家庭加入码', icon: 'none' })
@@ -145,31 +165,43 @@ Page({
     this.setData({ relation })
   },
 
+  recoveryFamilyId() {
+    return this.data.joinRecoveryFamilyId || (this.data.preview && this.data.preview.family_id)
+  },
+
   confirmJoin() {
     if (this.data.joining) return Promise.resolve(false)
-    const preview = this.data.preview
-    if (!this.data.previewReady || !preview || preview.join_code !== this.data.joinCode) {
-      wx.showToast({ title: '请先校验有效的家庭加入码', icon: 'none' })
-      return Promise.resolve(false)
+    if (this.data.joinedNeedsRefresh) return this.retryRefresh()
+    const submit = () => {
+      const preview = this.data.preview
+      if (!this.data.previewReady || !preview || preview.join_code !== this.data.joinCode) {
+        wx.showToast({ title: '请先校验有效的家庭加入码', icon: 'none' })
+        return false
+      }
+      return this.sendConfirm(preview)
     }
     return this.withJoinLock(() => {
       if (this.data.joinOutcomeUnknown) {
-        return this.recoverJoinedMembership(preview.family_id).then((recovered) => {
-          if (recovered === 'joined') return true
-          if (recovered === 'unavailable') return false
-          return this.sendConfirm(preview)
+        return this.recoverJoinedMembership(this.recoveryFamilyId()).then((outcome) => {
+          if (outcome === 'joined') return true
+          if (outcome === 'unavailable') return false
+          return submit()
         })
       }
-      return this.sendConfirm(preview)
+      return submit()
     })
   },
 
   withJoinLock(work) {
     if (this.data.joining) return Promise.resolve(false)
+    this._lockedJoinCode = this.data.joinCode
     this.setData({ joining: true })
     let result
     try { result = work() } catch (error) { result = Promise.reject(error) }
-    return Promise.resolve(result).finally(() => this.setData({ joining: false }))
+    return Promise.resolve(result).finally(() => {
+      this._lockedJoinCode = null
+      this.setData({ joining: false })
+    })
   },
 
   sendConfirm(preview) {
@@ -180,7 +212,8 @@ Page({
       identity: this.data.identity,
       relation_label: this.data.relation
     }
-    this.setData({ errorText: '', joinedNeedsRefresh: false })
+    this._submittedJoinCode = preview.join_code
+    this.setData({ errorText: '', joinedNeedsRefresh: false, joinRecoveryFamilyId: preview.family_id, joinRecoveryFamilyName: this.data.familyName || preview.family_name || '家庭' })
     return app.request('/v1/family-join/confirm', { method: 'POST', familyId: 0, data: payload })
       .then((result) => {
         this._joinResult = result
@@ -193,6 +226,8 @@ Page({
           const invalidPreview = error && [1008, 1011, 1017].indexOf(Number(error.code)) >= 0
           this.setData({
             joinOutcomeUnknown: false,
+            joinRecoveryFamilyId: 0,
+            joinRecoveryFamilyName: '',
             previewReady: invalidPreview ? false : this.data.previewReady,
             preview: invalidPreview ? null : this.data.preview,
             familyName: invalidPreview ? '' : this.data.familyName,
@@ -225,10 +260,17 @@ Page({
   },
 
   recoverJoinedMembership(familyID) {
+    if (!familyID) {
+      this.setData({ joinOutcomeUnknown: true, errorText: '暂时无法核对加入目标，请重试刷新家庭信息' })
+      return Promise.resolve('unavailable')
+    }
     return app.refreshMe()
       .then(() => {
         const membership = membershipForFamily(familyID)
-        if (!membership) return 'absent'
+        if (!membership) {
+          this.setData({ joinOutcomeUnknown: false, joinRecoveryFamilyId: 0, joinRecoveryFamilyName: '', errorText: '' })
+          return 'absent'
+        }
         this.routeByActualMembership(Object.assign({ family_id: familyID }, membership))
         return 'joined'
       })
@@ -242,7 +284,10 @@ Page({
     if (this.data.joining) return Promise.resolve(false)
     const result = this._joinResult
     return this.withJoinLock(() => {
-      if (!result) return this.recoverJoinedMembership(this.data.preview && this.data.preview.family_id).then((recovered) => recovered === 'joined')
+      if (!result) return this.recoverJoinedMembership(this.recoveryFamilyId()).then((recovered) => {
+        if (recovered === 'absent') this.setData({ errorText: '已核对尚未加入，请重新校验加入码' })
+        return recovered === 'joined'
+      })
       return app.refreshMe()
         .then(() => this.routeByActualMembership(result))
         .catch(() => this.setData({ joinedNeedsRefresh: true, joinedMessage: '已加入，家庭信息仍未刷新，请稍后重试' }))
@@ -252,7 +297,7 @@ Page({
   routeByActualMembership(result) {
     const actual = membershipForFamily(result.family_id) || result
     app.setFamily(result.family_id)
-    this.setData({ joinOutcomeUnknown: false, joinedNeedsRefresh: false, errorText: '' })
+    this.setData({ joinOutcomeUnknown: false, joinRecoveryFamilyId: 0, joinRecoveryFamilyName: '', joinedNeedsRefresh: false, errorText: '' })
     const caregiver = actual.role === 'grandparent' && !actual.is_admin
     wx.reLaunch({ url: caregiver ? '/pages/gp-today/index' : '/pages/today/index' })
   },

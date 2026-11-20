@@ -168,22 +168,27 @@ func TestRedisJoinSharedFailureGuardAndOutage(t *testing.T) {
 	r := redisJoinTest(t)
 	ctx := context.Background()
 	for range 10 {
-		if e := r.Allow(ctx, 9, "ip"); e != nil {
+		reservation, e := r.Reserve(ctx, 9, "ip")
+		if e != nil {
 			t.Fatal(e)
 		}
-		if e := r.Failed(ctx, 9, "ip"); e != nil {
+		if e := r.Finish(ctx, reservation, true); e != nil {
 			t.Fatal(e)
 		}
 	}
-	if e := r.Allow(ctx, 9, "another-ip"); e != ErrJoinLimited {
+	if _, e := r.Reserve(ctx, 9, "another-ip"); e != ErrJoinLimited {
 		t.Fatal("user limit", e)
 	}
 	for i := 0; i < 20; i++ {
-		if e := r.Failed(ctx, uint64(100+i), "ip"); e != nil {
+		reservation, e := r.Reserve(ctx, uint64(100+i), "ip")
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e := r.Finish(ctx, reservation, true); e != nil {
 			t.Fatal(e)
 		}
 	}
-	if e := r.Allow(ctx, 999, "ip"); e != ErrJoinLimited {
+	if _, e := r.Reserve(ctx, 999, "ip"); e != ErrJoinLimited {
 		t.Fatal("ip limit", e)
 	}
 	if ttl := r.client.TTL(ctx, r.guardKeys(9, "ip")[0]).Val(); ttl > 15*time.Minute || ttl < 14*time.Minute {
@@ -199,7 +204,7 @@ func TestRedisJoinSharedFailureGuardAndOutage(t *testing.T) {
 	if e := r.Revoke(ctx, 1, strings.Repeat("a", 32), time.Now()); e != ErrJoinUnavailable {
 		t.Fatal("offline revoke", e)
 	}
-	if e := r.Allow(ctx, 1, "ip"); e != ErrJoinUnavailable {
+	if _, e := r.Reserve(ctx, 1, "ip"); e != ErrJoinUnavailable {
 		t.Fatal("offline guard", e)
 	}
 }
@@ -208,17 +213,25 @@ func TestRedisJoinProtectionOptions(t *testing.T) {
 	configured := NewRedisJoinCodeRegistry(r.client, r.field, r.secret, r.prefix+"configured:", JoinProtectionOptions{UserLimit: 2, IPLimit: 3, Window: time.Minute})
 	ctx := context.Background()
 	for range 2 {
-		if e := configured.Failed(ctx, 1, "ip"); e != nil {
+		reservation, e := configured.Reserve(ctx, 1, "ip")
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e := configured.Finish(ctx, reservation, true); e != nil {
 			t.Fatal(e)
 		}
 	}
-	if e := configured.Allow(ctx, 1, "fresh-ip"); e != ErrJoinLimited {
+	if _, e := configured.Reserve(ctx, 1, "fresh-ip"); e != ErrJoinLimited {
 		t.Fatal("configured user", e)
 	}
-	if e := configured.Failed(ctx, 2, "ip"); e != nil {
+	reservation, e := configured.Reserve(ctx, 2, "ip")
+	if e != nil {
 		t.Fatal(e)
 	}
-	if e := configured.Allow(ctx, 3, "ip"); e != ErrJoinLimited {
+	if e := configured.Finish(ctx, reservation, true); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := configured.Reserve(ctx, 3, "ip"); e != ErrJoinLimited {
 		t.Fatal("configured ip", e)
 	}
 	if ttl := r.client.TTL(ctx, configured.guardKeys(1, "ip")[0]).Val(); ttl > time.Minute || ttl < 50*time.Second {

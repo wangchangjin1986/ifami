@@ -131,42 +131,48 @@ func (s *Service) RevokeJoinCode(ctx context.Context, uid, fid uint64, generatio
 	}
 	return joinView(r), nil
 }
-func (s *Service) validateJoin(ctx context.Context, uid uint64, in JoinPreviewInput, required bool) (*JoinRegistration, error) {
+func (s *Service) validateJoin(ctx context.Context, uid uint64, in JoinPreviewInput, required bool) (registration *JoinRegistration, err error) {
 	if s.joinRegistry == nil {
 		return nil, ErrJoinUnavailable
 	}
-	if e := s.joinRegistry.Allow(ctx, uid, in.ClientIP); e != nil {
+	reservation, e := s.joinRegistry.Reserve(ctx, uid, in.ClientIP)
+	if e != nil {
 		return nil, e
 	}
-	fail := func(e error) (*JoinRegistration, error) {
-		if guardErr := s.joinRegistry.Failed(ctx, uid, in.ClientIP); guardErr != nil {
-			return nil, guardErr
+	failed := true
+	defer func() {
+		// Cancellation must not strand a healthy lookup's reserved budget.
+		finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+		if finishErr := s.joinRegistry.Finish(finishCtx, reservation, failed); finishErr != nil {
+			registration, err = nil, finishErr
 		}
-		return nil, e
-	}
+	}()
 	if uid == 0 || !joinDigits.MatchString(in.JoinCode) {
-		return fail(ErrBadParam)
+		return nil, ErrBadParam
 	}
 	hasQR := in.GenerationID != "" || in.Credential != ""
 	if (required || hasQR) && (!joinGeneration.MatchString(in.GenerationID) || len(in.Credential) == 0 || len(in.Credential) > 160) {
-		return fail(ErrJoinScan)
+		return nil, ErrJoinScan
 	}
 	now := time.Now()
 	r, e := s.joinRegistry.Resolve(ctx, in.JoinCode, now)
 	if e != nil {
+		failed = false
 		return nil, e
 	}
 	if r == nil {
-		return fail(ErrJoinInvalid)
+		return nil, ErrJoinInvalid
 	}
 	// Verify even manual lookups: a corrupt/expired registry must never grant membership.
 	claims, e := invite.VerifyJoin(s.inviteSecret, r.Credential, now)
 	if e != nil || claims.FamilyID != r.FamilyID || claims.ExpiresAt != r.ExpiresAt.Unix() || !now.Before(r.ExpiresAt) {
-		return fail(ErrJoinInvalid)
+		return nil, ErrJoinInvalid
 	}
 	if hasQR && (!hmac.Equal([]byte(in.GenerationID), []byte(r.GenerationID)) || !hmac.Equal([]byte(in.Credential), []byte(r.Credential))) {
-		return fail(ErrJoinInvalid)
+		return nil, ErrJoinInvalid
 	}
+	failed = false
 	return r, nil
 }
 func (s *Service) PreviewJoin(ctx context.Context, uid uint64, in JoinPreviewInput) (*JoinPreview, error) {

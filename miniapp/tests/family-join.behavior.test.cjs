@@ -22,7 +22,7 @@ function assignPath(target, key, value) {
   cur[parts[0]] = value
 }
 
-function loadPage(name, app, wxOverrides = {}) {
+function loadPage(name, app, wxOverrides = {}, timers = {}) {
   let definition
   const calls = []
   const storage = new Map()
@@ -53,7 +53,7 @@ function loadPage(name, app, wxOverrides = {}) {
     console,
     Date,
     Promise,
-    setTimeout: (fn) => { fn(); return 1 },
+    setTimeout: timers.setTimeout || ((fn) => { fn(); return 1 }),
     clearTimeout: () => {},
     setInterval: () => 1,
     clearInterval: () => {},
@@ -648,6 +648,131 @@ test('码管理30分钟内复用 pending key，过窗先 GET 且不重放旧操�
   assert.deepEqual(methods, ['GET'])
   assert.equal(keys.includes('expired-pending-key'), false)
 })
+
+
+function pendingJoinFixture() {
+  const preview = { family_id: 42, family_name: '待核对家庭', join_code: '482913', generation_id: 'a'.repeat(32), credential: 'cred' }
+  const nextPreview = { family_id: 43, family_name: '新校验家庭', join_code: '123456', generation_id: 'b'.repeat(32), credential: 'next' }
+  const calls = { confirms: 0, previews: 0, me: 0 }
+  let lookup = 'unavailable'
+  const routes = []
+  const app = baseApp({
+    request(url, options) {
+      if (url.endsWith('/confirm')) {
+        calls.confirms++
+        if (calls.confirms === 1) return Promise.reject(Object.assign(new Error('response lost'), { code: 'NETWORK_FAIL' }))
+        assert.equal(lookup, 'absent', 'a new POST requires a successful membership lookup')
+        assert.equal(options.data.join_code, nextPreview.join_code)
+        return Promise.resolve({ family_id: 43, role: 'parent', is_admin: false })
+      }
+      calls.previews++
+      if (options.data.join_code === preview.join_code) return Promise.reject(Object.assign(new Error('expired'), { code: 1011 }))
+      return Promise.resolve(nextPreview)
+    },
+    refreshMe() {
+      calls.me++
+      if (lookup === 'unavailable') return Promise.reject(new Error('me unavailable'))
+      this.globalData.memberships = lookup === 'joined' ? [{ family_id: 42, member_id: 99, role: 'grandparent', is_admin: false }] : []
+      return Promise.resolve()
+    }
+  })
+  const loaded = loadPage('pages/invite/index', app, { reLaunch: ({ url }) => routes.push(url) })
+  loaded.page.onLoad()
+  Object.assign(loaded.page.data, { joinCode: preview.join_code, previewReady: true, preview, familyName: preview.family_name })
+  return { ...loaded, calls, routes, setLookup(value) { lookup = value } }
+}
+
+test('未知加入重新校验时先核对原目标，原码过期仍可恢复', async () => {
+  const fixture = pendingJoinFixture()
+  await fixture.page.confirmJoin()
+  await fixture.page.previewJoinCode()
+  assert.equal(fixture.calls.previews, 0)
+  assert.equal(fixture.page.data.joinOutcomeUnknown, true)
+  assert.equal(fixture.page.data.joinRecoveryFamilyId, 42)
+  fixture.setLookup('joined')
+  await fixture.page.retryRefresh()
+  assert.equal(fixture.calls.confirms, 1)
+  assert.deepEqual(fixture.routes, ['/pages/gp-today/index'])
+})
+
+test('未知加入改码保留原目标，成功确认不存在后才可提交新码', async () => {
+  const fixture = pendingJoinFixture()
+  await fixture.page.confirmJoin()
+  fixture.page.onCodeInput({ detail: { value: '123456' } })
+  assert.equal(fixture.page.data.preview, null)
+  assert.equal(fixture.page.data.joinOutcomeUnknown, true)
+  assert.equal(fixture.page.data.joinRecoveryFamilyId, 42)
+  await fixture.page.previewJoinCode()
+  await fixture.page.confirmJoin()
+  assert.equal(fixture.calls.previews, 0)
+  assert.equal(fixture.calls.confirms, 1)
+  fixture.setLookup('absent')
+  await fixture.page.previewJoinCode()
+  assert.equal(fixture.page.data.preview.family_id, 43)
+  await fixture.page.confirmJoin()
+  assert.equal(fixture.calls.confirms, 2)
+})
+
+test('未知加入扫码也先核对原目标，不覆盖待核对家庭', async () => {
+  const fixture = pendingJoinFixture()
+  await fixture.page.confirmJoin()
+  let scanSuccess
+  fixture.wx.scanCode = (options) => { scanSuccess = options.success }
+  fixture.page.scanCode()
+  scanSuccess({ result: 'IFAMI_JOIN_V1:123456:' + 'b'.repeat(32) + ':next' })
+  for (let i = 0; i < 6; i++) await settle()
+  assert.equal(fixture.calls.previews, 0)
+  assert.equal(fixture.calls.confirms, 1)
+  assert.equal(fixture.page.data.joinRecoveryFamilyId, 42)
+  fixture.setLookup('joined')
+  await fixture.page.retryRefresh()
+  assert.deepEqual(fixture.routes, ['/pages/gp-today/index'])
+})
+
+test('提交期间输入事件不能改掉本次提交或恢复目标', async () => {
+  const pending = deferred()
+  const app = baseApp({ request: () => pending.promise, refreshMe: () => Promise.reject(new Error('me unavailable')) })
+  const { page } = loadPage('pages/invite/index', app)
+  Object.assign(page.data, { joinCode: '482913', previewReady: true, preview: { family_id: 42, join_code: '482913', generation_id: 'a'.repeat(32), credential: 'cred' } })
+  const work = page.confirmJoin()
+  page.onCodeInput({ detail: { value: '123456' } })
+  assert.equal(page.data.joinCode, '482913')
+  pending.reject(Object.assign(new Error('response lost'), { code: 'NETWORK_FAIL' }))
+  await work
+  assert.equal(page.data.joinRecoveryFamilyId, 42)
+})
+
+for (const outcome of ['success', 'failure']) {
+  test(`旧作废${outcome}回包不能清空重开后的新码或再发读取`, async () => {
+    const pending = deferred()
+    const next = { has_code: true, join_code: '123456', generation_id: 'b'.repeat(32), qr_content: 'IFAMI_JOIN_V1:123456:' + 'b'.repeat(32) + ':next', expires_at: new Date(Date.now() + 3600000).toISOString() }
+    const requests = []
+    const app = baseApp({ globalData: { familyId: 42, isAdmin: true }, request(url, options = {}) {
+      requests.push(options.method || 'GET')
+      if (options.method === 'DELETE') return pending.promise
+      if (options.method === 'POST') return Promise.resolve(next)
+      return Promise.resolve({ has_code: false })
+    } })
+    const ctx = { setFillStyle() {}, fillRect() {}, draw() {} }
+    const { page } = loadPage('pages/family/index', app, { createCanvasContext: () => ctx }, { setTimeout: () => 1 })
+    page.onLoad()
+    Object.assign(page.data, { isAdmin: true, inviteSheet: true, joinCodeGeneration: 'a'.repeat(32), joinCodeStatus: 'active' })
+    const originalWx = global.wx
+    global.wx = { createCanvasContext: () => ctx }
+    try {
+      const old = page.revokeJoinCode()
+      page.closeInvite()
+      page.setData({ inviteSheet: true })
+      await page.loadJoinCode({ generateIfMissing: true })
+      assert.equal(page.data.joinCodeGeneration, next.generation_id)
+      if (outcome === 'success') pending.resolve({ has_code: false }); else pending.reject(new Error('late failure'))
+      await old
+      assert.equal(page.data.joinCodeGeneration, next.generation_id)
+      assert.equal(page.data.joinCodeStatus, 'active')
+      assert.deepEqual(requests, ['DELETE', 'GET', 'POST'])
+    } finally { global.wx = originalWx }
+  })
+}
 
 ;(async () => {
   let passed = 0

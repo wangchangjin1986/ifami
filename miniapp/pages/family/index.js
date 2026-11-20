@@ -102,7 +102,10 @@ Page({
   },
 
   onHide() {
-    if (this.data.inviteSheet) this._joinCodeNeedsRead = true
+    if (this.data.inviteSheet) {
+      this._joinCodeNeedsRead = true
+      this._joinCodeSerial++
+    }
   },
 
   refresh() {
@@ -235,6 +238,7 @@ Page({
   },
 
   closeInvite() {
+    this._joinCodeSerial++
     this.stopJoinCodeTimer()
     this.setData({ inviteSheet: false })
   },
@@ -252,6 +256,10 @@ Page({
     })
   },
 
+  isCurrentJoinCodeRequest(serial, familyId) {
+    return serial === this._joinCodeSerial && this.data.inviteSheet && this.data.isAdmin && String(familyId) === String(app.globalData.familyId)
+  },
+
   loadJoinCode({ generateIfMissing = false } = {}) {
     const fid = app.globalData.familyId
     if (!fid || !this.data.isAdmin) return Promise.resolve(false)
@@ -259,7 +267,7 @@ Page({
     this.clearJoinCode('loading')
     return app.request(`/v1/families/${fid}/join-code`, { familyId: fid })
       .then((view) => {
-        if (serial !== this._joinCodeSerial || !this.data.inviteSheet) return false
+        if (!this.isCurrentJoinCodeRequest(serial, fid)) return false
         if (this.showJoinCode(view)) {
           wx.removeStorageSync(joinCodePendingKey(fid))
           return true
@@ -269,7 +277,7 @@ Page({
         return generateIfMissing ? this.generateJoinCode({ allowPendingReuse: false }) : false
       })
       .catch((e) => {
-        if (serial === this._joinCodeSerial) this.clearJoinCode('error', e.message || '暂时无法读取家庭加入码')
+        if (this.isCurrentJoinCodeRequest(serial, fid)) this.clearJoinCode('error', e.message || '暂时无法读取家庭加入码')
         return false
       })
   },
@@ -328,12 +336,12 @@ Page({
       familyId: fid,
       header: { 'Idempotency-Key': pending.key }
     }).then((view) => {
-      if (serial !== this._joinCodeSerial || !this.data.inviteSheet) return false
+      if (!this.isCurrentJoinCodeRequest(serial, fid)) return false
       wx.removeStorageSync(joinCodePendingKey(fid))
       if (!this.showJoinCode(view)) throw new Error('生成结果不完整，请重新读取')
       return true
     }).catch((e) => {
-      if (serial === this._joinCodeSerial) this.clearJoinCode('error', (e.message || '生成失败') + '；重试会沿用同一次操作')
+      if (this.isCurrentJoinCodeRequest(serial, fid)) this.clearJoinCode('error', (e.message || '生成失败') + '；重试会沿用同一次操作')
       return false
     })
   },
@@ -358,13 +366,18 @@ Page({
     const fid = app.globalData.familyId
     const generation = this.data.joinCodeGeneration
     if (!fid || !generation || !this.data.isAdmin) return Promise.resolve(false)
+    const serial = ++this._joinCodeSerial
     this.clearJoinCode('loading')
     return app.request(`/v1/families/${fid}/join-code`, {
       method: 'DELETE', familyId: fid, data: { generation_id: generation }
     }).then((view) => {
+      if (!this.isCurrentJoinCodeRequest(serial, fid)) return false
       if (!this.showJoinCode(view)) this.clearJoinCode('empty')
       return true
-    }).catch(() => this.loadJoinCode({ generateIfMissing: false }))
+    }).catch(() => {
+      if (!this.isCurrentJoinCodeRequest(serial, fid)) return false
+      return this.loadJoinCode({ generateIfMissing: false })
+    })
   },
 
   // ---- 成员管理（仅管理员；对齐 prototype scr-member） ----
