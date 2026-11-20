@@ -126,3 +126,68 @@ func TestMySQLJoinHTTPContract(t *testing.T) {
 		t.Fatal("revoked has code")
 	}
 }
+
+// Exercise the public member-write route against synthetic, migrated MySQL rows.
+func TestMySQLRemoveMemberHTTPPermissions(t *testing.T) {
+	store := mysqlJoinTest(t)
+	ctx := context.Background()
+	for uid := uint64(1); uid <= 4; uid++ {
+		addJoinUser(t, store, uid)
+	}
+	svc := NewService(store, nil, "", joinTestSessions{"admin": 1, "parent": 2}, newTestFieldCipher(t), "test-secret")
+	fid, adminID, err := svc.CreateFamily(ctx, 1, "成员删除权限夹具")
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := map[uint64]uint64{1: adminID}
+	for uid := uint64(2); uid <= 4; uid++ {
+		m, _, err := store.JoinSingleFamily(ctx, uid, fid, RoleParent, "其他家长")
+		if err != nil {
+			t.Fatal(err)
+		}
+		members[uid] = m.MemberID
+	}
+	// Admin status is independent of the persisted parent role.
+	if err := store.db.Model(&Member{}).Where("member_id = ?", members[4]).Update("is_admin", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	h := server.New()
+	NewHandler(svc).Register(h.Group("/v1"))
+	remove := func(token string, target uint64, wantHTTP, wantCode int) {
+		t.Helper()
+		path := fmt.Sprintf("/v1/families/%d/members/%d", fid, target)
+		response := ut.PerformRequest(h.Engine, "DELETE", path, nil,
+			ut.Header{Key: "Authorization", Value: "Bearer " + token},
+			ut.Header{Key: "X-Family-Id", Value: fmt.Sprint(fid)})
+		var result struct {
+			Code int `json:"code"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != wantHTTP || result.Code != wantCode {
+			t.Fatalf("DELETE %s target%d: HTTP%d code%d want HTTP%d code%d", token, target, response.Code, result.Code, wantHTTP, wantCode)
+		}
+	}
+	assertStatus := func(target uint64, want string) {
+		t.Helper()
+		var row Member
+		if err := store.db.First(&row, target).Error; err != nil {
+			t.Fatal(err)
+		}
+		if row.Status != want {
+			t.Fatalf("member%d status%s want%s", target, row.Status, want)
+		}
+	}
+	for _, target := range []uint64{members[2], members[3], adminID} {
+		remove("parent", target, 403, 1006)
+		assertStatus(target, StatusActive)
+	}
+	remove("admin", members[3], 200, 0)
+	assertStatus(members[3], StatusRemoved)
+	remove("admin", members[4], 200, 0)
+	assertStatus(members[4], StatusRemoved)
+	remove("admin", adminID, 400, 1010)
+	assertStatus(adminID, StatusActive)
+	assertStatus(members[2], StatusActive)
+}

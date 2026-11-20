@@ -155,7 +155,8 @@ Page({
     return this.withJoinLock(() => {
       if (this.data.joinOutcomeUnknown) {
         return this.recoverJoinedMembership(preview.family_id).then((recovered) => {
-          if (recovered) return true
+          if (recovered === 'joined') return true
+          if (recovered === 'unavailable') return false
           return this.sendConfirm(preview)
         })
       }
@@ -187,7 +188,7 @@ Page({
         return this.finishConfirmedJoin(result)
       })
       .catch((error) => {
-        const resultUnknown = error && (error.code === 'NETWORK_FAIL' || (!error.code && Number(error.statusCode || 0) >= 500))
+        const resultUnknown = error && (error.code === 'NETWORK_FAIL' || Number(error.statusCode || 0) >= 500)
         if (!resultUnknown) {
           const invalidPreview = error && [1008, 1011, 1017].indexOf(Number(error.code)) >= 0
           this.setData({
@@ -201,7 +202,8 @@ Page({
         }
         this.setData({ joinOutcomeUnknown: true, errorText: '加入结果待确认，正在核对家庭信息…' })
         return this.recoverJoinedMembership(preview.family_id).then((recovered) => {
-          if (recovered) return true
+          if (recovered === 'joined') return true
+          if (recovered === 'unavailable') return false
           this.setData({ errorText: error.message || '网络中断，保留当前输入；请点重试先核对加入结果' })
           return false
         })
@@ -226,13 +228,13 @@ Page({
     return app.refreshMe()
       .then(() => {
         const membership = membershipForFamily(familyID)
-        if (!membership) return false
+        if (!membership) return 'absent'
         this.routeByActualMembership(Object.assign({ family_id: familyID }, membership))
-        return true
+        return 'joined'
       })
       .catch(() => {
         this.setData({ joinOutcomeUnknown: true, errorText: '暂时无法核对加入结果，当前输入已保留，请稍后重试' })
-        return false
+        return 'unavailable'
       })
   },
 
@@ -240,7 +242,7 @@ Page({
     if (this.data.joining) return Promise.resolve(false)
     const result = this._joinResult
     return this.withJoinLock(() => {
-      if (!result) return this.recoverJoinedMembership(this.data.preview && this.data.preview.family_id)
+      if (!result) return this.recoverJoinedMembership(this.data.preview && this.data.preview.family_id).then((recovered) => recovered === 'joined')
       return app.refreshMe()
         .then(() => this.routeByActualMembership(result))
         .catch(() => this.setData({ joinedNeedsRefresh: true, joinedMessage: '已加入，家庭信息仍未刷新，请稍后重试' }))

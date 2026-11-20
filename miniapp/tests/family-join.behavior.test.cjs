@@ -416,6 +416,96 @@ test('未知结果恢复未找到membership时双击只confirm一次且链结束
   assert.equal(page.data.previewReady, true)
 })
 
+test('已提交响应丢失且/me连续不可查时不重发失效码，恢复后按实际身份落地', async () => {
+  let committed = false
+  let meAvailable = false
+  let confirmCalls = 0
+  let meCalls = 0
+  const navigations = []
+  const app = baseApp({
+    request: () => {
+      confirmCalls++
+      if (committed) return Promise.reject(Object.assign(new Error('家庭加入码已失效'), { code: 1011, statusCode: 400 }))
+      committed = true
+      return Promise.reject(Object.assign(new Error('response lost'), { code: 'NETWORK_FAIL' }))
+    },
+    refreshMe() {
+      meCalls++
+      if (!meAvailable) return Promise.reject(new Error('me unavailable'))
+      this.globalData.memberships = [{ family_id: 42, member_id: 99, role: 'grandparent', is_admin: false }]
+      return Promise.resolve()
+    }
+  })
+  const { page } = loadPage('pages/invite/index', app, { reLaunch: ({ url }) => navigations.push(url) })
+  Object.assign(page.data, {
+    joinCode: '482913', familyName: '已确认家庭', previewReady: true,
+    preview: { family_id: 42, join_code: '482913', generation_id: 'a'.repeat(32), credential: 'cred' }
+  })
+  await page.confirmJoin()
+  await page.confirmJoin()
+  await page.confirmJoin()
+  assert.equal(confirmCalls, 1)
+  assert.equal(meCalls, 3)
+  assert.equal(page.data.joinOutcomeUnknown, true)
+  assert.equal(page.data.previewReady, true)
+  assert.equal(page.data.preview.family_id, 42)
+  assert.equal(page.data.familyName, '已确认家庭')
+  assert.match(page.data.errorText, /核对|重试/)
+  assert.equal(page.data.joining, false)
+  meAvailable = true
+  await page.confirmJoin()
+  assert.equal(confirmCalls, 1)
+  assert.deepEqual(navigations, ['/pages/gp-today/index'])
+  assert.equal(app.globalData.token, 'token')
+  assert.equal(page.data.joinOutcomeUnknown, false)
+})
+
+test('未知加入只有/me成功确认目标关系不存在才重发，失效码可明确拒绝', async () => {
+  let confirms = 0
+  let lookups = 0
+  const app = baseApp({
+    refreshMe: () => { lookups++; return Promise.resolve() },
+    request: () => { confirms++; return Promise.reject(Object.assign(new Error('家庭加入码已失效'), { code: 1011, statusCode: 400 })) }
+  })
+  const { page } = loadPage('pages/invite/index', app)
+  Object.assign(page.data, {
+    joinCode: '482913', previewReady: true, joinOutcomeUnknown: true,
+    preview: { family_id: 42, join_code: '482913', generation_id: 'a'.repeat(32), credential: 'cred' }
+  })
+  await page.confirmJoin()
+  assert.equal(lookups, 1)
+  assert.equal(confirms, 1)
+  assert.equal(page.data.joinOutcomeUnknown, false)
+  assert.equal(page.data.previewReady, false)
+})
+
+test('HTTP500/code5000视为提交结果未知并核对/me，查询失败保留恢复入口', async () => {
+  for (const lookupAvailable of [true, false]) {
+    let meCalls = 0
+    const navigations = []
+    const app = baseApp({
+      request: () => Promise.reject(Object.assign(new Error('服务器错误'), { code: 5000, statusCode: 500 })),
+      refreshMe() {
+        meCalls++
+        if (!lookupAvailable) return Promise.reject(new Error('me unavailable'))
+        this.globalData.memberships = [{ family_id: 42, member_id: 99, role: 'parent', is_admin: true }]
+        return Promise.resolve()
+      }
+    })
+    const { page } = loadPage('pages/invite/index', app, { reLaunch: ({ url }) => navigations.push(url) })
+    Object.assign(page.data, {
+      joinCode: '482913', identity: 'caregiver', relation: '阿姨', previewReady: true,
+      preview: { family_id: 42, join_code: '482913', generation_id: 'a'.repeat(32), credential: 'cred' }
+    })
+    await page.confirmJoin()
+    assert.equal(meCalls, 1)
+    assert.equal(page.data.joinOutcomeUnknown, !lookupAvailable)
+    assert.equal(page.data.previewReady, true)
+    assert.equal(app.globalData.token, 'token')
+    assert.deepEqual(navigations, lookupAvailable ? ['/pages/today/index'] : [])
+  }
+})
+
 test('详情在授权 GET 成功前不采用 URL 业务数据，403 后保持安全错误态', async () => {
   let rejectDetail
   const app = baseApp({ request: (url) => url.includes('/v1/schedules/instances/')

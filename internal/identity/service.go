@@ -272,7 +272,7 @@ func (s *Service) UpdateMember(ctx context.Context, userID, familyID, memberID u
 	return s.store.UpdateMemberFields(ctx, memberID, familyID, fields)
 }
 
-// RemoveMember 移除成员：admin 可移除他人，普通成员仅可退出自己。
+// RemoveMember 仅管理员可移除成员，最后一个管理员不可移除。
 func (s *Service) RemoveMember(ctx context.Context, userID, familyID, memberID uint64) error {
 	actor, err := s.store.FindMember(ctx, userID, familyID)
 	if err != nil {
@@ -281,16 +281,15 @@ func (s *Service) RemoveMember(ctx context.Context, userID, familyID, memberID u
 	if actor == nil {
 		return ErrNotMember
 	}
+	if !isMemberAdmin(actor) {
+		return ErrForbidden
+	}
 	target, err := s.store.FindMemberByID(ctx, memberID, familyID)
 	if err != nil {
 		return err
 	}
 	if target == nil {
 		return ErrMemberNotFound
-	}
-	isSelf := target.UserID != nil && *target.UserID == userID
-	if !isMemberAdmin(actor) && !isSelf {
-		return ErrForbidden
 	}
 	if isMemberAdmin(target) {
 		if err := s.ensureNotLastAdmin(ctx, familyID, target.MemberID); err != nil {

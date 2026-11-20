@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"ifami/internal/pkg/logx"
 	"ifami/internal/pkg/wechat"
@@ -102,7 +103,15 @@ func (c *WechatSubscribe) templateID(job *NotifyJob) string {
 
 func subscribeData(job *NotifyJob) map[string]wechat.SubscribeDataItem {
 	title := firstNonEmpty(payloadString(job.Payload, "title"), payloadString(job.Payload, "task"), "家庭提醒")
-	timeText := firstNonEmpty(payloadString(job.Payload, "time_text"), payloadString(job.Payload, "start_at"), "请及时查看")
+	timeText := firstNonEmpty(payloadString(job.Payload, "time_text"), payloadString(job.Payload, "start_at"))
+	if timeText == "" {
+		// 泛化通知不带原日程时间；模板 TIME 字段用通知创建时间（零值用处理时间）。
+		created := job.CreatedAt
+		if created.IsZero() {
+			created = time.Now()
+		}
+		timeText = created.In(time.FixedZone("Asia/Shanghai", 8*60*60)).Format("15:04")
+	}
 	thing := firstNonEmpty(payloadString(job.Payload, "location"), payloadString(job.Payload, "reason"), "点击查看详情")
 	return map[string]wechat.SubscribeDataItem{
 		"thing1": {Value: truncate(title, 20)},
