@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -258,5 +259,22 @@ func TestUpdateMember_TargetNotFound(t *testing.T) {
 	err := svc.UpdateMember(context.Background(), 1, 100, 99, nil, boolptr(true), nil, nil)
 	if !errors.Is(err, ErrMemberNotFound) {
 		t.Fatalf("want ErrMemberNotFound, got %v", err)
+	}
+}
+
+func TestRemoveMember_NonAdminCannotWriteMembership(t *testing.T) {
+	for _, role := range []string{RoleParent, RoleGrandparent} {
+		for _, target := range []uint64{1, 2} {
+			t.Run(role+"/"+fmt.Sprint(target), func(t *testing.T) {
+				svc, mock := newTestService(t)
+				expectFindMember(mock, 9, 100, role)
+				if err := svc.RemoveMember(context.Background(), 9, 100, target); !errors.Is(err, ErrForbidden) {
+					t.Fatalf("want ErrForbidden, got %v", err)
+				}
+				if err := mock.ExpectationsWereMet(); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
 	}
 }

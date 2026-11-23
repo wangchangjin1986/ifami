@@ -24,6 +24,11 @@ Page({
   },
 
   onLoad() {
+    if (!app.globalData.isAdmin) {
+      wx.showToast({ title: '只有管理员才能编辑导入草稿', icon: 'none' })
+      setTimeout(() => wx.navigateBack(), 500)
+      return
+    }
     const ctx = app.globalData.ingestEdit
     if (!ctx) { wx.navigateBack(); return }
     const d = ctx.draft

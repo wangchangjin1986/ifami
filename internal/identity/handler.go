@@ -28,6 +28,11 @@ func (h *Handler) Register(g *route.RouterGroup) {
 	authed.GET("/families", h.ListFamilies)
 	authed.GET("/me", h.Me)
 	authed.POST("/families/:fid/invitations", h.CreateInvitation)
+	authed.GET("/families/:fid/join-code", h.GetJoinCode)
+	authed.POST("/families/:fid/join-code", h.GenerateJoinCode)
+	authed.DELETE("/families/:fid/join-code", h.RevokeJoinCode)
+	authed.POST("/family-join/preview", h.PreviewJoin)
+	authed.POST("/family-join/confirm", h.ConfirmJoin)
 	authed.GET("/families/:fid/members", h.ListMembers)
 	authed.POST("/families/:fid/children", h.AddChild)
 	authed.PATCH("/families/:fid/members/:mid", h.UpdateMember)
@@ -51,21 +56,7 @@ func (h *Handler) Login(ctx context.Context, c *app.RequestContext) {
 }
 
 func (h *Handler) JoinFamily(ctx context.Context, c *app.RequestContext) {
-	var req struct {
-		Code          string `json:"code"`
-		InviteToken   string `json:"invite_token"`
-		RelationLabel string `json:"relation_label"`
-	}
-	if err := c.BindJSON(&req); err != nil || req.Code == "" || req.InviteToken == "" {
-		httpx.Fail(c, ErrBadParam)
-		return
-	}
-	res, err := h.svc.JoinFamily(ctx, req.Code, req.InviteToken, req.RelationLabel)
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	httpx.OK(c, res)
+	httpx.Fail(c, ErrOldClient)
 }
 
 func (h *Handler) CreateFamily(ctx context.Context, c *app.RequestContext) {
@@ -103,22 +94,7 @@ func (h *Handler) Me(ctx context.Context, c *app.RequestContext) {
 }
 
 func (h *Handler) CreateInvitation(ctx context.Context, c *app.RequestContext) {
-	var req InvitationInput
-	if err := c.BindJSON(&req); err != nil {
-		httpx.Fail(c, ErrBadParam)
-		return
-	}
-	fid, err := familyIDParam(c)
-	if err != nil {
-		httpx.Fail(c, ErrBadParam)
-		return
-	}
-	token, err := h.svc.CreateInvitation(ctx, auth.UserID(ctx), fid, req)
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	httpx.OK(c, map[string]any{"invite_token": token})
+	httpx.Fail(c, ErrOldClient)
 }
 
 func (h *Handler) ListMembers(ctx context.Context, c *app.RequestContext) {

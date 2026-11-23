@@ -81,10 +81,13 @@ Page({
       .then(([members, tasks, schedules, checkins]) => {
         const nameMap = {}
         const children = []
+        const currentUserID = app.globalData.user && app.globalData.user.user_id
+        this._currentMemberId = null
         ;(members || []).forEach((m) => {
           const name = m.name || m.relation_label || ('成员' + m.member_id)
           nameMap[m.member_id] = name
           if (m.type === 'virtual') children.push({ member_id: m.member_id, name })
+          if (m.type !== 'virtual' && currentUserID != null && String(m.user_id) === String(currentUserID)) this._currentMemberId = m.member_id
         })
         this._nameMap = nameMap
         this._tasks = tasks || []
@@ -107,6 +110,8 @@ Page({
         id: 'checkin-' + c.checkin_id,
         kind: 'checkin',
         checkinId: c.checkin_id,
+        submitMemberId: c.submit_member_id,
+        canDelete: this.canDeleteCheckin(c),
         childId: c.child_member_id,
         childName: nameMap[c.child_member_id] || '孩子',
         date,
@@ -147,6 +152,10 @@ Page({
   deleteCheckin(e) {
     const id = e.currentTarget.dataset.id
     if (!id) return
+    const entry = (this.data.entries || []).find((item) => item.kind === 'checkin' && String(item.checkinId) === String(id))
+    if (!entry || !this.canDeleteCheckin({ submit_member_id: entry.submitMemberId })) {
+      return wx.showToast({ title: '只能删除自己提交的打卡记录', icon: 'none' })
+    }
     wx.showModal({
       title: '删除打卡记录',
       content: '删除后会影响连续天数、周报和时间线统计，确认删除？',
@@ -162,6 +171,13 @@ Page({
           .catch((err) => wx.showToast({ title: err.message || '删除失败', icon: 'none' }))
       }
     })
+  },
+
+  canDeleteCheckin(checkin) {
+    return !!checkin && (!!app.globalData.isAdmin || (
+      this._currentMemberId != null && checkin.submit_member_id != null &&
+      String(checkin.submit_member_id) === String(this._currentMemberId)
+    ))
   },
 
   goBack() { wx.navigateBack() },

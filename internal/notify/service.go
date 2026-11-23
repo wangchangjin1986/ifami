@@ -2,9 +2,12 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"ifami/internal/pkg/httpx"
 	"ifami/internal/pkg/logx"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -13,6 +16,8 @@ import (
 // Identity 是 notify 对 identity 模块的最小依赖（消费方定义接口，发订阅消息需 openid）。
 type Identity interface {
 	OpenID(ctx context.Context, userID uint64) (string, error)
+	// RequireActive returns public identity membership denial codes 1005/1014;
+	// operational errors remain retryable and must propagate.
 	RequireActive(ctx context.Context, userID, familyID uint64) (uint64, string, error)
 	AdminUserIDs(ctx context.Context, familyID uint64) ([]uint64, error)
 	BackupUserIDs(ctx context.Context, familyID uint64) ([]uint64, error)
@@ -27,12 +32,17 @@ type notifyStore interface {
 	UpdateJob(ctx context.Context, jobID uint64, updates map[string]any) error
 }
 
-// Service 是 notify 模块业务层：触达路由、升级状态机、通道适配、回执。
-// 业务模块（schedule/task）通过本 Service 创建触达任务，禁止直接调微信/短信（硬性规则 6）。
+// ScheduleVisibility 由 notify 定义，仅通过接口读取日程当前可见性。
+type ScheduleVisibility interface {
+	NotificationVisibility(ctx context.Context, userID, familyID, instanceID uint64) (bool, error)
+}
+
+// Service 路由触达、升级状态机、通道适配与回执。
 type Service struct {
-	store   notifyStore
-	id      Identity
-	channel Channel
+	schedules ScheduleVisibility
+	store     notifyStore
+	id        Identity
+	channel   Channel
 }
 
 type TemplateConfig struct {
@@ -50,6 +60,8 @@ type ReddotJobView struct {
 func NewService(store *Store, id Identity, ch Channel) *Service {
 	return &Service{store: store, id: id, channel: ch}
 }
+
+func (s *Service) SetScheduleVisibility(scope ScheduleVisibility) { s.schedules = scope }
 
 func (s *Service) TemplateConfig() TemplateConfig {
 	provider, ok := s.channel.(TemplateProvider)
@@ -69,6 +81,13 @@ func (s *Service) ListReddotJobs(ctx context.Context, userID, familyID uint64) (
 	}
 	out := make([]ReddotJobView, 0, len(jobs))
 	for i := range jobs {
+		visible, err := s.scheduleJobVisibility(ctx, &jobs[i])
+		if err != nil {
+			return nil, err
+		}
+		if !visible {
+			continue
+		}
 		out = append(out, ReddotJobView{
 			JobID:   jobs[i].JobID,
 			Level:   jobs[i].Level,
@@ -199,6 +218,13 @@ func (s *Service) ProcessDue(ctx context.Context) error {
 
 // processPending 处理待发送任务：weak 直接完成；medium 发送后完成；strong 发送后进升级计时。
 func (s *Service) processPending(ctx context.Context, job *NotifyJob, now time.Time) error {
+	visible, err := s.scheduleJobVisibility(ctx, job)
+	if err != nil {
+		return err
+	}
+	if !visible {
+		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
+	}
 	switch job.Level {
 	case LevelWeak:
 		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
@@ -232,6 +258,17 @@ func (s *Service) processPending(ctx context.Context, job *NotifyJob, now time.T
 
 // escalateReddot 强触达 15min 无回执 → 应用内待办红点（通道2），30min 时升级备份。
 func (s *Service) escalateReddot(ctx context.Context, job *NotifyJob, now time.Time) error {
+	visible, err := s.scheduleJobVisibility(ctx, job)
+	if err != nil {
+		return err
+	}
+	if !visible {
+		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
+	}
+	if job.Level != LevelStrong {
+		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
+	}
+
 	cs := cloneState(job.ChannelState)
 	cs["reddot_at"] = now.Format(time.RFC3339)
 	next := now.Add(escalateBackupAfter - escalateReddotAfter) // 再过 15min 达 30min
@@ -244,6 +281,17 @@ func (s *Service) escalateReddot(ctx context.Context, job *NotifyJob, now time.T
 
 // escalateBackup 强触达 30min 无回执 → 备份联系人（Phase 0：同家庭其他管理员/家长订阅消息），终端。
 func (s *Service) escalateBackup(ctx context.Context, job *NotifyJob, now time.Time) error {
+	visible, err := s.scheduleJobVisibility(ctx, job)
+	if err != nil {
+		return err
+	}
+	if !visible {
+		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
+	}
+	if job.Level != LevelStrong {
+		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
+	}
+
 	userIDs, err := s.id.BackupUserIDs(ctx, job.FamilyID)
 	if err != nil {
 		logx.Warnf("[notify] 备份触达解析联系人失败 job=%d err=%v", job.JobID, err)
@@ -254,6 +302,7 @@ func (s *Service) escalateBackup(ctx context.Context, job *NotifyJob, now time.T
 			continue
 		}
 		payload := cloneState(job.Payload)
+		payload["source_type"] = job.Payload["type"]
 		payload["type"] = "backup_notification"
 		payload["title"] = "备份提醒：" + payloadStringForBackup(job.Payload, "title")
 		if _, err := s.CreateJob(ctx, &CreateJobInput{
@@ -306,4 +355,73 @@ func cloneState(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// schedule visibility is rechecked before each read, send and escalation.
+func (s *Service) scheduleJobVisibility(ctx context.Context, job *NotifyJob) (bool, error) {
+	typ, _ := job.Payload["type"].(string)
+	source, _ := job.Payload["source_type"].(string)
+	scheduleJob := strings.HasPrefix(typ, "schedule_") || strings.HasPrefix(source, "schedule_") || payloadID(job.Payload["instance_id"]) > 0 || payloadID(job.Payload["schedule_id"]) > 0
+	// Historical schedule owner jobs had no type or ID; task jobs have their own type.
+	if (typ == "" || (typ == "backup_notification" && payloadID(job.Payload["task_id"]) == 0)) && (job.Payload["start_time"] != nil || job.Payload["location"] != nil || job.Payload["note"] != nil) {
+		scheduleJob = true
+	}
+	if !scheduleJob {
+		return true, nil
+	}
+	_, role, err := s.id.RequireActive(ctx, job.TargetUserID, job.FamilyID)
+	if err != nil {
+		var denial *httpx.Err
+		if errors.As(err, &denial) && denial.HTTP == 403 && (denial.Code == 1005 || denial.Code == 1014) {
+			return false, nil
+		}
+		return false, err
+	}
+	if typ == "schedule_unassigned" {
+		job.Payload = genericSchedulePayload("schedule_unassigned", role)
+		job.Level = LevelMedium
+		return true, nil
+	}
+	iid := payloadID(job.Payload["instance_id"])
+	if iid == 0 {
+		if role != "admin" && role != "parent" {
+			job.Payload = genericSchedulePayload("schedule_updated", role)
+			job.Level = LevelMedium
+		}
+		return true, nil
+	}
+	if s.schedules == nil {
+		return false, nil
+	}
+	return s.schedules.NotificationVisibility(ctx, job.TargetUserID, job.FamilyID, iid)
+}
+func genericSchedulePayload(typ, role string) map[string]any {
+	page := "pages/today/index"
+	if role != "admin" && role != "parent" {
+		page = "pages/gp-today/index"
+	}
+	return map[string]any{"type": typ, "title": "分工已调整", "page": page}
+}
+func payloadID(v any) uint64 {
+	switch n := v.(type) {
+	case uint64:
+		return n
+	case uint:
+		return uint64(n)
+	case int:
+		if n > 0 {
+			return uint64(n)
+		}
+	case float64:
+		if n > 0 && n == float64(uint64(n)) {
+			return uint64(n)
+		}
+	case json.Number:
+		val, _ := strconv.ParseUint(string(n), 10, 64)
+		return val
+	case string:
+		val, _ := strconv.ParseUint(n, 10, 64)
+		return val
+	}
+	return 0
 }

@@ -1,0 +1,11 @@
+{
+  "name": "ifami-miniapp-tests",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node family-join.behavior.test.cjs"
+  },
+  "devDependencies": {
+    "jsqr": "1.4.0"
+  }
+}

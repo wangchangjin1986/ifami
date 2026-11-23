@@ -79,51 +79,48 @@ Page({
       wx.reLaunch({ url: '/pages/today/index' })
       return Promise.resolve()
     }
-    const familyIds = memberships.map((m) => m.family_id)
+    const current = memberships.find((m) => String(m.family_id) === String(app.globalData.familyId)) || memberships[0]
+    const fid = current.family_id
+    if (String(app.globalData.familyId) !== String(fid)) app.setFamily(fid)
     const today = todayStr()
     const tomorrow = fmt(addDays(new Date(), 1))
     return app.request('/v1/families')
       .then((families) => {
-        const familyName = {}
-        ;(families || []).forEach((f) => { familyName[f.family_id] = f.name || '家庭' })
-        return Promise.all(familyIds.map((fid) => Promise.all([
+        const family = (families || []).find((f) => String(f.family_id) === String(fid))
+        const familyName = family && family.name || '家庭'
+        return Promise.all([
           app.request(`/v1/families/${fid}/members`, { familyId: fid }),
           app.request(`/v1/schedules/instances?start=${today}&end=${today}`, { familyId: fid }),
           app.request(`/v1/schedules/instances?start=${tomorrow}&end=${tomorrow}`, { familyId: fid }),
           app.request('/v1/notify/reddots', { familyId: fid }).catch(() => [])
-        ]).then(([members, todayRows, tomorrowRows, reddots]) => ({ fid, familyName: familyName[fid] || '家庭', members, todayRows, tomorrowRows, reddots }))))
+        ]).then(([members, todayRows, tomorrowRows, reddots]) => ({ fid, familyName, members, todayRows, tomorrowRows, reddots }))
       })
-      .then((groups) => {
+      .then((group) => {
         const items = []
         const tomorrowItems = []
         const notifyReddots = []
-        let contact = null
-        groups.forEach((g) => {
-          const names = {}
-          ;(g.members || []).forEach((m) => { names[m.member_id] = nameOf(m) })
-          if (!contact) contact = pickContact(g.members || [])
-          ;(g.todayRows || []).forEach((it) => {
-            if (it.status === 'cancelled') return
-            items.push({
-              familyId: g.fid,
-              familyName: g.familyName,
-              instanceId: it.instance_id,
-              start: hhmm(it.start_at),
-              startAt: it.start_at,
-              title: it.title,
-              status: it.status,
-              childName: names[it.child_member_id] || '孩子',
-              meta: [it.location ? '📍 ' + it.location : '', it.note ? '🎒 带：' + it.note : ''].filter(Boolean).join('\n')
-            })
-          })
-          ;(g.tomorrowRows || []).forEach((it) => {
-            if (it.status === 'cancelled') return
-            tomorrowItems.push({ familyName: g.familyName, start: hhmm(it.start_at), title: it.title, startAt: it.start_at })
-          })
-          ;(g.reddots || []).forEach((job) => {
-            notifyReddots.push(Object.assign({}, job, { familyId: g.fid, familyName: g.familyName }))
+        const names = {}
+        ;(group.members || []).forEach((m) => { names[m.member_id] = nameOf(m) })
+        const contact = pickContact(group.members || [])
+        ;(group.todayRows || []).forEach((it) => {
+          if (it.status === 'cancelled') return
+          items.push({
+            familyId: group.fid,
+            familyName: group.familyName,
+            instanceId: it.instance_id,
+            start: hhmm(it.start_at),
+            startAt: it.start_at,
+            title: it.title,
+            status: it.status,
+            childName: names[it.child_member_id] || '孩子',
+            meta: [it.location ? '📍 ' + it.location : '', it.note ? '🎒 带：' + it.note : ''].filter(Boolean).join('\n')
           })
         })
+        ;(group.tomorrowRows || []).forEach((it) => {
+          if (it.status === 'cancelled') return
+          tomorrowItems.push({ start: hhmm(it.start_at), title: it.title, startAt: it.start_at })
+        })
+        ;(group.reddots || []).forEach((job) => notifyReddots.push(Object.assign({}, job, { familyId: group.fid, familyName: group.familyName })))
         items.sort((a, b) => a.startAt < b.startAt ? -1 : 1)
         tomorrowItems.sort((a, b) => a.startAt < b.startAt ? -1 : 1)
         const firstTomorrow = tomorrowItems[0]
@@ -136,7 +133,7 @@ Page({
           hasReddot: notifyReddots.length > 0,
           items,
           empty: items.length === 0,
-          tomorrowText: firstTomorrow ? `明天 · ${firstTomorrow.familyName} ${firstTomorrow.start} ${firstTomorrow.title}` : '',
+          tomorrowText: firstTomorrow ? `明天 · ${firstTomorrow.start} ${firstTomorrow.title}` : '',
           contactName,
           contactPhone,
           callText: contactName ? `📞 联系${contactName}` : '📞 联系家长'

@@ -40,6 +40,7 @@ Page({
     childPickerLabel: '请选择孩子',
     exporting: false,
     deletingChild: false,
+    isAdmin: false,
     smsFallback: false,
     dndStart: '22:00',
     dndEnd: '07:00',
@@ -63,7 +64,8 @@ Page({
       logged: true,
       hasFamily: !!fid,
       familyName: wx.getStorageSync('familyName:' + fid) || '当前家庭',
-      serviceAccountStatus: '订阅授权需在提醒时确认'
+      serviceAccountStatus: '订阅授权需在提醒时确认',
+      isAdmin: !!app.globalData.isAdmin
     }, s))
     if (fid) this.loadChildren()
   },
@@ -168,6 +170,7 @@ Page({
   },
 
   deleteChildProfile() {
+    if (!this.data.isAdmin) return wx.showToast({ title: '只有管理员可以删除孩子档案', icon: 'none' })
     if (this.data.deletingChild) return
     const child = this.data.children[this.data.childIndex]
     if (!child) return wx.showToast({ title: '请先选择孩子', icon: 'none' })

@@ -109,6 +109,7 @@ body {
 .banner { background: var(--warn-soft); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--warn); }
 .banner b { font-weight: 700; }
 .btn { border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-fg); padding: 12px 16px; font-size: 15px; font-weight: 500; cursor: pointer; font-family: var(--font); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.ghost { background: var(--surface-2); color: var(--fg); }
 .btn.danger { background: var(--warn-soft); color: var(--warn); }
 .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 9px; }
@@ -130,6 +131,7 @@ body {
 .done-hero .t { font-size: 20px; font-weight: 700; }
 .done-hero .s { color: var(--muted); font-size: 14px; }
 .member { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.member.readonly { cursor: default; }
 .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
 .group-label { font-size: 13px; font-weight: 700; color: var(--muted); padding: 4px 2px 0; }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -212,6 +214,11 @@ body {
 .sheet.tall { max-height: 88%; overflow-y: auto; }
 .progress { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; width: 100%; }
 .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 1.4s ease; }
+.identity { display: flex; flex-direction: column; gap: 8px; }
+.identity-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); text-align: left; cursor: pointer; }
+.identity-card b { font-size: 15px; }
+.identity-card span { font-size: 13px; color: var(--muted); font-weight: 400; }
+.identity-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 </style>
 </head>
 <body>
@@ -219,7 +226,7 @@ body {
 <div class="demo-bar">
   <strong>ifami 原型</strong><span>示例数据 · 简体中文</span>
   <div class="role-switch">
-    <button id="role-parent" class="on">父母视角</button>
+    <button id="role-parent" class="on">管理员视角</button>
     <button id="role-gp">奶奶视角</button>
     <button id="role-new">新家庭</button>
   </div>
@@ -232,7 +239,7 @@ body {
     <button id="preview-exit">退出预览</button>
   </div>
 
-  <!-- 照护人：跨家庭聚合今日视图（无 Tab，祖辈/保姆阿姨共用） -->
+  <!-- 照护人：当前家庭本人分工今日视图（无 Tab，祖辈/保姆阿姨共用） -->
   <section class="screen" id="scr-gp" hidden>
     <div class="app-head"><h1 class="gp-head-date">今天 10月26日 星期一</h1><span class="sub" id="gp-settings" style="margin-left:auto;color:var(--accent)">设置</span></div>
     <div class="body">
@@ -243,22 +250,15 @@ body {
         <div class="gp-meta">📍 实验二小 东门<br>🎒 带：水壶、外套</div>
         <div class="gp-actions"><button class="done" data-complete="接乐乐放学">完成</button><button class="adjust" data-feedback="接乐乐放学" data-reason="要调整">要调整</button></div>
       </div>
-      <div class="gp-card">
-        <div class="gp-family">果果家 · 果果</div>
-        <div class="gp-time">17:30</div>
-        <div class="gp-title">送果果上舞蹈课</div>
-        <div class="gp-meta">📍 少儿艺术中心 2 楼<br>🎒 带：舞蹈鞋</div>
-        <div class="gp-actions"><button class="done" data-complete="送果果上舞蹈课">完成</button><button class="adjust" data-feedback="送果果上舞蹈课" data-reason="要调整">要调整</button></div>
-      </div>
       <div class="tomorrow">明天 · 乐乐家 07:30 送乐乐上学</div>
       <button class="big-call" id="gp-call">📞 联系家长</button>
-      <div class="note">这里不会显示复杂的日历和家庭管理；「完成」用于快速确认已执行，「要调整」会通知家长处理。</div>
+      <div class="note">这里只显示分配给本人的事项，不显示家庭其他成员安排；「完成」用于快速确认已执行，「要调整」会通知家长处理。</div>
     </div>
   </section>
 
   <!-- 父母：今日 -->
   <section class="screen" id="scr-today" hidden>
-    <div class="app-head"><h1>今天</h1><span class="sub">10月26日 周一 · <a href="#" id="fam-switch1" style="color:var(--accent)">乐乐家 ▾</a></span></div>
+    <div class="app-head"><h1>今天</h1><span class="sub">10月26日 周一 · 乐乐家</span></div>
     <div class="body">
       <div class="card tappable" data-event="送果果上幼儿园"><div class="ev"><div class="ev-time">07:30</div><div class="ev-main"><div class="ev-title">送果果上幼儿园 <span class="chip">爸爸</span></div><div class="ev-meta">蓝天幼儿园 · 带汗巾</div></div></div></div>
       <div class="card tappable" data-event="接乐乐放学"><div class="ev"><div class="ev-time">16:30</div><div class="ev-main"><div class="ev-title">接乐乐放学 <span class="chip">奶奶</span></div><div class="ev-meta">实验二小 东门 · 带水壶、外套</div></div></div></div>
@@ -279,7 +279,7 @@ body {
         <div class="rowline"><span>地点</span><span class="v" id="event-loc">音悦琴行 3 楼</span></div>
         <div class="rowline"><span>备注</span><span class="v" id="event-note">带琴谱</span></div>
       </div>
-      <div id="event-admin-actions">
+      <div id="event-admin-actions" data-admin-only>
         <button class="btn" id="btn-reassign">改分工</button>
         <div class="row" style="gap:10px;margin-top:10px">
           <button class="btn ghost" style="flex:1" id="btn-edit-event">编辑</button>
@@ -295,6 +295,7 @@ body {
         </div>
         <div class="note">你不能直接改日程；完成会记录执行结果，要调整会通知家长处理。</div>
       </div>
+      <div class="note" id="event-parent-note" hidden>普通家长可查看家庭安排，但不能改分工、编辑或删除日程。</div>
     </div>
   </section>
 
@@ -329,7 +330,7 @@ body {
         <div class="banner" id="conflict-banner" style="margin-top:12px">
           <b>⚠️ 周三 17:30 奶奶有冲突</b>
           <div>送乐乐钢琴课 × 接果果放学，时间重叠。</div>
-          <div><button class="btn sm" id="btn-fix">调整分工</button></div>
+          <div data-admin-only><button class="btn sm" id="btn-fix">调整分工</button></div>
         </div>
         <div class="muted" style="margin-top:8px">按 2 小时时段排布，格子显示孩子 · 责任人，点开看详情。</div>
       </div>
@@ -347,16 +348,16 @@ body {
   <section class="screen" id="scr-daka" hidden>
     <div class="app-head"><h1>打卡</h1><span class="sub">今日任务</span></div>
     <div class="body" id="daka-list">
-      <div class="card tappable" id="task-template-entry">
+      <div class="card tappable" id="task-template-entry" data-admin-only>
         <div class="rowline"><span>任务模板</span><span class="v">阅读 / 跳绳 / 练琴</span></div>
         <div class="muted">一次勾选多个常见任务，统一设置孩子、频次和责任家长。</div>
       </div>
       <div class="group-label">乐乐 · 三年级</div>
-      <div class="card task" data-task="阅读 20 分钟" data-child="乐乐" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">阅读 20 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div><div class="inline-actions"><span class="link-action" data-open-task-detail="阅读 20 分钟">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
-      <div class="card task" data-task="跳绳 100 个" data-child="乐乐" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">跳绳 100 个</div><div class="ev-meta">每天 · 责任：爸爸</div><div class="inline-actions"><span class="link-action" data-open-task-detail="跳绳 100 个">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
+      <div class="card task" data-task="阅读 20 分钟" data-child="乐乐" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">阅读 20 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div><div class="inline-actions" data-admin-only><span class="link-action" data-open-task-detail="阅读 20 分钟">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
+      <div class="card task" data-task="跳绳 100 个" data-child="乐乐" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">跳绳 100 个</div><div class="ev-meta">每天 · 责任：爸爸</div><div class="inline-actions" data-admin-only><span class="link-action" data-open-task-detail="跳绳 100 个">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
       <div class="card task done" data-hist="练琴 30 分钟"><div class="dot">✓</div><div class="ev-main"><div class="ev-title">练琴 30 分钟</div><div class="ev-meta">每天 · 妈妈代打 18:20 · 点我看月历</div></div></div>
       <div class="group-label">果果 · 幼儿园大班</div>
-      <div class="card task" data-task="绘本共读 15 分钟" data-child="果果" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">绘本共读 15 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div><div class="inline-actions"><span class="link-action" data-open-task-detail="绘本共读 15 分钟">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
+      <div class="card task" data-task="绘本共读 15 分钟" data-child="果果" data-admin="task-detail"><div class="dot"></div><div class="ev-main"><div class="ev-title">绘本共读 15 分钟</div><div class="ev-meta">每天 · 责任：妈妈</div><div class="inline-actions" data-admin-only><span class="link-action" data-open-task-detail="绘本共读 15 分钟">详情/编辑</span></div></div><span class="chip gray">去打卡</span></div>
     </div>
   </section>
 
@@ -450,9 +451,9 @@ body {
       <div class="note">归档后不再出现在今日打卡和提醒中；历史打卡保留在周报和时间线里。</div>
       <div class="group-label">最近打卡记录</div>
       <div class="card">
-        <div class="rowline"><span>今天 20:12 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="今天 20:12">删除</button></span></div>
-        <div class="rowline"><span>昨天 19:50 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="昨天 19:50">删除</button></span></div>
-        <div class="rowline"><span>10/24 20:05 · 爸爸提交</span><span class="v"><button class="link-action danger" data-del-checkin="10/24 20:05">删除</button></span></div>
+        <div class="rowline"><span>今天 20:12 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="今天 20:12" data-submit-member="妈妈">删除</button></span></div>
+        <div class="rowline"><span>昨天 19:50 · 妈妈提交</span><span class="v"><button class="link-action danger" data-del-checkin="昨天 19:50" data-submit-member="妈妈">删除</button></span></div>
+        <div class="rowline"><span>10/24 20:05 · 爸爸提交</span><span class="v"><button class="link-action danger" data-del-checkin="10/24 20:05" data-submit-member="爸爸">删除</button></span></div>
       </div>
       <div class="muted">错打卡先删除后重新打卡；删除会影响连续天数、周报和成长时间线统计。</div>
     </div>
@@ -640,19 +641,30 @@ body {
     </div>
   </section>
 
+  <!-- 首次进入：创建 / 加入 -->
+  <section class="screen" id="scr-onboard" hidden>
+    <div class="app-head"><h1>ifami</h1></div>
+    <div class="body">
+      <div class="card"><div class="ev-title">欢迎使用家庭协作</div><div class="ev-meta">用日历分工和打卡记录，一起把孩子的每一天安排清楚。</div></div>
+      <button class="btn" id="onboard-create">创建我的家庭</button>
+      <button class="btn ghost" id="onboard-join">加入家人的家庭</button>
+      <div class="muted" style="margin-top:6px">加入需家人当面展示「家庭加入码」；码不通过微信转发。</div>
+    </div>
+  </section>
+
   <!-- 家庭 -->
   <section class="screen" id="scr-family" hidden>
-    <div class="app-head"><h1>家庭</h1><span class="sub">乐乐家 ▾</span></div>
+    <div class="app-head"><h1>家庭</h1><span class="sub">乐乐家</span></div>
     <div class="body">
       <div class="card member" data-member="妈妈"><div class="avatar">妈</div><div class="ev-main"><div class="ev-title">妈妈 <span class="chip">管理员</span></div><div class="ev-meta">138****1234 · 服务号已绑</div></div></div>
-      <div class="card member" data-member="爸爸"><div class="avatar">爸</div><div class="ev-main"><div class="ev-title">爸爸</div><div class="ev-meta">139****5678 · 服务号已绑</div></div></div>
+      <div class="card member" data-member="爸爸"><div class="avatar">爸</div><div class="ev-main"><div class="ev-title">爸爸 <span class="chip gray">普通家长</span></div><div class="ev-meta">四 Tab · 查看家庭安排、参与打卡 · 无录入/编辑权限</div></div></div>
       <div class="card member" data-member="奶奶"><div class="avatar">奶</div><div class="ev-main"><div class="ev-title">奶奶 <span class="chip gray">照护人</span></div><div class="ev-meta">136****9012 · 服务号 + 短信兜底</div></div></div>
       <div class="card member" data-member="接送阿姨"><div class="avatar">姨</div><div class="ev-main"><div class="ev-title">接送阿姨 <span class="chip gray">照护人</span></div><div class="ev-meta">只看今日安排 · 可完成/要调整</div></div></div>
       <div class="card member" data-member="乐乐"><div class="avatar">乐</div><div class="ev-main"><div class="ev-title">乐乐 <span class="chip gray">孩子档案</span></div><div class="ev-meta">三年级 · 虚拟成员，由父母代管</div></div></div>
       <div class="card member" data-member="果果"><div class="avatar">果</div><div class="ev-main"><div class="ev-title">果果 <span class="chip gray">孩子档案</span></div><div class="ev-meta">幼儿园大班 · 虚拟成员</div></div></div>
-      <button class="btn" id="btn-invite">＋ 邀请家人</button>
+      <button class="btn" id="btn-invite" data-admin-only>＋ 家人加入码</button>
       <div class="row" style="gap:10px">
-        <button class="btn ghost" style="flex:1" id="btn-manage">全部安排</button>
+        <button class="btn ghost" style="flex:1" id="btn-manage" data-admin-only>全部安排</button>
         <button class="btn ghost" style="flex:1" id="btn-report">家庭周报</button>
       </div>
       <div class="row" style="gap:10px">
@@ -663,6 +675,7 @@ body {
         <div class="rowline"><span>录入权限</span><span class="v">仅管理员可录入</span></div>
         <div class="muted">只有管理员可以录入或编辑日程、打卡任务；其他成员可查看，照护人通过完成/要调整反馈回路协作。</div>
       </div>
+      <div class="note" id="parent-family-note" hidden>你是普通家长：可查看四 Tab 和参与打卡；家人加入码、成员管理与录入编辑仅管理员可用。</div>
     </div>
   </section>
 
@@ -703,19 +716,39 @@ body {
     </div>
   </section>
 
-  <!-- 邀请落地 -->
+  <!-- 加入家人落地：输入加入码（扫码/手输）→ 选身份 → 选称谓 → 进入 -->
   <section class="screen" id="scr-invite" hidden>
-    <div class="app-head"><button class="back">‹ 返回</button><h1>加入「乐乐家」</h1></div>
+    <div class="app-head"><button class="back">‹ 返回</button><h1>加入家人的家庭</h1></div>
     <div class="body">
-      <div class="muted" id="invite-desc">妈妈邀请你加入家庭协作。另一位家长进入四 Tab；祖辈/保姆阿姨进入简化今日安排。</div>
-      <div class="card"><div class="ev-title">第 1 步 · 微信授权</div><div class="ev-meta">✅ 已完成</div></div>
-      <div class="card"><div class="ev-title">第 2 步 · 提醒通道</div><div class="ev-meta">可在设置中补充手机号；服务号提醒后续开放</div></div>
-      <div class="card"><div class="ev-title" style="margin-bottom:8px" id="invite-rel-title">第 3 步 · 你的身份是？</div>
-        <div class="filters" id="invite-rel">
-          <span class="chip on">妈妈</span><span class="chip">爸爸</span><span class="chip">奶奶</span><span class="chip">爷爷</span><span class="chip">阿姨</span><span class="chip">接送阿姨</span>
+      <div class="muted" id="invite-desc">输入家人当面展示的「家庭加入码」；确认加入前会显示实际家庭名称和你的身份。</div>
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">第 1 步 · 输入家庭加入码</div>
+        <button class="btn ghost" id="join-scan">📷 扫码加入（扫管理员屏幕上的码）</button>
+        <div class="muted" style="margin-top:4px">或手输 6 位加入码</div>
+        <div class="field" style="margin-top:8px">
+          <input id="join-code" placeholder="6 位加入码，如 482913" inputmode="numeric" maxlength="6">
         </div>
       </div>
-      <button class="btn" id="btn-join">完成，进入家庭</button>
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">第 2 步 · 你的身份是？</div>
+        <div class="identity" id="join-identities">
+          <button class="identity-card on" data-identity="parent"><b>家长</b><span>查看家庭安排、参与打卡，进入完整四 Tab；默认无录入/编辑入口</span></button>
+          <button class="identity-card" data-identity="grandparent"><b>祖辈</b><span>只看分配给本人的接送/陪课安排，完成或要调整</span></button>
+          <button class="identity-card" data-identity="caregiver"><b>阿姨</b><span>只看今天需要你处理的安排，文案显示为照护人</span></button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">第 3 步 · 你的称谓是？</div>
+        <div class="filters" id="join-rel"></div>
+      </div>
+      <div class="card">
+        <div class="ev-title" style="margin-bottom:8px">第 4 步 · 确认加入</div>
+        <div class="rowline"><span>家庭</span><span class="v" id="join-confirm-family">输入加入码后显示</span></div>
+        <div class="rowline"><span>身份</span><span class="v" id="join-confirm-identity">家长</span></div>
+        <div class="rowline"><span>称谓</span><span class="v" id="join-confirm-rel">妈妈</span></div>
+        <div class="muted" style="margin-top:6px">家庭名称由加入码校验结果填入；原型使用示例家庭。家长加入后默认普通家长，仅可查看四 Tab、参与打卡；管理员权限由管理员在成员管理中单独授予。</div>
+      </div>
+      <button class="btn" id="btn-join" disabled>确认，加入家庭</button>
     </div>
   </section>
 
@@ -760,9 +793,10 @@ body {
     <div class="app-head"><button class="back">‹ 返回</button><h1>成长时间线</h1></div>
     <div class="body">
       <div class="filters" id="tl-filter"><span class="chip on">全部</span><span class="chip">乐乐</span><span class="chip">果果</span></div>
-      <div class="tl"><div class="tl-date">10/26</div><div class="tl-body"><div class="ev-title">📖 阅读打卡 20 分钟</div><div class="ev-meta">乐乐 · 连续 5 天</div><div class="inline-actions"><span class="link-action danger" data-del-checkin="阅读打卡 20 分钟">删除打卡</span></div></div></div>
+      <div class="tl"><div class="tl-date">10/26</div><div class="tl-body"><div class="ev-title">📖 阅读打卡 20 分钟</div><div class="ev-meta">乐乐 · 妈妈提交 · 连续 5 天</div><div class="inline-actions"><span class="link-action danger" data-del-checkin="阅读打卡 20 分钟" data-submit-member="妈妈">删除打卡</span></div></div></div>
       <div class="tl"><div class="tl-date">10/25</div><div class="tl-body"><div class="ev-title">🏊 里程碑：独立游 10 米</div><div class="ev-meta">果果 · 游泳课第 8 节</div></div></div>
       <div class="tl"><div class="tl-date">10/24</div><div class="tl-body"><div class="ev-title">🎹 钢琴课出勤</div><div class="ev-meta">乐乐 · 奶奶送</div></div></div>
+      <div class="tl"><div class="tl-date">10/23</div><div class="tl-body"><div class="ev-title">📚 绘本共读 15 分钟</div><div class="ev-meta">果果 · 爸爸提交</div><div class="inline-actions"><span class="link-action danger" data-del-checkin="绘本共读 15 分钟" data-submit-member="爸爸">删除打卡</span></div></div></div>
       <div class="tl"><div class="tl-date">10/22</div><div class="tl-body"><div class="ev-title">🤸 里程碑：跳绳首次连续 100 个</div><div class="ev-meta">乐乐</div></div></div>
       <div class="tl"><div class="tl-date">10/20</div><div class="tl-body"><div class="ev-title">📷 周末香山出游</div><div class="ev-meta">全家 · 12 张照片</div></div></div>
       <div class="muted">打卡、里程碑、照片自动沉淀，无需手动整理；源记录删除后会同步从时间线和周报统计中消失。</div>
@@ -824,7 +858,7 @@ body {
     <button data-tab="scr-daka"><span class="ic">✅</span>打卡</button>
     <button data-tab="scr-family"><span class="ic">🏠</span>家庭</button>
   </nav>
-  <button class="fab" id="fab">＋</button>
+  <button class="fab" id="fab" data-admin-only>＋</button>
 
   <!-- 动作面板：新建 -->
   <div class="sheet-mask" id="sheet" hidden>
@@ -836,18 +870,19 @@ body {
     </div>
   </div>
 
-  <!-- 动作面板：邀请家人 -->
+  <!-- 动作面板：家庭加入码（当面扫码加入，不走微信转发） -->
   <div class="sheet-mask" id="sheet-invite" hidden>
     <div class="sheet tall">
-      <div class="ev-title">邀请家人</div>
-      <div class="muted">邀请共同照顾孩子的人加入家庭协作。</div>
-      <button class="opt" data-invite-kind="parent"><b>另一位家长</b><span>一起管理日程、查看打卡、接收提醒；可选普通家长/管理员</span></button>
-      <button class="opt" data-invite-kind="grandparent"><b>爷爷奶奶 / 姥姥姥爷</b><span>看今天安排，完成接送反馈</span></button>
-      <button class="opt" data-invite-kind="caregiver"><b>保姆阿姨 / 接送阿姨</b><span>只看今天安排，完成接送反馈，文案显示为照护人</span></button>
-      <div class="seg" id="invite-admin-seg"><button class="on">普通家长</button><button>管理员</button></div>
-      <button class="btn" id="invite-share">微信分享给家人</button>
-      <button class="btn ghost" id="invite-copy">复制邀请链接</button>
-      <button class="btn ghost" id="invite-cancel">取消</button>
+      <div class="ev-title">家庭加入码</div>
+      <div class="muted">让家人当面扫这个码加入；码不通过微信转发，24 小时有效。</div>
+      <div style="width:180px;height:180px;margin:14px auto;border:1px solid var(--line);border-radius:12px;background:repeating-linear-gradient(0deg,#2b2b2b 0 6px,transparent 6px 12px),repeating-linear-gradient(90deg,#2b2b2b 0 6px,transparent 6px 12px);position:relative;">
+        <div style="position:absolute;inset:0;margin:auto;width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:8px;font-size:12px;color:#2b2b2b;box-shadow:0 0 0 6px #fff;">扫码加入</div>
+      </div>
+      <div class="rowline"><span>加入码（可手输）</span><span class="v" style="font-family:ui-monospace,Menlo,monospace;letter-spacing:2px">482 913</span></div>
+      <div class="muted" style="margin-top:6px">加入身份：家长 / 祖辈 / 阿姨（照护人）。家长加入后默认普通家长，管理员权限在成员管理中单独授予。</div>
+      <button class="btn" id="invite-regen">重新生成</button>
+      <button class="btn ghost" id="invite-void">作废</button>
+      <button class="btn ghost" id="invite-cancel">关闭</button>
     </div>
   </div>
 
@@ -901,7 +936,8 @@ body {
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
   var navStack = [];
-  var currentRole = 'parent';
+  var currentRole = 'admin';
+  var currentActorMember = '妈妈';
   var feedbackEvent = '';
 
   function toast(msg) {
@@ -919,19 +955,36 @@ body {
   function back() { navStack.pop(); render(navStack[navStack.length - 1] || 'scr-today'); }
   function navTab(id) { navStack = [id]; render(id); }
 
+  function isAdmin() { return currentRole === 'admin'; }
+  function requireAdminAction(action) {
+    if (isAdmin()) return true;
+    toast('只有管理员才能' + action);
+    return false;
+  }
+  function applyRolePermissions() {
+    var admin = isAdmin();
+    Array.prototype.forEach.call(document.querySelectorAll('[data-admin-only]'), function (el) { el.hidden = !admin; });
+    Array.prototype.forEach.call(document.querySelectorAll('.member'), function (el) { el.classList.toggle('readonly', currentRole === 'parent'); });
+    document.getElementById('event-parent-note').hidden = currentRole !== 'parent';
+    document.getElementById('parent-family-note').hidden = currentRole !== 'parent';
+    applyCheckinDeletePermissions();
+  }
+
   // 角色切换
   function setRole(r) {
     currentRole = r;
+    if (r === 'admin') currentActorMember = '妈妈';
     newFamily = r === 'new';
-    document.getElementById('role-parent').classList.toggle('on', r === 'parent');
+    document.getElementById('role-parent').classList.toggle('on', r === 'admin');
     document.getElementById('role-gp').classList.toggle('on', r === 'gp');
     document.getElementById('role-new').classList.toggle('on', r === 'new');
     phone.classList.toggle('gp', r === 'gp');
+    applyRolePermissions();
     var pb = document.getElementById('preview-bar'); if (pb) pb.hidden = true;
-    navStack = [r === 'gp' ? 'scr-gp' : (r === 'new' ? 'scr-week' : 'scr-today')];
+    navStack = [r === 'gp' ? 'scr-gp' : (r === 'new' ? 'scr-onboard' : 'scr-today')];
     render(navStack[0]);
   }
-  document.getElementById('role-parent').addEventListener('click', function () { setRole('parent'); });
+  document.getElementById('role-parent').addEventListener('click', function () { setRole('admin'); });
   document.getElementById('role-gp').addEventListener('click', function () { setRole('gp'); });
   document.getElementById('role-new').addEventListener('click', function () { setRole('new'); });
 
@@ -976,26 +1029,28 @@ body {
       document.getElementById('event-repeat').textContent = single ? '单次' : '每周重复';
       document.getElementById('btn-delete-event-series').textContent = single ? '删除此日程' : '删除此后周期日程';
       document.getElementById('event-delete-note').textContent = single ? '删除此日程会移除这条单次安排；历史记录不受影响。' : '取消本次只影响当前日历里的这一条；删除此后周期日程会保留历史记录，只移除当前日期及未来日程。';
-      document.getElementById('event-admin-actions').hidden = currentRole === 'gp';
+      document.getElementById('event-admin-actions').hidden = !isAdmin();
       document.getElementById('event-gp-actions').hidden = currentRole !== 'gp';
+      document.getElementById('event-parent-note').hidden = currentRole !== 'parent';
       document.getElementById('event-complete').dataset.complete = c.dataset.event;
       document.getElementById('event-feedback-adjust').dataset.feedback = c.dataset.event;
       nav('scr-event');
     });
   });
-  document.getElementById('btn-edit-event').addEventListener('click', function () { toast('原型演示：编辑日程（同新建表单）'); });
-  document.getElementById('btn-cancel-event').addEventListener('click', function () { toast('已取消本次，并通知奶奶'); });
-  document.getElementById('btn-delete-event-series').addEventListener('click', function () { toast(this.textContent + '（原型演示，历史记录保留）'); });
+  document.getElementById('btn-edit-event').addEventListener('click', function () { if (requireAdminAction('编辑日程')) toast('原型演示：编辑日程（同新建表单）'); });
+  document.getElementById('btn-cancel-event').addEventListener('click', function () { if (requireAdminAction('取消日程')) toast('已取消本次，并通知奶奶'); });
+  document.getElementById('btn-delete-event-series').addEventListener('click', function () { if (requireAdminAction('删除日程')) toast(this.textContent + '（原型演示，历史记录保留）'); });
 
   // 改分工
   var sheetRe = document.getElementById('sheet-reassign');
-  function openReassign() { sheetRe.hidden = false; }
+  function openReassign() { if (!requireAdminAction('调整分工')) return false; sheetRe.hidden = false; return true; }
   document.getElementById('btn-reassign').addEventListener('click', openReassign);
   document.getElementById('btn-fix').addEventListener('click', openReassign);
   document.getElementById('reassign-cancel').addEventListener('click', function () { sheetRe.hidden = true; });
   sheetRe.addEventListener('click', function (e) { if (e.target === sheetRe) sheetRe.hidden = true; });
   Array.prototype.forEach.call(sheetRe.querySelectorAll('[data-pick]'), function (b) {
     b.addEventListener('click', function () {
+      if (!requireAdminAction('调整分工')) return;
       sheetRe.hidden = true;
       document.getElementById('conflict-banner').hidden = true;
       document.getElementById('cell-wed-piano').classList.remove('hot');
@@ -1107,7 +1162,7 @@ body {
       });
     });
   }
-  chipWire('task-tpl'); chipWire('invite-rel'); chipWire('manage-filter'); chipWire('tl-filter');
+  chipWire('task-tpl'); chipWire('manage-filter'); chipWire('tl-filter');
   // 「自定义/每周 N 次」选项展开输入框（模板名 / 目标量 / 频次）
   function customToggle(wireId, inputId, triggerText) {
     var box = document.getElementById(wireId), input = document.getElementById(inputId);
@@ -1121,6 +1176,7 @@ body {
   customToggle('task-freq', 'task-freq-custom', '每周 N 次');
   var taskEditMode = false;
   function openTaskForm(edit, title) {
+    if (!requireAdminAction(edit ? '编辑打卡任务' : '创建打卡任务')) return false;
     taskEditMode = !!edit;
     document.getElementById('task-form-title').textContent = edit ? '编辑打卡任务' : '创建打卡任务';
     document.getElementById('btn-task-save').textContent = edit ? '保存' : '创建';
@@ -1133,13 +1189,17 @@ body {
       document.querySelector('#task-tpl-custom').value = title || '阅读';
     }
     nav('scr-task-create');
+    return true;
   }
   function openTaskDetail(title) {
+    if (!requireAdminAction('管理打卡任务')) return false;
     document.getElementById('task-detail-title').textContent = title || '阅读 20 分钟';
     document.getElementById('task-detail-goal').textContent = (title && title.indexOf('跳绳') >= 0) ? '每天 · 100 个' : '每天 · 20 分钟';
     nav('scr-task-detail');
+    return true;
   }
   document.getElementById('btn-task-save').addEventListener('click', function () {
+    if (!requireAdminAction(taskEditMode ? '编辑打卡任务' : '创建打卡任务')) return;
     var tplChip = document.querySelector('#task-tpl .chip.on');
     var tpl = tplChip.textContent === '自定义'
       ? (document.getElementById('task-tpl-custom').value.trim() || '自定义任务')
@@ -1165,14 +1225,15 @@ body {
 
   // 动作面板：新建
   var sheet = document.getElementById('sheet');
-  document.getElementById('fab').addEventListener('click', function () { sheet.hidden = false; });
+  document.getElementById('fab').addEventListener('click', function () { if (requireAdminAction('录入')) sheet.hidden = false; });
   document.getElementById('sheet-cancel').addEventListener('click', function () { sheet.hidden = true; });
   sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.hidden = true; });
-  document.getElementById('opt-event').addEventListener('click', function () { sheet.hidden = true; nav('scr-create'); });
-  document.getElementById('opt-import').addEventListener('click', function () { sheet.hidden = true; nav('scr-import'); });
+  document.getElementById('opt-event').addEventListener('click', function () { if (!requireAdminAction('录入日程')) return; sheet.hidden = true; nav('scr-create'); });
+  document.getElementById('opt-import').addEventListener('click', function () { if (!requireAdminAction('导入日程')) return; sheet.hidden = true; nav('scr-import'); });
   document.getElementById('opt-task').addEventListener('click', function () { sheet.hidden = true; openTaskForm(false); });
-  document.getElementById('task-template-entry').addEventListener('click', function () { nav('scr-task-template'); });
+  document.getElementById('task-template-entry').addEventListener('click', function () { if (requireAdminAction('创建打卡任务')) nav('scr-task-template'); });
   document.getElementById('btn-task-template-save').addEventListener('click', function () {
+    if (!requireAdminAction('创建打卡任务')) return;
     navTab('scr-daka'); toast('已启用 3 个打卡任务模板');
   });
   Array.prototype.forEach.call(document.querySelectorAll('[data-open-task-detail]'), function (el) {
@@ -1182,12 +1243,29 @@ body {
     });
   });
   document.getElementById('btn-task-edit').addEventListener('click', function () { openTaskForm(true, document.getElementById('task-detail-title').textContent); });
-  document.getElementById('btn-task-pause').addEventListener('click', function () { toast('已暂停提醒，任务仍可手动打卡（原型演示）'); });
-  document.getElementById('btn-task-archive').addEventListener('click', function () { toast('已归档任务；历史打卡保留（原型演示）'); });
+  document.getElementById('btn-task-pause').addEventListener('click', function () { if (requireAdminAction('暂停任务提醒')) toast('已暂停提醒，任务仍可手动打卡（原型演示）'); });
+  document.getElementById('btn-task-archive').addEventListener('click', function () { if (requireAdminAction('归档任务')) toast('已归档任务；历史打卡保留（原型演示）'); });
+  function canDeleteCheckin(submitMember) {
+    return !!submitMember && (isAdmin() || submitMember === currentActorMember);
+  }
+  function applyCheckinDeletePermissions() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-del-checkin]'), function (el) {
+      el.hidden = !canDeleteCheckin(el.dataset.submitMember || '');
+    });
+  }
+  function deleteCheckin(el) {
+    var submitMember = el.dataset.submitMember || '';
+    if (!canDeleteCheckin(submitMember)) {
+      toast(submitMember ? '只能删除自己提交的打卡' : '缺少提交人信息，不能删除打卡');
+      return false;
+    }
+    toast('已删除打卡；连续天数、周报和时间线将重新统计（原型演示）');
+    return true;
+  }
   Array.prototype.forEach.call(document.querySelectorAll('[data-del-checkin]'), function (el) {
     el.addEventListener('click', function (e) {
       e.stopPropagation();
-      toast('已删除打卡；连续天数、周报和时间线将重新统计（原型演示）');
+      deleteCheckin(el);
     });
   });
 
@@ -1239,10 +1317,10 @@ body {
   Array.prototype.forEach.call(document.querySelectorAll('#de-dow span'), function (s) {
     s.addEventListener('click', function () { s.classList.toggle('on'); });
   });
-  document.getElementById('btn-de-save').addEventListener('click', function () { back(); toast('已更新这一条'); });
-  document.getElementById('btn-de-del').addEventListener('click', function () { back(); toast('已移除这一条'); });
+  document.getElementById('btn-de-save').addEventListener('click', function () { if (!requireAdminAction('编辑导入草稿')) return; back(); toast('已更新这一条'); });
+  document.getElementById('btn-de-del').addEventListener('click', function () { if (!requireAdminAction('移除导入草稿')) return; back(); toast('已移除这一条'); });
   var sheetBulk = document.getElementById('sheet-bulk');
-  document.getElementById('btn-bulk-owner').addEventListener('click', function () { sheetBulk.hidden = false; });
+  document.getElementById('btn-bulk-owner').addEventListener('click', function () { if (requireAdminAction('批量指派责任人')) sheetBulk.hidden = false; });
   sheetBulk.addEventListener('click', function (e) { if (e.target === sheetBulk) sheetBulk.hidden = true; });
   Array.prototype.forEach.call(sheetBulk.querySelectorAll('[data-bulk]'), function (box) {
     Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (c) {
@@ -1254,6 +1332,7 @@ body {
     });
   });
   document.getElementById('bulk-ok').addEventListener('click', function () {
+    if (!requireAdminAction('批量指派责任人')) return;
     sheetBulk.hidden = true;
     var names = ['奶奶', '妈妈', '妈妈', '奶奶', '爸爸', '妈妈'];
     Array.prototype.forEach.call(document.querySelectorAll('[data-owner]'), function (c, i) {
@@ -1262,38 +1341,105 @@ body {
     document.getElementById('btn-bulk-owner').textContent = '已全部指派 · 点此调整';
     toast('已指派 6 项');
   });
-  document.getElementById('btn-add-all').addEventListener('click', function () { navTab('scr-import-done'); });
+  document.getElementById('btn-add-all').addEventListener('click', function () { if (requireAdminAction('导入日程')) navTab('scr-import-done'); });
   document.getElementById('btn-imp-view').addEventListener('click', function () {
     newFamily = false; navTab('scr-week');
   });
-  document.getElementById('btn-imp-more').addEventListener('click', function () { navTab('scr-import'); });
+  document.getElementById('btn-imp-more').addEventListener('click', function () { if (requireAdminAction('继续导入日程')) navTab('scr-import'); });
 
   // 日程详情编辑（保留）
   document.getElementById('btn-save').addEventListener('click', function () {
+    if (!requireAdminAction('保存日程')) return;
     navTab('scr-week'); toast('已保存，并通知责任人「' + document.getElementById('f-owner').value + '」');
   });
 
-  // 家庭相关
+  // 家庭相关：家庭加入码（当面扫码加入，不走微信转发）
   var inviteSheet = document.getElementById('sheet-invite');
-  document.getElementById('btn-invite').addEventListener('click', function () { inviteSheet.hidden = false; });
+  document.getElementById('btn-invite').addEventListener('click', function () { if (requireAdminAction('展示家人加入码')) inviteSheet.hidden = false; });
   document.getElementById('invite-cancel').addEventListener('click', function () { inviteSheet.hidden = true; });
-  document.getElementById('invite-share').addEventListener('click', function () { inviteSheet.hidden = true; toast('已调起微信分享卡片（原型演示）'); nav('scr-invite'); });
-  document.getElementById('invite-copy').addEventListener('click', function () { toast('已复制邀请路径（原型演示）'); });
-  Array.prototype.forEach.call(document.querySelectorAll('[data-invite-kind]'), function (b) {
-    b.addEventListener('click', function () { toast('邀请类型：' + b.querySelector('b').textContent); });
+  document.getElementById('invite-regen').addEventListener('click', function () { if (requireAdminAction('重新生成加入码')) toast('已重新生成加入码，旧码立即作废'); });
+  document.getElementById('invite-void').addEventListener('click', function () { if (requireAdminAction('作废加入码')) toast('加入码已作废，需重新生成才能加入'); });
+  document.getElementById('onboard-create').addEventListener('click', function () { setRole('admin'); navTab('scr-week'); });
+  document.getElementById('onboard-join').addEventListener('click', function () { nav('scr-invite'); });
+
+  // 加入身份选择：家长/祖辈/阿姨，切换对应称谓
+  var JOIN_REL = { parent: ['妈妈', '爸爸', '其他家长'], grandparent: ['奶奶', '爷爷', '姥姥', '姥爷'], caregiver: ['阿姨', '保姆阿姨', '接送阿姨'] };
+  var JOIN_IDENTITY_LABEL = { parent: '家长', grandparent: '祖辈', caregiver: '阿姨（照护人）' };
+  var joinIdentity = 'parent';
+  var joinRelText = '妈妈';
+  var joinFamilyName = '';
+  var joinPreviewCode = '';
+  function renderJoinRel() {
+    var box = document.getElementById('join-rel');
+    joinRelText = (JOIN_REL[joinIdentity] || [])[0];
+    box.innerHTML = (JOIN_REL[joinIdentity] || []).map(function (x, i) {
+      return '<span class="chip' + (i === 0 ? ' on' : '') + '">' + x + '</span>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (c) {
+      c.onclick = function () {
+        Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (x) { x.classList.remove('on'); });
+        c.classList.add('on');
+        joinRelText = c.textContent;
+        renderJoinConfirm();
+      };
+    });
+    renderJoinConfirm();
+  }
+  function renderJoinConfirm() {
+    document.getElementById('join-confirm-family').textContent = joinFamilyName || '输入加入码后显示';
+    document.getElementById('join-confirm-identity').textContent = JOIN_IDENTITY_LABEL[joinIdentity];
+    document.getElementById('join-confirm-rel').textContent = joinRelText;
+    document.getElementById('btn-join').disabled = !joinFamilyName;
+  }
+  function isValidJoinCode(code) { return /^\d{6}$/.test(code); }
+  function previewJoinCode(code) {
+    joinPreviewCode = isValidJoinCode(code) ? code : '';
+    joinFamilyName = joinPreviewCode ? '乐乐家（原型示例）' : '';
+    renderJoinConfirm();
+    return !!joinFamilyName;
+  }
+  function confirmJoin() {
+    var code = document.getElementById('join-code').value.trim();
+    if (!isValidJoinCode(code) || code !== joinPreviewCode || !joinFamilyName) {
+      previewJoinCode(code);
+      toast('请先输入并校验 6 位数字加入码');
+      return false;
+    }
+    var confirmedFamilyName = joinFamilyName;
+    currentActorMember = joinRelText;
+    setRole(joinIdentity === 'parent' ? 'parent' : 'gp');
+    toast('已加入「' + confirmedFamilyName + '」');
+    return true;
+  }
+  document.getElementById('join-code').addEventListener('input', function (e) {
+    previewJoinCode(e.target.value.trim());
   });
-  document.getElementById('btn-join').addEventListener('click', function () { setRole('gp'); toast('已加入「乐乐家」'); });
-  document.getElementById('btn-manage').addEventListener('click', function () { nav('scr-manage'); });
+  document.getElementById('join-scan').addEventListener('click', function () {
+    document.getElementById('join-code').value = '482913';
+    previewJoinCode('482913');
+    toast('原型演示：扫码成功，已展示示例家庭');
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#join-identities .identity-card'), function (b) {
+    b.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('#join-identities .identity-card'), function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      joinIdentity = b.dataset.identity;
+      renderJoinRel();
+    });
+  });
+  renderJoinRel();
+  document.getElementById('btn-join').addEventListener('click', confirmJoin);
+  document.getElementById('btn-manage').addEventListener('click', function () { if (requireAdminAction('管理全部安排')) nav('scr-manage'); });
   document.getElementById('btn-report').addEventListener('click', function () { nav('scr-report'); });
   document.getElementById('btn-timeline').addEventListener('click', function () { nav('scr-timeline'); });
   document.getElementById('btn-settings').addEventListener('click', function () { nav('scr-settings'); });
   document.getElementById('entry-permission-card').addEventListener('click', function () { toast('只有管理员才能录入'); });
   document.getElementById('btn-share-report').addEventListener('click', function () { toast('原型演示：转发到微信（略）'); });
-  document.getElementById('fam-switch1').addEventListener('click', function (e) { e.preventDefault(); toast('原型演示：多家庭切换（略）'); });
   // 成员详情 + 预览 Ta 的视图
   var currentMember = '妈妈';
   var previewBar = document.getElementById('preview-bar');
   var previewActive = false;
+  var previewReturnRole = 'admin';
   // 成员管理面板：名称/身份、角色、管理员三者分离（虚拟孩子无角色/管理员行）
   function syncMemberPanel() {
     var isChild = currentMember === '乐乐' || currentMember === '果果';
@@ -1315,6 +1461,7 @@ body {
     Array.prototype.forEach.call(document.querySelectorAll('#member-role-seg button'), function (b) {
       b.classList.toggle('on', b.textContent === (currentMember === '奶奶' ? '祖辈' : '家长'));
       b.onclick = function () {
+        if (!requireAdminAction('修改成员角色')) return;
         Array.prototype.forEach.call(document.querySelectorAll('#member-role-seg button'), function (x) { x.classList.remove('on'); });
         b.classList.add('on');
         toast('已更新角色为「' + b.textContent + '」（原型演示）');
@@ -1322,6 +1469,7 @@ body {
     });
     Array.prototype.forEach.call(document.querySelectorAll('#member-rel .chip'), function (c) {
       c.onclick = function () {
+        if (!requireAdminAction('修改成员称谓')) return;
         Array.prototype.forEach.call(document.querySelectorAll('#member-rel .chip'), function (x) { x.classList.remove('on'); });
         c.classList.add('on');
         if (!isChild) document.getElementById('member-name-input').value = c.textContent;
@@ -1331,46 +1479,64 @@ body {
   }
   Array.prototype.forEach.call(document.querySelectorAll('.member'), function (m) {
     m.addEventListener('click', function () {
+      if (!requireAdminAction('管理家庭成员')) return;
       currentMember = m.dataset.member;
       document.getElementById('member-title').textContent = currentMember;
       syncMemberPanel();
       nav('scr-member');
     });
   });
-  document.getElementById('btn-preview').addEventListener('click', function () {
-    if (currentMember === '妈妈' || currentMember === '爸爸') {
-      toast('父母是完整视图，与你当前看到的一致');
-    } else if (currentMember === '奶奶') {
-      previewActive = true;
-      document.getElementById('preview-label').textContent = '预览模式 · 奶奶的视图';
-      previewBar.hidden = false;
-      phone.classList.add('gp');
-      render('scr-gp');
-    } else {
-      toast('孩子无独立端，在父母设备上打卡');
+  function memberPreviewRole(memberName) {
+    if (memberName === '妈妈') return 'admin';
+    if (memberName === '爸爸') return 'parent';
+    if (memberName === '奶奶' || memberName === '接送阿姨') return 'gp';
+    return '';
+  }
+  function openMemberPreview() {
+    if (!requireAdminAction('预览成员视图')) return;
+    var previewRole = memberPreviewRole(currentMember);
+    if (previewRole === 'admin') {
+      toast('妈妈是管理员，使用完整四 Tab 与管理视图');
+      return true;
     }
-  });
+    if (previewRole === 'parent' || previewRole === 'gp') {
+      previewActive = true;
+      previewReturnRole = currentRole;
+      currentActorMember = currentMember;
+      setRole(previewRole);
+      document.getElementById('preview-label').textContent = '预览模式 · ' + currentMember + '的视图';
+      previewBar.hidden = false;
+      render(previewRole === 'gp' ? 'scr-gp' : 'scr-today');
+      return true;
+    }
+    toast('孩子无独立端，在父母设备上打卡');
+    return false;
+  }
+  document.getElementById('btn-preview').addEventListener('click', openMemberPreview);
   document.getElementById('preview-exit').addEventListener('click', function () {
     previewActive = false;
+    setRole(previewReturnRole || 'admin');
+    currentActorMember = '妈妈';
     previewBar.hidden = true;
-    phone.classList.remove('gp');
     render('scr-member');
   });
   document.getElementById('btn-save-member').addEventListener('click', function () {
+    if (!requireAdminAction('保存成员设置')) return;
     var isChild = currentMember === '乐乐' || currentMember === '果果';
     var name = document.getElementById('member-name-input').value.trim();
     if (!name) { toast('请先填写成员名称'); return; }
     toast('已保存' + (isChild ? '孩子档案' : '成员设置') + '：「' + name + '」（原型演示）');
   });
-  document.getElementById('btn-remove-member').addEventListener('click', function () { toast('原型演示：移除不影响孩子档案'); });
+  document.getElementById('btn-remove-member').addEventListener('click', function () { if (requireAdminAction('移除成员')) toast('原型演示：移除不影响孩子档案'); });
   document.getElementById('member-admin-toggle').addEventListener('click', function () {
+    if (!requireAdminAction('设置管理员')) return;
     if (currentMember === '妈妈') toast('末位管理员不可取消');
   });
   Array.prototype.forEach.call(document.querySelectorAll('.toggle'), function (t) {
-    t.addEventListener('click', function () { t.classList.toggle('on'); });
+    t.addEventListener('click', function () { if (t.id === 'member-admin-toggle' && !isAdmin()) return; t.classList.toggle('on'); });
   });
 
-  setRole('parent');
+  setRole('admin');
   navTab('scr-week');
 })();
 </script>

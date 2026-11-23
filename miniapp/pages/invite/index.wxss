@@ -1,1 +1,7 @@
-/* 卡片/chips 复用 app.wxss 全局组件样式 */
+.code-input { margin: 18rpx 0; border: 2rpx solid var(--line); border-radius: 20rpx; text-align: center; font-family: monospace; font-size: 44rpx; letter-spacing: 12rpx; background: #fff; }
+.identity-card { width: 100%; text-align: left; background: #fff; border: 2rpx solid var(--line); border-radius: 20rpx; padding: 20rpx; margin-top: 14rpx; display: flex; flex-direction: column; }
+.identity-card.on { border-color: var(--accent); background: var(--accent-soft); }
+.identity-title { font-weight: 700; font-size: 30rpx; }
+.identity-desc { color: var(--muted); font-size: 25rpx; margin-top: 6rpx; line-height: 1.5; }
+.confirm-card.pending { opacity: .68; }
+.error-text { color: var(--danger); font-size: 26rpx; margin-top: 12rpx; }

@@ -1,7 +1,7 @@
 // 全部安排：日程 + 打卡任务按孩子分组，对齐 prototype scr-manage。
 const app = getApp()
 const { hhmm } = require('../../utils/date')
-const { detailUrl, repeatLabel: scheduleRepeatLabel } = require('../../utils/nav')
+const { repeatLabel: scheduleRepeatLabel } = require('../../utils/nav')
 
 const TYPE_EMOJI = { course: '📚', pickup: '🚗', activity: '🎈', reminder: '⏰' }
 const TASK_EMOJI = { timer: '⏱', count: '🔢', photo: '📷' }
@@ -21,6 +21,11 @@ Page({
   },
 
   onLoad() {
+    if (!app.globalData.isAdmin) {
+      wx.showToast({ title: '只有管理员可以管理全部安排', icon: 'none' })
+      setTimeout(() => wx.navigateBack(), 500)
+      return
+    }
     this.refresh()
   },
 
@@ -94,23 +99,8 @@ Page({
     if (!it) return
     if (!it.isTask) {
       const s = it.schedule || {}
-      wx.navigateTo({
-        url: detailUrl({
-          instanceId: '',
-          scheduleId: s.schedule_id,
-          title: s.title,
-          type: s.type,
-          occurDate: s.start_date,
-          startAt: s.start_date + 'T' + (s.start_time || '00:00:00'),
-          endAt: s.end_time ? s.start_date + 'T' + s.end_time : '',
-          rrule: s.rrule || '',
-          repeatLabel: scheduleRepeatLabel(s.rrule || ''),
-          location: s.location,
-          note: s.note,
-          childMemberId: s.child_member_id,
-          ownerMemberId: s.owner_member_id
-        })
-      })
+      // 全部安排读取的是模板；直接进入服务端授权的模板编辑，避免伪造“某次实例”详情。
+      wx.navigateTo({ url: '/pages/event/index?edit=1&schedule_id=' + s.schedule_id })
       return
     }
     const t = it.task || {}

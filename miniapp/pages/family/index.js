@@ -1,6 +1,7 @@
 // 家庭页：登录入口 + 建家庭 + 成员列表（avatar + 角色 chip），对齐 prototype scr-family。
 // 管理员可点成员卡片进入管理面板：名称/身份配置 + 角色选择 + 管理员设置 + 移除（对齐 prototype scr-member）。
 const app = getApp()
+const { canvasPixelSize, drawCanvas } = require('../../utils/qrcode')
 
 const ROLE_LABEL = { admin: '管理员', parent: '家长', grandparent: '照护人', child: '孩子' }
 const ROLE_OPTIONS_REAL = [
@@ -11,29 +12,12 @@ const ROLE_OPTIONS_REAL = [
 const RELATIONS_REAL = ['爸爸', '妈妈', '爷爷', '奶奶', '姥姥', '姥爷', '叔叔', '阿姨']
 const RELATIONS_CHILD = ['儿子', '女儿']
 
-const INVITE_CONFIG = {
-  parent: {
-    title: '另一位家长',
-    desc: '一起管理日程、查看打卡、接收提醒',
-    role: 'parent',
-    shareTitle: '邀请你加入家庭，一起管理孩子的日程和打卡'
-  },
-  grandparent: {
-    title: '爷爷奶奶 / 姥姥姥爷',
-    desc: '查看今天接送安排，轻松完成反馈',
-    role: 'grandparent',
-    shareTitle: '邀请你加入家庭，查看今天接送安排'
-  },
-  caregiver: {
-    title: '保姆阿姨 / 接送阿姨',
-    desc: '查看今天需要协助的接送和照看安排',
-    role: 'grandparent',
-    shareTitle: '邀请你加入家庭，查看今天需要协助的安排'
-  }
-}
+const JOIN_CODE_PENDING_MS = 30 * 60 * 1000
 
 function familyNameKey(fid) { return 'familyName:' + fid }
 function familyMembersKey(fid) { return 'familyMembers:' + fid }
+function joinCodePendingKey(fid) { return 'joinCodePending:' + fid }
+function operationKey() { return 'join-code-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12) }
 
 function memberView(m, selfUserID) {
   const isVirtual = m.type === 'virtual'
@@ -64,7 +48,7 @@ function memberView(m, selfUserID) {
     role,
     is_admin: isAdmin,
     relation: m.relation_label || '',
-    isSelf: !isVirtual && selfUserID != null && m.user_id === selfUserID
+    isSelf: !isVirtual && selfUserID != null && String(m.user_id) === String(selfUserID)
   }
 }
 
@@ -79,22 +63,30 @@ Page({
     newFamilyName: '',
     childName: '',
     childRelation: '',
-    inviteToken: '',
     inviteSheet: false,
-    inviteKind: 'parent',
-    inviteAdmin: false,
-    inviteReady: false,
-    invitePath: '',
-    inviteShareTitle: '',
-    inviteOptions: [
-      { kind: 'parent', title: '另一位家长', desc: '一起管理日程、查看打卡、接收提醒；可选普通家长/管理员' },
-      { kind: 'grandparent', title: '爷爷奶奶 / 姥姥姥爷', desc: '看今天安排，完成接送反馈' },
-      { kind: 'caregiver', title: '保姆阿姨 / 接送阿姨', desc: '只看今天安排，完成接送反馈' }
-    ],
+    joinCodeStatus: 'idle',
+    joinCode: '',
+    joinCodeDisplay: '',
+    joinCodeGeneration: '',
+    joinCodeQR: '',
+    joinCodeCanvasSize: 210,
+    joinCodeExpiresText: '',
+    joinCodeError: '',
     sheetOpen: false,
     memberSheet: { open: false },
     customName: '',
     customRelation: '' // 自定义名称输入（顶层字段，与其他输入框一致；嵌套路径 model:value 真机回写不可靠）
+  },
+
+  onLoad() {
+    if (wx.hideShareMenu) wx.hideShareMenu({ menus: ['shareAppMessage', 'shareTimeline'] })
+    this._joinCodeSerial = 0
+    let windowInfo = null
+    try { if (wx.getWindowInfo) windowInfo = wx.getWindowInfo() } catch (e) {}
+    if (!windowInfo || !windowInfo.windowWidth) {
+      try { if (wx.getSystemInfoSync) windowInfo = wx.getSystemInfoSync() } catch (e) {}
+    }
+    this.setData({ joinCodeCanvasSize: canvasPixelSize(windowInfo && windowInfo.windowWidth) })
   },
 
   onShow() {
@@ -103,6 +95,17 @@ Page({
     }
     if (app.routeGrandparentHome('pages/family/index')) return
     this.refresh()
+    if (this.data.inviteSheet && this._joinCodeNeedsRead) {
+      this._joinCodeNeedsRead = false
+      this.loadJoinCode({ generateIfMissing: true })
+    }
+  },
+
+  onHide() {
+    if (this.data.inviteSheet) {
+      this._joinCodeNeedsRead = true
+      this._joinCodeSerial++
+    }
   },
 
   refresh() {
@@ -181,6 +184,24 @@ Page({
       .catch((e) => wx.showToast({ title: e.message || '登录失败', icon: 'none' }))
   },
 
+  startCreate() {
+    app.ensureLogin()
+      .then(() => this.refresh())
+      .catch((e) => wx.showToast({ title: e.message || '登录失败', icon: 'none' }))
+  },
+
+  startJoin() {
+    app.ensureLogin()
+      .then(() => {
+        if ((app.globalData.memberships || []).length > 0) {
+          wx.showToast({ title: '你已加入家庭，当前版本不支持加入另一个家庭', icon: 'none' })
+          return
+        }
+        wx.navigateTo({ url: '/pages/invite/index' })
+      })
+      .catch((e) => wx.showToast({ title: e.message || '登录失败', icon: 'none' }))
+  },
+
   createFamily() {
     const name = (this.data.newFamilyName || '').trim()
     if (!name) return wx.showToast({ title: '请输入家庭名', icon: 'none' })
@@ -195,6 +216,7 @@ Page({
   },
 
   addChild() {
+    if (!this.data.isAdmin) return wx.showToast({ title: '只有管理员才能添加孩子', icon: 'none' })
     const name = (this.data.childName || '').trim()
     if (!name) return wx.showToast({ title: '请输入孩子姓名', icon: 'none' })
     const fid = app.globalData.familyId
@@ -210,60 +232,152 @@ Page({
   },
 
   genInvite() {
-    this.setData({ inviteSheet: true, inviteKind: 'parent', inviteAdmin: false, inviteReady: false })
-    this.prepareInvite()
+    if (!this.data.isAdmin) return wx.showToast({ title: '只有管理员可以管理家庭加入码', icon: 'none' })
+    this.setData({ inviteSheet: true })
+    this.loadJoinCode({ generateIfMissing: true })
   },
 
-  closeInvite() { this.setData({ inviteSheet: false }) },
-
-  pickInviteKind(e) {
-    const kind = e.currentTarget.dataset.kind
-    if (!kind || kind === this.data.inviteKind) return
-    this.setData({ inviteKind: kind, inviteAdmin: false, inviteReady: false })
-    this.prepareInvite()
+  closeInvite() {
+    this._joinCodeSerial++
+    this.stopJoinCodeTimer()
+    this.setData({ inviteSheet: false })
   },
 
-  toggleInviteAdmin() {
-    if (this.data.inviteKind !== 'parent') return
-    this.setData({ inviteAdmin: !this.data.inviteAdmin, inviteReady: false })
-    this.prepareInvite()
-  },
-
-  prepareInvite() {
-    const fid = app.globalData.familyId
-    const kind = this.data.inviteKind
-    const cfg = INVITE_CONFIG[kind] || INVITE_CONFIG.grandparent
-    const isAdmin = kind === 'parent' && !!this.data.inviteAdmin
-    const familyName = this.data.familyName || '家庭'
-    return app.request(`/v1/families/${fid}/invitations`, {
-      method: 'POST',
-      data: { invite_type: kind, role: cfg.role, is_admin: isAdmin }
+  clearJoinCode(status, error = '') {
+    this.stopJoinCodeTimer()
+    this.setData({
+      joinCodeStatus: status,
+      joinCode: '',
+      joinCodeDisplay: '',
+      joinCodeGeneration: '',
+      joinCodeQR: '',
+      joinCodeExpiresText: '',
+      joinCodeError: error
     })
-      .then((r) => {
-        const path = `/pages/invite/index?invite_token=${encodeURIComponent(r.invite_token)}&family=${encodeURIComponent(familyName)}&invite_type=${kind}&is_admin=${isAdmin ? 1 : 0}`
-        this.setData({
-          inviteToken: r.invite_token,
-          inviteReady: true,
-          invitePath: path,
-          inviteShareTitle: `邀请你加入「${familyName}」：${cfg.desc}`
-        })
+  },
+
+  isCurrentJoinCodeRequest(serial, familyId) {
+    return serial === this._joinCodeSerial && this.data.inviteSheet && this.data.isAdmin && String(familyId) === String(app.globalData.familyId)
+  },
+
+  loadJoinCode({ generateIfMissing = false } = {}) {
+    const fid = app.globalData.familyId
+    if (!fid || !this.data.isAdmin) return Promise.resolve(false)
+    const serial = ++this._joinCodeSerial
+    this.clearJoinCode('loading')
+    return app.request(`/v1/families/${fid}/join-code`, { familyId: fid })
+      .then((view) => {
+        if (!this.isCurrentJoinCodeRequest(serial, fid)) return false
+        if (this.showJoinCode(view)) {
+          wx.removeStorageSync(joinCodePendingKey(fid))
+          return true
+        }
+        wx.removeStorageSync(joinCodePendingKey(fid))
+        this.clearJoinCode('empty')
+        return generateIfMissing ? this.generateJoinCode({ allowPendingReuse: false }) : false
       })
       .catch((e) => {
-        this.setData({ inviteReady: false })
-        wx.showToast({ title: e.message || '生成失败', icon: 'none' })
+        if (this.isCurrentJoinCodeRequest(serial, fid)) this.clearJoinCode('error', e.message || '暂时无法读取家庭加入码')
+        return false
       })
   },
 
-  copyInvite() {
-    if (!this.data.invitePath) return
-    wx.setClipboardData({ data: `邀请你加入「${this.data.familyName || '家庭'}」：${this.data.invitePath}` })
+  showJoinCode(view) {
+    if (!view || !view.has_code || !view.join_code || !view.generation_id || !view.qr_content) return false
+    const expires = Date.parse(view.expires_at)
+    if (!Number.isFinite(expires) || expires <= Date.now()) {
+      this.clearJoinCode('expired', '家庭加入码已过期，请重新生成')
+      return false
+    }
+    const code = String(view.join_code)
+    this.setData({
+      joinCodeStatus: 'active',
+      joinCode: code,
+      joinCodeDisplay: code.slice(0, 3) + ' ' + code.slice(3),
+      joinCodeGeneration: view.generation_id,
+      joinCodeQR: view.qr_content,
+      joinCodeExpiresText: new Date(expires).toLocaleString(),
+      joinCodeError: ''
+    }, () => {
+      const render = () => {
+        if (this.data.joinCodeStatus === 'active' && this.data.joinCodeQR === view.qr_content) {
+          drawCanvas('join-code-qr', view.qr_content, this.data.joinCodeCanvasSize, 4)
+        }
+      }
+      if (wx.nextTick) wx.nextTick(render); else setTimeout(render, 0)
+    })
+    this.stopJoinCodeTimer()
+    this._joinCodeTimer = setTimeout(() => {
+      if (this.data.joinCodeGeneration === view.generation_id) this.clearJoinCode('expired', '家庭加入码已过期，请重新生成')
+    }, Math.max(0, expires - Date.now()))
+    return true
   },
 
-  onShareAppMessage() {
-    return {
-      title: this.data.inviteShareTitle || '邀请你加入家庭协作',
-      path: this.data.invitePath || '/pages/family/index'
+  stopJoinCodeTimer() {
+    if (this._joinCodeTimer) clearTimeout(this._joinCodeTimer)
+    this._joinCodeTimer = null
+  },
+
+  generateJoinCode({ allowPendingReuse = true } = {}) {
+    const fid = app.globalData.familyId
+    if (!fid || !this.data.isAdmin) return Promise.resolve(false)
+    const saved = wx.getStorageSync(joinCodePendingKey(fid)) || null
+    if (allowPendingReuse && saved && Date.now() - Number(saved.at || 0) >= JOIN_CODE_PENDING_MS) {
+      // 服务端回执只保留30分钟；过窗或经历未知后台间隔必须先读当前代，不能重放旧操作。
+      wx.removeStorageSync(joinCodePendingKey(fid))
+      return this.loadJoinCode({ generateIfMissing: true })
     }
+    const pending = allowPendingReuse && saved && saved.key ? saved : { key: operationKey(), at: Date.now() }
+    wx.setStorageSync(joinCodePendingKey(fid), pending)
+    const serial = ++this._joinCodeSerial
+    this.clearJoinCode('loading')
+    return app.request(`/v1/families/${fid}/join-code`, {
+      method: 'POST',
+      familyId: fid,
+      header: { 'Idempotency-Key': pending.key }
+    }).then((view) => {
+      if (!this.isCurrentJoinCodeRequest(serial, fid)) return false
+      wx.removeStorageSync(joinCodePendingKey(fid))
+      if (!this.showJoinCode(view)) throw new Error('生成结果不完整，请重新读取')
+      return true
+    }).catch((e) => {
+      if (this.isCurrentJoinCodeRequest(serial, fid)) this.clearJoinCode('error', (e.message || '生成失败') + '；重试会沿用同一次操作')
+      return false
+    })
+  },
+
+  regenerateJoinCode() {
+    const fid = app.globalData.familyId
+    wx.removeStorageSync(joinCodePendingKey(fid))
+    return this.generateJoinCode({ allowPendingReuse: false })
+  },
+
+  retryJoinCode() {
+    const fid = app.globalData.familyId
+    const saved = wx.getStorageSync(joinCodePendingKey(fid)) || null
+    if (!saved || Date.now() - Number(saved.at || 0) >= JOIN_CODE_PENDING_MS || this._joinCodeNeedsRead) {
+      this._joinCodeNeedsRead = false
+      return this.loadJoinCode({ generateIfMissing: true })
+    }
+    return this.generateJoinCode({ allowPendingReuse: true })
+  },
+
+  revokeJoinCode() {
+    const fid = app.globalData.familyId
+    const generation = this.data.joinCodeGeneration
+    if (!fid || !generation || !this.data.isAdmin) return Promise.resolve(false)
+    const serial = ++this._joinCodeSerial
+    this.clearJoinCode('loading')
+    return app.request(`/v1/families/${fid}/join-code`, {
+      method: 'DELETE', familyId: fid, data: { generation_id: generation }
+    }).then((view) => {
+      if (!this.isCurrentJoinCodeRequest(serial, fid)) return false
+      if (!this.showJoinCode(view)) this.clearJoinCode('empty')
+      return true
+    }).catch(() => {
+      if (!this.isCurrentJoinCodeRequest(serial, fid)) return false
+      return this.loadJoinCode({ generateIfMissing: false })
+    })
   },
 
   // ---- 成员管理（仅管理员；对齐 prototype scr-member） ----
@@ -322,6 +436,7 @@ Page({
   },
 
   saveMember() {
+    if (!this.data.isAdmin) return wx.showToast({ title: '只有管理员可以管理成员', icon: 'none' })
     const s = this.data.memberSheet
     const fid = app.globalData.familyId
     // 真实成员：自定义名称优先于预设；孩子：名称是独立可编辑字段，身份为儿子/女儿。
@@ -354,6 +469,7 @@ Page({
   },
 
   removeMember() {
+    if (!this.data.isAdmin) return wx.showToast({ title: '只有管理员可以管理成员', icon: 'none' })
     const s = this.data.memberSheet
     const fid = app.globalData.familyId
     wx.showModal({
@@ -381,19 +497,28 @@ Page({
     wx.showToast({ title: '只有管理员才能录入', icon: 'none' })
   },
 
-  goManage() { wx.navigateTo({ url: '/pages/manage/index' }) },
-  openFab() { this.setData({ sheetOpen: true }) },
+  goManage() {
+    if (!this.data.isAdmin) return wx.showToast({ title: '只有管理员可以管理全部安排', icon: 'none' })
+    wx.navigateTo({ url: '/pages/manage/index' })
+  },
+  openFab() {
+    if (!this.data.isAdmin) return wx.showToast({ title: '只有管理员才能录入', icon: 'none' })
+    this.setData({ sheetOpen: true })
+  },
   closeFab() { this.setData({ sheetOpen: false }) },
   noop() {},
   goEvent() {
+    if (!this.data.isAdmin) return
     this.closeFab()
     wx.navigateTo({ url: '/pages/event/index' })
   },
   goTask() {
+    if (!this.data.isAdmin) return
     this.closeFab()
     wx.navigateTo({ url: '/pages/task/index' })
   },
   goImport() {
+    if (!this.data.isAdmin) return
     this.closeFab()
     wx.navigateTo({ url: '/pages/import/index' })
   },

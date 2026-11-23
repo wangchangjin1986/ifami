@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Store 是 identity 模块的 DB 访问层，只读写本模块的表
@@ -86,6 +88,23 @@ func (s *Store) FindFamily(ctx context.Context, familyID uint64) (*Family, error
 // CreateFamilyWithAdmin 事务创建家庭 + 管理员成员。
 func (s *Store) CreateFamilyWithAdmin(ctx context.Context, f *Family, m *Member) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if m.UserID == nil {
+			return ErrBadParam
+		}
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, *m.UserID).Error; err != nil {
+			return err
+		}
+
+		// The first consistent read occurs AFTER the users lock. Do not lock this
+		// user_id scan: members has no user_id index, so gap locks would block unrelated users.
+		var active []Member
+		if err := tx.Where("user_id = ? AND status = ?", *m.UserID, StatusActive).Find(&active).Error; err != nil {
+			return err
+		}
+		if len(active) > 0 {
+			return ErrOtherFamily
+		}
 		if err := tx.Create(f).Error; err != nil {
 			return err
 		}
@@ -230,4 +249,66 @@ func (s *Store) RemoveMember(ctx context.Context, memberID, familyID uint64) err
 		return ErrMemberNotFound
 	}
 	return nil
+}
+
+// JoinSingleFamily serializes every real membership creation on the same users row.
+func (s *Store) JoinSingleFamily(ctx context.Context, uid, fid uint64, role, label string) (*Member, bool, error) {
+	var result *Member
+	already := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, uid).Error; err != nil {
+			return err
+		}
+
+		// The first consistent read occurs AFTER the users lock. Do not lock this
+		// user_id scan: members has no user_id index, so gap locks would block unrelated users.
+		var active []Member
+		if err := tx.Where("user_id = ? AND status = ?", uid, StatusActive).Find(&active).Error; err != nil {
+			return err
+		}
+		for i := range active {
+			if active[i].FamilyID != fid {
+				return ErrOtherFamily
+			}
+		}
+		if len(active) > 0 {
+			result = &active[0]
+			already = true
+			return nil
+		}
+		var previous Member
+		err := tx.Where("user_id = ? AND family_id = ?", uid, fid).First(&previous).Error
+		if err == nil {
+			return ErrRemovedMember
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var family Family
+		if err := tx.First(&family, fid).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrFamilyNotFound
+			}
+			return err
+		}
+		result = &Member{FamilyID: fid, UserID: &uid, Type: TypeReal, Role: role, RelationLabel: label, Status: StatusActive}
+		if err := tx.Create(result).Error; err != nil {
+			var duplicate *mysqlDriver.MySQLError
+			if !errors.As(err, &duplicate) || duplicate.Number != 1062 {
+				return err
+			}
+			var existing Member
+			if lookup := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND family_id = ?", uid, fid).First(&existing).Error; lookup != nil {
+				return lookup
+			}
+			if existing.Status != StatusActive {
+				return ErrRemovedMember
+			}
+			result = &existing
+			already = true
+		}
+		return nil
+	})
+	return result, already, err
 }

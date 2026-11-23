@@ -19,7 +19,7 @@
         <view class="muted">一次勾选多个常见任务，统一设置孩子、频次和责任家长。</view>
       </view>
       <view wx:if="{{loading}}" class="empty">正在加载今日任务…</view>
-      <view wx:elif="{{groups.length === 0}}" class="empty">暂无打卡任务，点右下角 ＋ 新建</view>
+      <view wx:elif="{{groups.length === 0}}" class="empty">{{isAdmin ? '暂无打卡任务，点右下角 ＋ 新建' : '暂无打卡任务'}}</view>
 
       <block wx:else>
         <block wx:for="{{groups}}" wx:for-item="g" wx:key="childId">

@@ -22,6 +22,11 @@ Page({
   },
 
   onLoad(options) {
+    if (!app.globalData.isAdmin) {
+      wx.showToast({ title: '只有管理员才能导入日程', icon: 'none' })
+      setTimeout(() => wx.navigateBack(), 500)
+      return
+    }
     this.jobId = options.job_id
     this.drafts = []
     this.existing = []

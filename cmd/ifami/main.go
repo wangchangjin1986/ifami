@@ -88,6 +88,9 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 		identity.NewStore(gdb), wx, cfg.WXMiniAppID,
 		sessions, field, cfg.InviteSecret,
 	)
+	idSvc.SetJoinCodeRegistry(identity.NewRedisJoinCodeRegistry(rdb, field, cfg.InviteSecret, "ifami:", identity.JoinProtectionOptions{
+		UserLimit: cfg.JoinFailedUserLimit, IPLimit: cfg.JoinFailedIPLimit, Window: cfg.JoinFailedWindow,
+	}))
 	return gdb, idSvc, sessions, field
 }
 
@@ -175,6 +178,7 @@ func serveAPI() {
 
 	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, newNotifyChannel(cfg))
 	schedSvc := schedule.NewService(schedule.NewStore(gdb), idSvc, scheduleNotifier{notifSvc})
+	notifSvc.SetScheduleVisibility(schedSvc)
 	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc}, wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret))
 	ingestSvc := newIngest(cfg, gdb, idSvc, schedSvc, notifSvc, field)
 
@@ -249,6 +253,7 @@ func serveWorker() {
 	gdb, idSvc, _, field := initCore(cfg)
 	notifSvc := notify.NewService(notify.NewStore(gdb), idSvc, newNotifyChannel(cfg))
 	schedSvc := schedule.NewService(schedule.NewStore(gdb), idSvc, scheduleNotifier{notifSvc})
+	notifSvc.SetScheduleVisibility(schedSvc)
 	taskSvc := task.NewService(task.NewStore(gdb), idSvc, taskNotifier{notifSvc}, wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret))
 	ingestSvc := newIngest(cfg, gdb, idSvc, schedSvc, notifSvc, field)
 

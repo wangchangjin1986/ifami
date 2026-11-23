@@ -33,6 +33,7 @@ func (h *Handler) Register(g *route.RouterGroup) {
 	authed.PATCH("/schedules/:sid", h.UpdateSchedule)
 	authed.DELETE("/schedules/:sid", h.DeleteSchedule)
 	authed.GET("/schedules/instances", h.ListInstances)
+	authed.GET("/schedules/instances/:iid", h.GetInstance)
 	authed.POST("/schedules/instances/:iid/complete", h.CompleteInstance)
 	authed.POST("/schedules/instances/:iid/feedback", h.SubmitFeedback)
 	authed.PATCH("/schedules/instances/:iid", h.UpdateInstance)
@@ -300,4 +301,23 @@ func parseRange(c *app.RequestContext) (time.Time, time.Time, error) {
 		end = t
 	}
 	return start, end, nil
+}
+
+func (h *Handler) GetInstance(ctx context.Context, c *app.RequestContext) {
+	fid, err := familyID(c)
+	if err != nil || fid == 0 {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	iid, err := instanceIDParam(c)
+	if err != nil || iid == 0 {
+		httpx.Fail(c, ErrBadParam)
+		return
+	}
+	view, err := h.svc.GetInstance(ctx, auth.UserID(ctx), fid, iid)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, view)
 }

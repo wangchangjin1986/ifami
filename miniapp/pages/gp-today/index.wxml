@@ -26,7 +26,7 @@
         </view>
       </view>
 
-      <view wx:if="{{empty}}" class="empty">今天暂无要处理的安排</view>
+      <view wx:if="{{empty}}" class="empty">今天没有分配给你的事项</view>
 
       <view class="gp-card {{item.status === 'done' ? 'done' : ''}}" wx:for="{{items}}" wx:key="instanceId">
         <view class="gp-family">{{item.familyName}} · {{item.childName}}</view>
