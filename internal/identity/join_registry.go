@@ -200,7 +200,8 @@ func (r *RedisJoinCodeRegistry) guardKeys(uid uint64, ip string) []string {
 
 // A reservation counts an in-flight lookup against both budgets. Successful
 // validation and operational failures return it; bad input retains it. Epochs
-// keep late completions from subtracting a later window's failures.
+// keep late completions from subtracting a later window's failures. A bounded
+// Redis receipt identifies the budget operation so transport retries are safe.
 type JoinLookupReservation struct {
 	keys       []string
 	epochs     []string
@@ -209,6 +210,14 @@ type JoinLookupReservation struct {
 }
 
 const reserveJoinLua = `
+if redis.call('EXISTS',KEYS[5])==1 then
+ if redis.call('HGET',KEYS[5],'user_key')~=KEYS[1] or redis.call('HGET',KEYS[5],'ip_key')~=KEYS[2] then return {'INVALID'} end
+ if redis.call('HGET',KEYS[5],'closed')=='1' then return {'CLOSED'} end
+ local user=redis.call('HGET',KEYS[5],'user_epoch')
+ local ip=redis.call('HGET',KEYS[5],'ip_epoch')
+ if not user or not ip or redis.call('GET',KEYS[3])~=user or redis.call('GET',KEYS[4])~=ip then return {'STALE'} end
+ return {user,ip}
+end
 if tonumber(redis.call('GET',KEYS[1]) or '0')>=tonumber(ARGV[1]) or tonumber(redis.call('GET',KEYS[2]) or '0')>=tonumber(ARGV[2]) then return {} end
 local function reserve(key, epochKey)
  local exists=redis.call('EXISTS',key)
@@ -223,14 +232,30 @@ local function reserve(key, epochKey)
  end
  return redis.call('GET',epochKey)
 end
-return {reserve(KEYS[1],KEYS[3]),reserve(KEYS[2],KEYS[4])}`
+local user=reserve(KEYS[1],KEYS[3])
+local ip=reserve(KEYS[2],KEYS[4])
+redis.call('HSET',KEYS[5],'user_key',KEYS[1],'ip_key',KEYS[2],'user_epoch',user,'ip_epoch',ip,'closed','0')
+redis.call('PEXPIRE',KEYS[5],math.max(tonumber(ARGV[3]),60000))
+return {user,ip}`
 
 const finishJoinLua = `
-if ARGV[1]=='1' then return 1 end
-for i=1,2 do
- if redis.call('GET',KEYS[i+2])==ARGV[i+1] and tonumber(redis.call('GET',KEYS[i]) or '0')>0 then
-  if redis.call('DECR',KEYS[i])==0 then redis.call('DEL',KEYS[i],KEYS[i+2]) end
+if redis.call('EXISTS',KEYS[5])==0 then return 0 end
+if redis.call('HGET',KEYS[5],'user_key')~=KEYS[1] or redis.call('HGET',KEYS[5],'ip_key')~=KEYS[2] or redis.call('HGET',KEYS[5],'user_epoch')~=ARGV[2] or redis.call('HGET',KEYS[5],'ip_epoch')~=ARGV[3] then return 0 end
+if redis.call('HGET',KEYS[5],'closed')=='1' then return 1 end
+local refund={}
+if ARGV[1]~='1' then
+ for i=1,2 do
+  if redis.call('GET',KEYS[i+2])==ARGV[i+1] then
+   local count=tonumber(redis.call('GET',KEYS[i]) or '0')
+   if not count then return 0 end
+   if count>0 then refund[#refund+1]=i end
+  end
  end
+end
+-- Close first. Even a retried command can never refund this ID twice.
+redis.call('HSET',KEYS[5],'closed','1')
+for _,i in ipairs(refund) do
+ if redis.call('DECR',KEYS[i])==0 then redis.call('DEL',KEYS[i],KEYS[i+2]) end
 end
 return 1`
 
@@ -243,7 +268,7 @@ func (r *RedisJoinCodeRegistry) Reserve(ctx context.Context, uid uint64, ip stri
 		return nil, ErrJoinUnavailable
 	}
 	keys := r.guardKeys(uid, ip)
-	keys = append(keys, keys[0]+":epoch", keys[1]+":epoch")
+	keys = append(keys, keys[0]+":epoch", keys[1]+":epoch", r.prefix+"budget:"+hex.EncodeToString(token))
 	epochs, err := r.client.Eval(ctx, reserveJoinLua, keys, r.protection.UserLimit, r.protection.IPLimit, r.protection.Window.Milliseconds(), hex.EncodeToString(token)).StringSlice()
 	if err != nil {
 		return nil, ErrJoinUnavailable
@@ -260,7 +285,7 @@ func (r *RedisJoinCodeRegistry) Reserve(ctx context.Context, uid uint64, ip stri
 // Finish retains failed-input reservations and refunds all other outcomes.
 // Redis outages remain fail closed, and no completion renews either window.
 func (r *RedisJoinCodeRegistry) Finish(ctx context.Context, reservation *JoinLookupReservation, failed bool) error {
-	if !r.ready() || reservation == nil || len(reservation.keys) != 4 || len(reservation.epochs) != 2 {
+	if !r.ready() || reservation == nil || len(reservation.keys) != 5 || len(reservation.epochs) != 2 {
 		return ErrJoinUnavailable
 	}
 	reservation.finishOnce.Do(func() {
@@ -268,7 +293,7 @@ func (r *RedisJoinCodeRegistry) Finish(ctx context.Context, reservation *JoinLoo
 		if failed {
 			keep = 1
 		}
-		if err := r.client.Eval(ctx, finishJoinLua, reservation.keys, keep, reservation.epochs[0], reservation.epochs[1]).Err(); err != nil {
+		if done, err := r.client.Eval(ctx, finishJoinLua, reservation.keys, keep, reservation.epochs[0], reservation.epochs[1]).Int(); err != nil || done != 1 {
 			reservation.finishErr = ErrJoinUnavailable
 		}
 	})

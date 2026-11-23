@@ -145,7 +145,7 @@ func TestJoinProtectionLateRefundDoesNotEraseNextWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Remove only this test's window as if its TTL had expired.
-	if err = r.client.Del(ctx, old.keys...).Err(); err != nil {
+	if err = r.client.Del(ctx, old.keys[:4]...).Err(); err != nil {
 		t.Fatal(err)
 	}
 	current, err := r.Reserve(ctx, 1, "ip")
