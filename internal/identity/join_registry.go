@@ -130,7 +130,9 @@ if old==KEYS[2] then return 'COLLISION' end
 if old and redis.call('GET',old)==KEYS[1] then redis.call('DEL',old) end
 redis.call('HSET',KEYS[1],'generation',ARGV[2],'index',KEYS[2],'data',ARGV[3],'expires',ARGV[4])
 redis.call('EXPIREAT',KEYS[1],ARGV[4])
-redis.call('SET',KEYS[2],KEYS[1],'EXAT',ARGV[4])
+-- Redis 6.0 lacks SET EXAT; both commands remain atomic inside this script.
+redis.call('SET',KEYS[2],KEYS[1])
+redis.call('EXPIREAT',KEYS[2],ARGV[4])
 redis.call('SET',KEYS[3],ARGV[2],'EX',1800)
 return ARGV[3]`
 
