@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ifami/internal/pkg/logx"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -78,7 +79,9 @@ type Session struct {
 }
 
 // Code2Session 用小程序登录 code 换取 openid。
-func (c *MiniClient) Code2Session(ctx context.Context, code string) (*Session, error) {
+func (c *MiniClient) Code2Session(ctx context.Context, code string) (result *Session, err error) {
+	done := logx.Operation(ctx, "wechat.code2session", time.Second)
+	defer func() { done(err) }()
 	u := fmt.Sprintf("%s?appid=%s&secret=%s&js_code=%s&grant_type=authorization_code",
 		c.baseURL,
 		url.QueryEscape(c.appid),
@@ -94,13 +97,14 @@ func (c *MiniClient) Code2Session(ctx context.Context, code string) (*Session, e
 		return nil, c.safeRequestError("code2session", c.baseURL, err)
 	}
 	defer resp.Body.Close()
+	logx.RemoteResponse(ctx, "wechat.code2session", resp.StatusCode)
 
 	var s Session
 	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
 		return nil, err
 	}
 	if s.ErrCode != 0 {
-		return nil, fmt.Errorf("code2session 失败: errcode=%d errmsg=%s", s.ErrCode, s.ErrMsg)
+		return nil, logx.CodeError("wechat", s.ErrCode, fmt.Errorf("code2session 失败: errcode=%d errmsg=%s", s.ErrCode, s.ErrMsg))
 	}
 	return &s, nil
 }
@@ -125,7 +129,9 @@ type SubscribeDataItem struct {
 }
 
 // SendSubscribeMessage 发送小程序一次性订阅消息。
-func (c *MiniClient) SendSubscribeMessage(ctx context.Context, msg SubscribeMessage) error {
+func (c *MiniClient) SendSubscribeMessage(ctx context.Context, msg SubscribeMessage) (err error) {
+	done := logx.Operation(ctx, "wechat.subscribe_send", time.Second)
+	defer func() { done(err) }()
 	if c.appid == "" || c.secret == "" {
 		return errors.New("微信小程序 appid/secret 未配置")
 	}
@@ -148,6 +154,7 @@ func (c *MiniClient) SendSubscribeMessage(ctx context.Context, msg SubscribeMess
 		return c.safeRequestError("subscribe.send", c.subscribeSendURL, err)
 	}
 	defer resp.Body.Close()
+	logx.RemoteResponse(ctx, "wechat.subscribe_send", resp.StatusCode)
 	b, _ := io.ReadAll(resp.Body)
 	var out struct {
 		ErrCode int    `json:"errcode"`
@@ -157,13 +164,15 @@ func (c *MiniClient) SendSubscribeMessage(ctx context.Context, msg SubscribeMess
 		return err
 	}
 	if out.ErrCode != 0 {
-		return fmt.Errorf("subscribe.send 失败: errcode=%d errmsg=%s", out.ErrCode, out.ErrMsg)
+		return logx.CodeError("wechat", out.ErrCode, fmt.Errorf("subscribe.send 失败: errcode=%d errmsg=%s", out.ErrCode, out.ErrMsg))
 	}
 	return nil
 }
 
 // CheckImageSafety 调用微信图片内容安全检测。失败或命中违规均返回错误，调用方不得入库存储原图。
-func (c *MiniClient) CheckImageSafety(ctx context.Context, data []byte) error {
+func (c *MiniClient) CheckImageSafety(ctx context.Context, data []byte) (err error) {
+	done := logx.Operation(ctx, "wechat.image_check", time.Second)
+	defer func() { done(err) }()
 	if c.appid == "" || c.secret == "" {
 		return errors.New("微信小程序 appid/secret 未配置")
 	}
@@ -194,6 +203,7 @@ func (c *MiniClient) CheckImageSafety(ctx context.Context, data []byte) error {
 		return c.safeRequestError("img_sec_check", c.imgSecCheckURL, err)
 	}
 	defer resp.Body.Close()
+	logx.RemoteResponse(ctx, "wechat.image_check", resp.StatusCode)
 	b, _ := io.ReadAll(resp.Body)
 	var out struct {
 		ErrCode int    `json:"errcode"`
@@ -203,12 +213,14 @@ func (c *MiniClient) CheckImageSafety(ctx context.Context, data []byte) error {
 		return err
 	}
 	if out.ErrCode != 0 {
-		return fmt.Errorf("img_sec_check 失败: errcode=%d errmsg=%s", out.ErrCode, out.ErrMsg)
+		return logx.CodeError("wechat", out.ErrCode, fmt.Errorf("img_sec_check 失败: errcode=%d errmsg=%s", out.ErrCode, out.ErrMsg))
 	}
 	return nil
 }
 
-func (c *MiniClient) getAccessToken(ctx context.Context) (string, error) {
+func (c *MiniClient) getAccessToken(ctx context.Context) (result string, err error) {
+	done := logx.Operation(ctx, "wechat.access_token", time.Second)
+	defer func() { done(err) }()
 	c.mu.Lock()
 	if c.accessToken != "" && time.Now().Before(c.accessTokenExp.Add(-5*time.Minute)) {
 		token := c.accessToken
@@ -227,12 +239,13 @@ func (c *MiniClient) getAccessToken(ctx context.Context) (string, error) {
 		return "", c.safeRequestError("access_token", c.accessTokenURL, err)
 	}
 	defer resp.Body.Close()
+	logx.RemoteResponse(ctx, "wechat.access_token", resp.StatusCode)
 	var out AccessToken
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return "", err
 	}
 	if out.ErrCode != 0 || out.Token == "" {
-		return "", fmt.Errorf("access_token 获取失败: errcode=%d errmsg=%s", out.ErrCode, out.ErrMsg)
+		return "", logx.CodeError("wechat", out.ErrCode, fmt.Errorf("access_token 获取失败: errcode=%d errmsg=%s", out.ErrCode, out.ErrMsg))
 	}
 	if out.ExpiresIn <= 0 {
 		out.ExpiresIn = 7200

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ifami/internal/pkg/logx"
 	"io"
 	"net/http"
 	"strings"
@@ -85,7 +86,9 @@ const systemPrompt = `你是家庭日程识别助手。用户上传一张图片�
 5. 图片与日程无关时 image_kind=other，items 为空数组。`
 
 // Recognize 调用方舟识别单张图片。
-func (c *ArkClient) Recognize(ctx context.Context, mime string, img []byte) (*ModelOutput, error) {
+func (c *ArkClient) Recognize(ctx context.Context, mime string, img []byte) (result *ModelOutput, err error) {
+	done := logx.Operation(ctx, "ark.recognize", time.Second)
+	defer func() { done(err) }()
 	dataURL := "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(img)
 	reqBody := map[string]any{
 		"model":       c.model,
@@ -113,13 +116,14 @@ func (c *ArkClient) Recognize(ctx context.Context, mime string, img []byte) (*Mo
 		return nil, err
 	}
 	defer resp.Body.Close()
+	logx.RemoteResponse(ctx, "ark.recognize", resp.StatusCode)
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		// 只记录状态码与截断后的错误体，不回显请求内容（含图片）。
-		return nil, fmt.Errorf("ark http %d: %s", resp.StatusCode, truncate(string(body), 200))
+		return nil, logx.CodeError("ark_http", resp.StatusCode, fmt.Errorf("ark http %d: %s", resp.StatusCode, truncate(string(body), 200)))
 	}
 	var out struct {
 		Choices []struct {

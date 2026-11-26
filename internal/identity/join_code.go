@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ifami/internal/pkg/invite"
+	"ifami/internal/pkg/logx"
 )
 
 type JoinCodeView struct {
@@ -62,20 +63,25 @@ func joinView(r *JoinRegistration) *JoinCodeView {
 	}
 	return &JoinCodeView{r.JoinCode, r.GenerationID, "IFAMI_JOIN_V1:" + r.JoinCode + ":" + r.GenerationID + ":" + r.Credential, r.ExpiresAt, true}
 }
-func (s *Service) GetJoinCode(ctx context.Context, uid, fid uint64) (*JoinCodeView, error) {
+func (s *Service) GetJoinCode(ctx context.Context, uid, fid uint64) (result *JoinCodeView, err error) {
+	done := logx.Business(ctx, "identity.GetJoinCode")
+	defer func() { done(err) }()
 	if _, e := s.requireRole(ctx, uid, fid, RoleAdmin); e != nil {
 		return nil, e
 	}
 	if s.joinRegistry == nil {
 		return nil, ErrJoinUnavailable
 	}
+	ctx = logx.With(ctx, "family_id", fid)
 	r, e := s.joinRegistry.Current(ctx, fid, time.Now())
 	if e != nil {
 		return nil, e
 	}
 	return joinView(r), nil
 }
-func (s *Service) GenerateJoinCode(ctx context.Context, uid, fid uint64, key string) (*JoinCodeView, error) {
+func (s *Service) GenerateJoinCode(ctx context.Context, uid, fid uint64, key string) (result *JoinCodeView, err error) {
+	done := logx.Business(ctx, "identity.GenerateJoinCode")
+	defer func() { done(err) }()
 	if len(key) == 0 || len(key) > 128 {
 		return nil, ErrBadParam
 	}
@@ -85,6 +91,7 @@ func (s *Service) GenerateJoinCode(ctx context.Context, uid, fid uint64, key str
 	if s.joinRegistry == nil {
 		return nil, ErrJoinUnavailable
 	}
+	ctx = logx.With(ctx, "family_id", fid)
 	now := time.Now().UTC().Truncate(time.Second)
 	for attempt := 0; attempt < 32; attempt++ {
 		n, e := rand.Int(rand.Reader, big.NewInt(1000000))
@@ -111,7 +118,9 @@ func (s *Service) GenerateJoinCode(ctx context.Context, uid, fid uint64, key str
 	}
 	return nil, ErrJoinUnavailable
 }
-func (s *Service) RevokeJoinCode(ctx context.Context, uid, fid uint64, generation string) (*JoinCodeView, error) {
+func (s *Service) RevokeJoinCode(ctx context.Context, uid, fid uint64, generation string) (result *JoinCodeView, err error) {
+	done := logx.Business(ctx, "identity.RevokeJoinCode")
+	defer func() { done(err) }()
 	if !joinGeneration.MatchString(generation) {
 		return nil, ErrBadParam
 	}
@@ -121,6 +130,7 @@ func (s *Service) RevokeJoinCode(ctx context.Context, uid, fid uint64, generatio
 	if s.joinRegistry == nil {
 		return nil, ErrJoinUnavailable
 	}
+	ctx = logx.With(ctx, "family_id", fid)
 	now := time.Now()
 	if e := s.joinRegistry.Revoke(ctx, fid, generation, now); e != nil {
 		return nil, e
@@ -175,7 +185,9 @@ func (s *Service) validateJoin(ctx context.Context, uid uint64, in JoinPreviewIn
 	failed = false
 	return r, nil
 }
-func (s *Service) PreviewJoin(ctx context.Context, uid uint64, in JoinPreviewInput) (*JoinPreview, error) {
+func (s *Service) PreviewJoin(ctx context.Context, uid uint64, in JoinPreviewInput) (result *JoinPreview, err error) {
+	done := logx.Business(ctx, "identity.PreviewJoin")
+	defer func() { done(err) }()
 	r, e := s.validateJoin(ctx, uid, in, false)
 	if e != nil {
 		return nil, e
@@ -189,7 +201,9 @@ func (s *Service) PreviewJoin(ctx context.Context, uid uint64, in JoinPreviewInp
 	}
 	return &JoinPreview{f.FamilyID, f.Name, r.JoinCode, r.GenerationID, r.Credential, r.ExpiresAt}, nil
 }
-func (s *Service) ConfirmJoin(ctx context.Context, uid uint64, in JoinConfirmInput) (*JoinConfirmResult, error) {
+func (s *Service) ConfirmJoin(ctx context.Context, uid uint64, in JoinConfirmInput) (result *JoinConfirmResult, err error) {
+	done := logx.Business(ctx, "identity.ConfirmJoin")
+	defer func() { done(err) }()
 	role, ok := joinRole(in.Identity, in.RelationLabel)
 	if !ok {
 		return nil, ErrBadParam
@@ -202,6 +216,7 @@ func (s *Service) ConfirmJoin(ctx context.Context, uid uint64, in JoinConfirmInp
 	if e != nil {
 		return nil, e
 	}
+	logx.Info(ctx, "family_joined", "family_id", m.FamilyID, "user_id", uid, "replayed", already)
 	return &JoinConfirmResult{m.FamilyID, m.MemberID, normalizeMemberRole(m.Role), isMemberAdmin(m), m.RelationLabel, already}, nil
 }
 func joinRole(identity, label string) (string, bool) {

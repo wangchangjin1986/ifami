@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"ifami/internal/pkg/logx"
 	"os"
 	"strconv"
 	"time"
@@ -105,6 +106,9 @@ func (s *Store) UpdateJob(ctx context.Context, jobID uint64, updates map[string]
 	}
 	if res.RowsAffected == 0 {
 		return ErrJobNotFound
+	}
+	if status, ok := updates["status"].(string); ok {
+		logx.Info(ctx, "job_state_changed", "job_type", "notify", "job_id", jobID, "state", status, "outcome", "persisted")
 	}
 	return nil
 }

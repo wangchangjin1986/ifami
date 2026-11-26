@@ -48,28 +48,25 @@ type gormLog struct{}
 
 func (gormLog) LogMode(gormlogger.LogLevel) gormlogger.Interface { return gormLog{} }
 
-func (gormLog) Info(_ context.Context, msg string, args ...any) {
-	logx.Infof("[gorm] "+msg, args...)
-}
-
-func (gormLog) Warn(_ context.Context, msg string, args ...any) {
-	logx.Warnf("[gorm] "+msg, args...)
-}
-
-func (gormLog) Error(_ context.Context, msg string, args ...any) {
-	logx.Errorf("[gorm] "+msg, args...)
-}
-
-func (gormLog) Trace(_ context.Context, begin time.Time, fc func() (string, int64), err error) {
-	sql, rows := fc()
+func (gormLog) Info(ctx context.Context, _ string, _ ...any)  { logx.Debug(ctx, "database_diagnostic") }
+func (gormLog) Warn(ctx context.Context, _ string, _ ...any)  { logx.Warn(ctx, "database_diagnostic") }
+func (gormLog) Error(ctx context.Context, _ string, _ ...any) { logx.Error(ctx, "database_diagnostic") }
+func (gormLog) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	elapsed := time.Since(begin)
-	switch {
-	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
-		logx.Errorf("[gorm] %s | rows=%d | %.1fms | err=%v", sql, rows, ms(elapsed), err)
-	case elapsed > slowSQL:
-		logx.Warnf("[gorm] slow %s | rows=%d | %.1fms", sql, rows, ms(elapsed))
-	case logAllSQL:
-		logx.Infof("[gorm] %s | rows=%d | %.1fms", sql, rows, ms(elapsed))
+	if (err == nil || errors.Is(err, gorm.ErrRecordNotFound)) && elapsed <= slowSQL && !logAllSQL {
+		return
+	}
+	_, rows := fc()
+	attrs := []any{"operation", "mysql.query", "rows", rows, "duration_ms", ms(elapsed)}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) || elapsed > slowSQL {
+		attrs = append(attrs, "code_locations", logx.CodeLocations())
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		logx.Failure(ctx, "mysql.query", err, attrs...)
+	} else if elapsed > slowSQL {
+		logx.Warn(ctx, "database_slow", attrs...)
+	} else {
+		logx.Debug(ctx, "database_query", attrs...)
 	}
 }
 

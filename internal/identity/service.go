@@ -81,27 +81,27 @@ func (s *Service) Login(ctx context.Context, code string) (*LoginResult, error) 
 	sess, err := s.wx.Code2Session(ctx, code)
 	if err != nil {
 		// 记录微信原始 errcode/errmsg，否则「登录凭证无效」无法定位是 appid/secret 错误还是 code 失效。
-		logx.Errorf("登录 code2session 失败: %v", err)
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("登录 code2session 失败: %v", err))
 		return nil, ErrBadCode
 	}
 	userID, err := s.getOrCreateUser(ctx, sess)
 	if err != nil {
-		logx.Errorf("登录查找或创建用户失败: %v", err)
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("登录查找或创建用户失败: %v", err))
 		return nil, err
 	}
 	token, err := s.newSession(ctx, userID)
 	if err != nil {
-		logx.Errorf("登录创建会话失败: user_id=%d err=%v", userID, err)
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("登录创建会话失败: user_id=%d err=%v", userID, err))
 		return nil, err
 	}
 	u, err := s.store.FindUser(ctx, userID)
 	if err != nil {
-		logx.Errorf("登录查询用户失败: user_id=%d err=%v", userID, err)
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("登录查询用户失败: user_id=%d err=%v", userID, err))
 		return nil, err
 	}
 	memberships, err := s.memberships(ctx, userID)
 	if err != nil {
-		logx.Errorf("登录查询家庭成员关系失败: user_id=%d err=%v", userID, err)
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("登录查询家庭成员关系失败: user_id=%d err=%v", userID, err))
 		return nil, err
 	}
 	return &LoginResult{

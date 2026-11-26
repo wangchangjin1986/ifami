@@ -339,7 +339,7 @@ func (s *Service) SubmitPhotoCheckin(ctx context.Context, userID, familyID, task
 		checker = NoopImageSafety{}
 	}
 	if err := checker.CheckImageSafety(ctx, in.Data); err != nil {
-		logx.Warnf("[task] 拍照打卡图片内容安全审核未通过 task=%d err=%v", taskID, err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[task] 拍照打卡图片内容安全审核未通过 task=%d err=%v", taskID, err))
 		return nil, ErrImageUnsafe
 	}
 	if in.IdempotencyKey != "" {
@@ -480,7 +480,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 		}
 		checked, err := s.store.HasCheckinOn(ctx, t.FamilyID, t.TaskID, appDayStartUTC(localNow))
 		if err != nil {
-			logx.Errorf("[task] 提醒扫描查打卡失败 task=%d err=%v", t.TaskID, err)
+			logx.Error(ctx, "legacy_operation", "message", logx.Format("[task] 提醒扫描查打卡失败 task=%d err=%v", t.TaskID, err))
 			continue
 		}
 		if checked {
@@ -490,7 +490,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 		if t.Freq == FreqWeekly && t.WeeklyTarget > 0 {
 			n, err := s.store.CountCheckinsSince(ctx, t.FamilyID, t.TaskID, appWeekStartUTC(localNow))
 			if err != nil {
-				logx.Errorf("[task] 周完成次数统计失败 task=%d err=%v", t.TaskID, err)
+				logx.Error(ctx, "legacy_operation", "message", logx.Format("[task] 周完成次数统计失败 task=%d err=%v", t.TaskID, err))
 				continue
 			}
 			if n >= int64(t.WeeklyTarget) {
@@ -499,7 +499,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 		}
 		userID, err := s.id.MemberUserID(ctx, t.FamilyID, t.OwnerMemberID)
 		if err != nil {
-			logx.Warnf("[task] 触达解析 owner user_id 失败 task=%d err=%v", t.TaskID, err)
+			logx.Warn(ctx, "legacy_operation", "message", logx.Format("[task] 触达解析 owner user_id 失败 task=%d err=%v", t.TaskID, err))
 			continue
 		}
 		if _, err := s.notify.CreateJob(ctx, NotifyInput{
@@ -517,7 +517,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 			},
 			BusinessKey: fmt.Sprintf("checkin:%d:%s", t.TaskID, dateKey),
 		}); err != nil {
-			logx.Errorf("[task] 创建提醒触达失败 task=%d err=%v", t.TaskID, err)
+			logx.Error(ctx, "legacy_operation", "message", logx.Format("[task] 创建提醒触达失败 task=%d err=%v", t.TaskID, err))
 		}
 	}
 	return nil

@@ -30,9 +30,8 @@ func (MockSubscribe) Name() string { return ChannelSubscribe }
 
 func (MockSubscribe) SubscribeTemplateIDs() []string { return nil }
 
-func (MockSubscribe) Send(_ context.Context, openid string, job *NotifyJob) error {
-	logx.Infof("[notify] mock send channel=%s openid=%s job=%d level=%s payload=%v",
-		ChannelSubscribe, openid, job.JobID, job.Level, job.Payload)
+func (MockSubscribe) Send(ctx context.Context, _ string, job *NotifyJob) error {
+	logx.Info(ctx, "notification_mocked", "channel", ChannelSubscribe, "job_type", "notify", "job_id", job.JobID)
 	return nil
 }
 

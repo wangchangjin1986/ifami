@@ -118,6 +118,7 @@ func (s *Service) CreateJob(ctx context.Context, in *CreateJobInput) (uint64, er
 		if existing, err := s.store.FindJobByBusinessKey(ctx, in.FamilyID, in.BusinessKey); err != nil {
 			return 0, err
 		} else if existing != nil {
+			logx.Info(ctx, "job_created", "job_type", "notify", "job_id", existing.JobID, "family_id", existing.FamilyID, "outcome", "replayed")
 			return existing.JobID, nil
 		}
 	}
@@ -136,11 +137,13 @@ func (s *Service) CreateJob(ctx context.Context, in *CreateJobInput) (uint64, er
 		// 并发下唯一键兜底：回查已有任务返回（与 task 打卡幂等同一模式）。
 		if errors.Is(err, gorm.ErrDuplicatedKey) && in.BusinessKey != "" {
 			if existing, e2 := s.store.FindJobByBusinessKey(ctx, in.FamilyID, in.BusinessKey); e2 == nil && existing != nil {
+				logx.Info(ctx, "job_created", "job_type", "notify", "job_id", existing.JobID, "family_id", existing.FamilyID, "outcome", "replayed")
 				return existing.JobID, nil
 			}
 		}
 		return 0, err
 	}
+	logx.Info(ctx, "job_created", "job_type", "notify", "job_id", job.JobID, "family_id", job.FamilyID, "outcome", "persisted")
 	return job.JobID, nil
 }
 
@@ -171,6 +174,7 @@ func (s *Service) ReportReceipt(ctx context.Context, jobID uint64) error {
 	if job.Status != StatusSent && job.Status != StatusReddot {
 		return nil // 幂等：非等待回执状态，忽略
 	}
+	ctx = logx.With(ctx, "job_type", "notify", "job_id", job.JobID, "family_id", job.FamilyID, "previous_state", job.Status)
 	cs := cloneState(job.ChannelState)
 	cs["receipted_at"] = time.Now().UTC().Format(time.RFC3339)
 	return s.store.UpdateJob(ctx, jobID, map[string]any{
@@ -189,9 +193,12 @@ func (s *Service) ProcessDue(ctx context.Context) error {
 		return err
 	}
 	for i := range pending {
-		if err := s.processPending(ctx, &pending[i], now); err != nil {
-			logx.Errorf("[notify] process pending job=%d err=%v", pending[i].JobID, err)
-		}
+		job := &pending[i]
+		jobCtx := logx.With(ctx, "job_type", "notify", "job_id", job.JobID, "family_id", job.FamilyID, "run_id", logx.ID(), "previous_state", job.Status)
+		logx.Info(jobCtx, "job_execution_started", "stage", "processPending")
+		done := logx.Operation(jobCtx, "notify.processPending", time.Second)
+		err := s.processPending(jobCtx, job, now)
+		done(err)
 	}
 
 	sent, err := s.store.ListDueJobs(ctx, StatusSent, now)
@@ -199,9 +206,12 @@ func (s *Service) ProcessDue(ctx context.Context) error {
 		return err
 	}
 	for i := range sent {
-		if err := s.escalateReddot(ctx, &sent[i], now); err != nil {
-			logx.Errorf("[notify] escalate reddot job=%d err=%v", sent[i].JobID, err)
-		}
+		job := &sent[i]
+		jobCtx := logx.With(ctx, "job_type", "notify", "job_id", job.JobID, "family_id", job.FamilyID, "run_id", logx.ID(), "previous_state", job.Status)
+		logx.Info(jobCtx, "job_execution_started", "stage", "escalateReddot")
+		done := logx.Operation(jobCtx, "notify.escalateReddot", time.Second)
+		err := s.escalateReddot(jobCtx, job, now)
+		done(err)
 	}
 
 	reddot, err := s.store.ListDueJobs(ctx, StatusReddot, now)
@@ -209,9 +219,12 @@ func (s *Service) ProcessDue(ctx context.Context) error {
 		return err
 	}
 	for i := range reddot {
-		if err := s.escalateBackup(ctx, &reddot[i], now); err != nil {
-			logx.Errorf("[notify] escalate backup job=%d err=%v", reddot[i].JobID, err)
-		}
+		job := &reddot[i]
+		jobCtx := logx.With(ctx, "job_type", "notify", "job_id", job.JobID, "family_id", job.FamilyID, "run_id", logx.ID(), "previous_state", job.Status)
+		logx.Info(jobCtx, "job_execution_started", "stage", "escalateBackup")
+		done := logx.Operation(jobCtx, "notify.escalateBackup", time.Second)
+		err := s.escalateBackup(jobCtx, job, now)
+		done(err)
 	}
 	return nil
 }
@@ -223,10 +236,12 @@ func (s *Service) processPending(ctx context.Context, job *NotifyJob, now time.T
 		return err
 	}
 	if !visible {
+		logx.Info(ctx, "notification_suppressed", "job_type", "notify", "job_id", job.JobID, "reason", "not_visible")
 		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
 	}
 	switch job.Level {
 	case LevelWeak:
+		logx.Debug(ctx, "notification_suppressed", "job_id", job.JobID, "reason", "weak_level")
 		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
 
 	case LevelMedium:
@@ -263,6 +278,7 @@ func (s *Service) escalateReddot(ctx context.Context, job *NotifyJob, now time.T
 		return err
 	}
 	if !visible {
+		logx.Info(ctx, "notification_suppressed", "job_type", "notify", "job_id", job.JobID, "reason", "not_visible")
 		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
 	}
 	if job.Level != LevelStrong {
@@ -286,6 +302,7 @@ func (s *Service) escalateBackup(ctx context.Context, job *NotifyJob, now time.T
 		return err
 	}
 	if !visible {
+		logx.Info(ctx, "notification_suppressed", "job_type", "notify", "job_id", job.JobID, "reason", "not_visible")
 		return s.store.UpdateJob(ctx, job.JobID, map[string]any{"status": StatusDone})
 	}
 	if job.Level != LevelStrong {
@@ -294,7 +311,7 @@ func (s *Service) escalateBackup(ctx context.Context, job *NotifyJob, now time.T
 
 	userIDs, err := s.id.BackupUserIDs(ctx, job.FamilyID)
 	if err != nil {
-		logx.Warnf("[notify] 备份触达解析联系人失败 job=%d err=%v", job.JobID, err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[notify] 备份触达解析联系人失败 job=%d err=%v", job.JobID, err))
 		return err
 	}
 	for _, userID := range userIDs {
@@ -312,7 +329,7 @@ func (s *Service) escalateBackup(ctx context.Context, job *NotifyJob, now time.T
 			Payload:      payload,
 			BusinessKey:  "backup:" + instKey(job.JobID) + ":" + instKey(userID),
 		}); err != nil {
-			logx.Errorf("[notify] 创建备份触达失败 job=%d target=%d err=%v", job.JobID, userID, err)
+			logx.Error(ctx, "legacy_operation", "message", logx.Format("[notify] 创建备份触达失败 job=%d target=%d err=%v", job.JobID, userID, err))
 		}
 	}
 	cs := cloneState(job.ChannelState)

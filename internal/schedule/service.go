@@ -350,7 +350,7 @@ func (s *Service) ExtendInstances(ctx context.Context, today time.Time) (int, er
 	for i := range rows {
 		insts, err := extensionInstances(&rows[i], last[rows[i].ScheduleID], today)
 		if err != nil {
-			logx.Warnf("[schedule] 续展跳过 schedule_id=%d: %v", rows[i].ScheduleID, err)
+			logx.Warn(ctx, "legacy_operation", "message", logx.Format("[schedule] 续展跳过 schedule_id=%d: %v", rows[i].ScheduleID, err))
 			continue
 		}
 		if len(insts) == 0 {
@@ -551,7 +551,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 		inst := &rows[i]
 		userID, err := s.id.MemberUserID(ctx, inst.FamilyID, inst.OwnerMemberID)
 		if err != nil {
-			logx.Warnf("[schedule] 触达解析 owner user_id 失败 instance=%d err=%v", inst.InstanceID, err)
+			logx.Warn(ctx, "legacy_operation", "message", logx.Format("[schedule] 触达解析 owner user_id 失败 instance=%d err=%v", inst.InstanceID, err))
 			continue
 		}
 		page := instancePage(inst)
@@ -571,7 +571,7 @@ func (s *Service) RemindDue(ctx context.Context, now time.Time) error {
 			},
 			BusinessKey: fmt.Sprintf("schedule_remind:%d:%d", inst.InstanceID, userID),
 		}); err != nil {
-			logx.Errorf("[schedule] 创建日程到点提醒失败 instance=%d err=%v", inst.InstanceID, err)
+			logx.Error(ctx, "legacy_operation", "message", logx.Format("[schedule] 创建日程到点提醒失败 instance=%d err=%v", inst.InstanceID, err))
 		}
 	}
 	return nil
@@ -673,7 +673,7 @@ func (s *Service) notifyOwner(ctx context.Context, familyID uint64, sch *Schedul
 	}
 	inst, err := s.store.FirstOwnedInstance(ctx, familyID, sch.ScheduleID, sch.OwnerMemberID)
 	if err != nil {
-		logx.Warnf("[schedule] instance notification lookup: %v", err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[schedule] instance notification lookup: %v", err))
 		return
 	}
 	if inst != nil {
@@ -688,7 +688,7 @@ func (s *Service) notifyInstanceOwner(ctx context.Context, familyID uint64, inst
 	}
 	userID, err := s.id.MemberUserID(ctx, familyID, inst.OwnerMemberID)
 	if err != nil {
-		logx.Warnf("[schedule] 改分工触达解析 owner user_id 失败 instance=%d err=%v", inst.InstanceID, err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[schedule] 改分工触达解析 owner user_id 失败 instance=%d err=%v", inst.InstanceID, err))
 		return
 	}
 	page := instancePage(inst)
@@ -713,7 +713,7 @@ func (s *Service) notifyInstanceOwner(ctx context.Context, familyID uint64, inst
 		Payload:      payload,
 		BusinessKey:  "schedule_instance:" + eventType + ":" + instKey(inst.InstanceID) + ":" + instKey(inst.ChangeVersion) + ":" + instKey(userID),
 	}); err != nil {
-		logx.Errorf("[schedule] 创建改分工触达任务失败 instance=%d err=%v", inst.InstanceID, err)
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("[schedule] 创建改分工触达任务失败 instance=%d err=%v", inst.InstanceID, err))
 	}
 }
 
@@ -723,7 +723,7 @@ func (s *Service) notifyAdminsFeedback(ctx context.Context, familyID uint64, ins
 	}
 	userIDs, err := s.id.AdminUserIDs(ctx, familyID)
 	if err != nil {
-		logx.Warnf("[schedule] 反馈触达解析管理员失败: %v", err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[schedule] 反馈触达解析管理员失败: %v", err))
 		return
 	}
 	for _, userID := range userIDs {
@@ -744,7 +744,7 @@ func (s *Service) notifyAdminsFeedback(ctx context.Context, familyID uint64, ins
 				"page":        "pages/today/index",
 			},
 		}); err != nil {
-			logx.Errorf("[schedule] 创建反馈触达任务失败: %v", err)
+			logx.Error(ctx, "legacy_operation", "message", logx.Format("[schedule] 创建反馈触达任务失败: %v", err))
 		}
 	}
 }

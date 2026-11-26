@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"ifami/internal/pkg/logx"
 	"time"
 
 	"gorm.io/gorm"
@@ -86,6 +87,11 @@ func (s *Store) Transition(ctx context.Context, jobID uint64, from []string, fie
 	res := s.db.WithContext(ctx).Model(&Job{}).
 		Where("job_id = ? AND status IN ?", jobID, from).
 		Updates(fields)
+	if res.Error == nil && res.RowsAffected > 0 {
+		if state, ok := fields["status"].(string); ok {
+			logx.Info(ctx, "job_state_changed", "job_type", "ingest", "job_id", jobID, "state", state, "outcome", "persisted")
+		}
+	}
 	return res.RowsAffected > 0, res.Error
 }
 

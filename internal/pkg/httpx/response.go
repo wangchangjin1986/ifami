@@ -2,7 +2,9 @@
 package httpx
 
 import (
+	"context"
 	"errors"
+	"ifami/internal/pkg/logx"
 
 	"github.com/cloudwego/hertz/pkg/app"
 )
@@ -20,6 +22,7 @@ func OK(c *app.RequestContext, data any) {
 	if data == nil {
 		data = struct{}{}
 	}
+	c.Set("logx.code", 0)
 	c.JSON(200, Body{Code: 0, Data: data})
 }
 
@@ -32,18 +35,27 @@ type Err struct {
 	Data    any
 }
 
-func (e *Err) Error() string { return e.Message }
+func (e *Err) Error() string       { return e.Message }
+func (e *Err) DiagnosticCode() int { return e.Code }
 
 // Fail 输出业务错误；普通 error 回落到 ErrInternal。
 func Fail(c *app.RequestContext, err error) {
 	var e *Err
 	if !errors.As(err, &e) {
 		e = ErrInternal
+		ctx := context.Background()
+		if v, ok := c.Get("logx.context"); ok {
+			if requestCtx, ok := v.(context.Context); ok {
+				ctx = requestCtx
+			}
+		}
+		logx.Failure(ctx, "http.internal", err)
 	}
 	status := e.HTTP
 	if status == 0 {
 		status = 400
 	}
+	c.Set("logx.code", e.Code)
 	c.JSON(status, Body{Code: e.Code, Message: e.Message, Data: e.Data})
 }
 

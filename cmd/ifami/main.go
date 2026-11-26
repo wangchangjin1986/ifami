@@ -9,12 +9,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 	_ "github.com/go-sql-driver/mysql"
 	gomigrate "github.com/golang-migrate/migrate/v4"
 	migratemysql "github.com/golang-migrate/migrate/v4/database/mysql"
@@ -40,6 +43,12 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+	service := os.Args[1]
+	if service == "serve" && len(os.Args) > 2 {
+		service = os.Args[2]
+	}
+	logx.Configure(os.Stdout, service, os.Getenv("LOG_LEVEL"))
+	hlog.SetLogger(logx.FrameworkLogger{FullLogger: hlog.DefaultLogger()})
 	switch os.Args[1] {
 	case "serve":
 		if len(os.Args) < 3 {
@@ -74,8 +83,25 @@ func initCore(cfg *config.Config) (*gorm.DB, *identity.Service, auth.SessionStor
 		logx.Fatalf("连接数据库失败: %v", err)
 	}
 	rdb := redisx.New(cfg.RedisAddr)
+	probeCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	info, probeErr := rdb.Info(probeCtx, "server").Result()
+	cancel()
+	version := "unknown"
+	for _, line := range strings.Split(info, "\n") {
+		if strings.HasPrefix(line, "redis_version:") {
+			candidate := strings.TrimSpace(strings.TrimPrefix(line, "redis_version:"))
+			if len(candidate) < 32 {
+				version = candidate
+			}
+		}
+	}
+	if probeErr != nil {
+		logx.Warn(context.Background(), "redis_version_unavailable", logx.ErrorFields(probeErr)...)
+	} else {
+		logx.Info(context.Background(), "redis_version", "redis_version", version)
+	}
 	wx := wechat.NewMiniClient(cfg.WXMiniAppID, cfg.WXMiniSecret)
-	logx.Infof("微信小程序配置: appid_set=%t appsecret_set=%t appsecret_len=%d", cfg.WXMiniAppID != "", cfg.WXMiniSecret != "", len(cfg.WXMiniSecret))
+	logx.Info(context.Background(), "configuration", "appid_set", cfg.WXMiniAppID != "", "appsecret_set", cfg.WXMiniSecret != "")
 
 	// 字段级加密是合规铁律（手机号/孩子姓名），密钥必须配置。
 	field, err := crypto.NewFieldCipher(cfg.FieldEncKey)
@@ -204,37 +230,61 @@ func healthz(ctx context.Context, c *app.RequestContext) {
 func accessLog() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		started := time.Now()
-		method := string(c.Request.Method())
-		path := string(c.URI().Path())
-		query := string(c.URI().QueryString())
-		reqID := string(c.GetHeader("X-Request-Id"))
-		if reqID == "" {
-			reqID = newRequestID()
+		id := string(c.GetHeader("X-Request-Id"))
+		if !logx.ValidID(id) {
+			id = logx.ID()
 		}
-		c.Header("X-Request-Id", reqID)
-		if path == "/healthz" {
+		ctx = logx.With(ctx, "request_id", id)
+		c.Header("X-Request-Id", id)
+		c.Set("logx.context", ctx)
+
+		method := string(c.Request.Method())
+		route := c.FullPath()
+		if route == "" {
+			route = "unmatched"
+		}
+		if string(c.URI().Path()) == "/healthz" {
 			c.Next(ctx)
 			return
 		}
-		familyID := string(c.GetHeader("X-Family-Id"))
-		ua := string(c.GetHeader("User-Agent"))
-		if query != "" {
-			path += "?" + query
+		attrs := []any{"method", method, "route", route}
+		if fid, err := strconv.ParseUint(string(c.GetHeader("X-Family-Id")), 10, 64); err == nil && fid > 0 {
+			attrs = append(attrs, "requested_family_id", fid)
 		}
-		logx.Infof("request_in request_id=%s method=%s path=%s client_ip=%s family_id=%s ua=%q",
-			reqID, method, path, c.ClientIP(), familyID, ua)
+		logx.Info(ctx, "request_in", attrs...)
+		defer func() {
+			if value := recover(); value != nil {
+				panicAttrs := append(append([]any(nil), attrs...), "status", 500, "outcome", "failed", "duration_ms", float64(time.Since(started).Microseconds())/1000, "code_locations", logx.CodeLocations())
+				if uid, ok := c.Get("logx.user_id"); ok {
+					panicAttrs = append(panicAttrs, "user_id", uid)
+				}
+				logx.Error(ctx, "request_panicked", panicAttrs...)
+				panic(value)
+			}
+		}()
 
 		c.Next(ctx)
-
 		status := c.Response.StatusCode()
-		// 从请求进入中间件开始，到业务 handler 写完响应为止的总处理耗时。
 		elapsed := time.Since(started)
-		logf := logx.Infof
-		if status >= 500 || elapsed > time.Second {
-			logf = logx.Warnf
+		outcome := "succeeded"
+		level := slog.LevelInfo
+		if status >= 400 {
+			outcome = "rejected"
 		}
-		logf("request_out request_id=%s method=%s path=%s status=%d cost_ms=%.3f client_ip=%s family_id=%s ua=%q",
-			reqID, method, path, status, float64(elapsed.Nanoseconds())/1e6, c.ClientIP(), familyID, ua)
+		if status >= 500 {
+			outcome = "failed"
+			level = slog.LevelError
+		} else if elapsed > time.Second {
+			level = slog.LevelWarn
+		}
+		attrs = append(attrs, "status", status, "duration_ms", float64(elapsed.Microseconds())/1000, "outcome", outcome)
+		if code, ok := c.Get("logx.code"); ok {
+			attrs = append(attrs, "code", code)
+		}
+		if uid, ok := c.Get("logx.user_id"); ok {
+			attrs = append(attrs, "user_id", uid)
+		}
+		logx.Write(ctx, level, "request_out", attrs...)
 	}
 }
 
@@ -261,33 +311,26 @@ func serveWorker() {
 	ctx := context.Background()
 	lastExtend := ""
 	scan := func() {
+		ctx := logx.With(ctx, "batch_id", logx.ID())
 		started := time.Now()
 		now := time.Now().UTC()
-		if err := notifSvc.ProcessDue(ctx); err != nil {
-			logx.Errorf("worker 触达扫描失败: %v", err)
-		}
-		if err := taskSvc.RemindDue(ctx, now); err != nil {
-			logx.Errorf("worker 打卡提醒扫描失败: %v", err)
-		}
-		if err := schedSvc.RemindDue(ctx, now); err != nil {
-			logx.Errorf("worker 日程到点提醒扫描失败: %v", err)
-		}
-		if err := ingestSvc.RecoverStale(ctx); err != nil {
-			logx.Errorf("worker 拍照导入接管失败: %v", err)
-		}
+		_ = scanStep(ctx, "notify", func() error { return notifSvc.ProcessDue(ctx) })
+		_ = scanStep(ctx, "task.remind", func() error { return taskSvc.RemindDue(ctx, now) })
+		_ = scanStep(ctx, "schedule.remind", func() error { return schedSvc.RemindDue(ctx, now) })
+		_ = scanStep(ctx, "ingest.recover", func() error { return ingestSvc.RecoverStale(ctx) })
 		ingestSvc.CleanupOrphans()
 		// 续展每天一次（进程启动后首轮即执行一次）。
 		if day := now.Format("2006-01-02"); day != lastExtend {
 			n, err := schedSvc.ExtendInstances(ctx, now)
 			if err != nil {
-				logx.Errorf("worker 日程实例续展失败: %v", err)
+				logx.Failure(ctx, "schedule.extend", err)
 			} else {
 				lastExtend = day
-				logx.Infof("worker 日程实例续展完成，新增 %d 条", n)
+				logx.Info(ctx, "instances_extended", "count", n)
 			}
 		}
 		if elapsed := time.Since(started); elapsed > 5*time.Second {
-			logx.Warnf("worker 单轮扫描较慢: %.1fms", float64(elapsed.Microseconds())/1000.0)
+			logx.Warn(ctx, "worker_batch_slow", "duration_ms", float64(elapsed.Microseconds())/1000.0)
 		}
 	}
 	scan()
@@ -351,4 +394,11 @@ func withMultiStatements(dsn string) string {
 		sep = "&"
 	}
 	return dsn + sep + "multiStatements=true"
+}
+
+func scanStep(ctx context.Context, name string, fn func() error) error {
+	done := logx.Operation(ctx, "worker."+name, 5*time.Second)
+	err := fn()
+	done(err)
+	return err
 }

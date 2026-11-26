@@ -127,7 +127,7 @@ func (s *HybridStore) UserID(ctx context.Context, token string) (uint64, bool, e
 			return v, true, nil
 		}
 		if err != redis.Nil {
-			logx.Warnf("读取 Redis 会话失败，降级查询数据库: %v", err)
+			logx.Warn(ctx, "session_cache_fallback", append([]any{"operation", "session.get"}, logx.ErrorFields(err)...)...)
 		}
 	}
 	if s.db == nil {
@@ -157,7 +157,7 @@ func (s *HybridStore) setRedisBestEffort(ctx context.Context, token string, user
 		return
 	}
 	if err := s.rdb.Set(ctx, keyPrefix+token, strconv.FormatUint(userID, 10), ttl).Err(); err != nil {
-		logx.Warnf("写入 Redis 会话失败，已使用本地缓存和数据库兜底: %v", err)
+		logx.Warn(ctx, "session_cache_fallback", append([]any{"operation", "session.set"}, logx.ErrorFields(err)...)...)
 	}
 }
 
@@ -185,6 +185,7 @@ func BearerAuth(store SessionStore) app.HandlerFunc {
 		}
 		uid, found, err := store.UserID(ctx, token)
 		if err != nil {
+			logx.Failure(ctx, "session.lookup", err)
 			httpx.Fail(c, httpx.ErrInternal)
 			c.Abort()
 			return
@@ -194,7 +195,10 @@ func BearerAuth(store SessionStore) app.HandlerFunc {
 			c.Abort()
 			return
 		}
-		c.Next(context.WithValue(ctx, userIDKey, uid))
+		ctx = logx.With(context.WithValue(ctx, userIDKey, uid), "user_id", uid)
+		c.Set("logx.user_id", uid)
+		c.Set("logx.context", ctx)
+		c.Next(ctx)
 	}
 }
 

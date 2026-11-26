@@ -118,6 +118,7 @@ func (s *Service) CreateJob(ctx context.Context, userID, familyID uint64) (uint6
 	if err := s.store.CreateJob(ctx, j); err != nil {
 		return 0, err
 	}
+	logx.Info(ctx, "job_created", "job_type", "ingest", "job_id", j.JobID, "family_id", j.FamilyID, "outcome", "persisted")
 	return j.JobID, nil
 }
 
@@ -155,7 +156,7 @@ func (s *Service) UploadImage(ctx context.Context, userID, familyID, jobID uint6
 		return ErrBadState
 	}
 	if err := s.safety.CheckImageSafety(ctx, data); err != nil {
-		logx.Warnf("[ingest] 图片内容安全审核未通过 job=%d seq=%d err=%v", jobID, seq, err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[ingest] 图片内容安全审核未通过 job=%d seq=%d err=%v", jobID, seq, err))
 		return ErrImageUnsafe
 	}
 	if err := s.images.Put(familyID, jobID, seq, data); err != nil {
@@ -207,7 +208,8 @@ func (s *Service) StartJob(ctx context.Context, userID, familyID, jobID uint64) 
 	if !ok {
 		return ErrBadState
 	}
-	go s.Run(context.Background(), jobID, nil)
+	logx.Info(ctx, "job_started", "job_type", "ingest", "job_id", jobID, "family_id", familyID, "state", StatusPending)
+	go s.Run(logx.Detach(ctx), jobID, nil)
 	return nil
 }
 
@@ -247,7 +249,9 @@ func (s *Service) ListJobs(ctx context.Context, userID, familyID uint64, status 
 }
 
 // Confirm 提交最终日程列表：经 schedule 模块单事务批量入库，成功后任务置 confirmed。
-func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, items []ScheduleItem, force bool) ([]uint64, error) {
+func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, items []ScheduleItem, force bool) (result []uint64, err error) {
+	done := logx.Business(logx.With(ctx, "job_type", "ingest", "job_id", jobID), "ingest.confirm")
+	defer func() { done(err) }()
 	if err := s.requireAdmin(ctx, userID, familyID); err != nil {
 		return nil, err
 	}
@@ -300,7 +304,7 @@ func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, i
 	ids, err := s.schedules.CreateBatch(ctx, userID, familyID, jobID, items, force)
 	if err != nil {
 		if ok, e2 := s.store.Transition(ctx, jobID, []string{StatusConfirming}, map[string]any{"status": StatusDone}); e2 != nil || !ok {
-			logx.Errorf("[ingest] 任务 %d 确认失败后恢复 done 失败: ok=%t err=%v", jobID, ok, e2)
+			logx.Error(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 确认失败后恢复 done 失败: ok=%t err=%v", jobID, ok, e2))
 		}
 		return nil, err // 冲突（2005）/ 校验错误透传给前端
 	}
@@ -308,7 +312,7 @@ func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, i
 	if ok, err := s.store.Transition(ctx, jobID, []string{StatusConfirming}, map[string]any{
 		"status": StatusConfirmed, "stats": gormJSON(stats),
 	}); err != nil || !ok {
-		logx.Errorf("[ingest] 任务 %d 置 confirmed 失败: ok=%t err=%v", jobID, ok, err)
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 置 confirmed 失败: ok=%t err=%v", jobID, ok, err))
 		if err != nil {
 			return nil, err
 		}
@@ -320,6 +324,7 @@ func (s *Service) Confirm(ctx context.Context, userID, familyID, jobID uint64, i
 // Run 执行识别。staleBefore=nil：API 刚 start 的任务（pending → running）；
 // 非 nil：Worker 接管心跳早于该时间的任务。执行权由 Store.Claim 的 CAS 保证唯一。
 func (s *Service) Run(ctx context.Context, jobID uint64, staleBefore *time.Time) {
+	ctx = logx.With(ctx, "job_type", "ingest", "job_id", jobID, "run_id", logx.ID())
 	if _, loaded := s.running.LoadOrStore(jobID, struct{}{}); loaded {
 		return
 	}
@@ -329,13 +334,23 @@ func (s *Service) Run(ctx context.Context, jobID uint64, staleBefore *time.Time)
 
 	now := s.now()
 	ok, err := s.store.Claim(ctx, jobID, now, staleBefore)
-	if err != nil || !ok {
+	if err != nil {
+		logx.Failure(ctx, "ingest.claim", err)
+		return
+	}
+	if !ok {
+		logx.Debug(ctx, "job_claim_skipped")
 		return
 	}
 	j, err := s.store.FindJobByID(ctx, jobID)
 	if err != nil || j == nil {
+		if err != nil {
+			logx.Failure(ctx, "ingest.load", err)
+		}
 		return
 	}
+	ctx = logx.With(ctx, "family_id", j.FamilyID)
+	logx.Info(ctx, "job_execution_started", "attempt", j.Attempts)
 	stop := s.startHeartbeat(ctx, jobID)
 	s.execute(ctx, j, now)
 	stop()
@@ -362,7 +377,7 @@ func (s *Service) startHeartbeat(ctx context.Context, jobID uint64) func() {
 func (s *Service) execute(ctx context.Context, j *Job, started time.Time) {
 	children, err := s.id.ChildNames(ctx, j.FamilyID)
 	if err != nil {
-		logx.Errorf("[ingest] 任务 %d 读取孩子失败: %v", j.JobID, err)
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 读取孩子失败: %v", j.JobID, err))
 		children = map[uint64]string{}
 	}
 	var inputs []imageInput
@@ -372,7 +387,7 @@ func (s *Service) execute(ctx context.Context, j *Job, started time.Time) {
 		img := &j.Images[i]
 		out, err := s.recognizeOne(ctx, j, img.Seq)
 		if err != nil {
-			logx.Warnf("[ingest] 任务 %d 第 %d 张识别失败: %v", j.JobID, img.Seq, err)
+			logx.Warn(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 第 %d 张识别失败: %v", j.JobID, img.Seq, err))
 			img.Status = ImageFailed
 			failed++
 			results = append(results, ImageResult{Seq: img.Seq})
@@ -399,19 +414,25 @@ func (s *Service) execute(ctx context.Context, j *Job, started time.Time) {
 		j.Status = StatusDone
 		enc, err := s.encryptResult(&Result{Images: results, Drafts: drafts})
 		if err != nil {
-			logx.Errorf("[ingest] 任务 %d 结果加密失败: %v", j.JobID, err)
+			logx.Error(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 结果加密失败: %v", j.JobID, err))
 			j.Status = StatusFailed
 			j.ErrorCode = 5000
 		}
 		j.ResultEnc = enc
 	}
-	if _, err := s.store.SaveFinal(ctx, j); err != nil {
-		logx.Errorf("[ingest] 任务 %d 保存结果失败: %v", j.JobID, err)
+	saved, err := s.store.SaveFinal(ctx, j)
+	if err != nil {
+		logx.Error(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 保存结果失败: %v", j.JobID, err))
 		return
+	}
+	if saved {
+		logx.Info(ctx, "job_state_changed", "state", j.Status, "duration_ms", j.Stats.DurationMs, "failed_images", failed, "outcome", "persisted")
+	} else {
+		logx.Warn(ctx, "job_final_not_saved")
 	}
 	// 终态即删原图（ADR-006 修订记录 2026-11-03）。
 	if err := s.images.DeleteJob(j.FamilyID, j.JobID); err != nil {
-		logx.Warnf("[ingest] 任务 %d 删除原图失败（Worker 将兜底清理）: %v", j.JobID, err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 删除原图失败（Worker 将兜底清理）: %v", j.JobID, err))
 	}
 	s.notifyDone(ctx, j)
 }
@@ -453,7 +474,7 @@ func (s *Service) notifyDone(ctx context.Context, j *Job) {
 		Payload:      map[string]any{"title": msg, "page": "pages/import-confirm/index?job_id=" + uitoa(j.JobID)},
 		BusinessKey:  "ingest_done:" + uitoa(j.JobID),
 	}); err != nil {
-		logx.Warnf("[ingest] 任务 %d 完成提醒创建失败: %v", j.JobID, err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 完成提醒创建失败: %v", j.JobID, err))
 	}
 }
 
@@ -476,7 +497,7 @@ func (s *Service) RecoverStale(ctx context.Context) error {
 			if !committed && j.ConfirmationVersion == 0 {
 				// Legacy confirmations had no durable batch result. Their commit
 				// outcome cannot be inferred safely from a missing new ledger.
-				logx.Warnf("[ingest] 旧确认任务需核对已创建日程 family=%d job=%d", j.FamilyID, j.JobID)
+				logx.Warn(ctx, "legacy_operation", "message", logx.Format("[ingest] 旧确认任务需核对已创建日程 family=%d job=%d", j.FamilyID, j.JobID))
 				continue
 			}
 			fields := map[string]any{"status": StatusDone}
@@ -487,7 +508,7 @@ func (s *Service) RecoverStale(ctx context.Context) error {
 			if ok, err := s.store.Transition(ctx, j.JobID, []string{StatusConfirming}, fields); err != nil {
 				return err
 			} else if !ok {
-				logx.Infof("[ingest] 任务 %d 已被其他请求恢复", j.JobID)
+				logx.Info(ctx, "legacy_operation", "message", logx.Format("[ingest] 任务 %d 已被其他请求恢复", j.JobID))
 			}
 			continue
 		}
@@ -506,22 +527,23 @@ func (s *Service) RecoverStale(ctx context.Context) error {
 		if j.Status == StatusPending {
 			cutoff = pendingBefore
 		}
-		logx.Infof("[ingest] Worker 接管任务 %d（第 %d 次执行）", j.JobID, j.Attempts+1)
+		logx.Info(ctx, "legacy_operation", "message", logx.Format("[ingest] Worker 接管任务 %d（第 %d 次执行）", j.JobID, j.Attempts+1))
 		// 异步执行，避免阻塞 Worker 的触达扫描（接送提醒不能被识别耗时拖慢）。
-		go s.Run(context.Background(), j.JobID, &cutoff)
+		go s.Run(logx.Detach(ctx), j.JobID, &cutoff)
 	}
 	return nil
 }
 
 // CleanupOrphans Worker 每轮调用：删除超过 24h 的残留原图目录（进程异常中断兜底）。
 func (s *Service) CleanupOrphans() {
+	ctx := context.Background()
 	n, err := s.images.CleanupOlderThan(s.now().Add(-orphanDirAfter))
 	if err != nil {
-		logx.Warnf("[ingest] 清理残留原图失败: %v", err)
+		logx.Warn(ctx, "legacy_operation", "message", logx.Format("[ingest] 清理残留原图失败: %v", err))
 		return
 	}
 	if n > 0 {
-		logx.Infof("[ingest] 清理残留原图目录 %d 个", n)
+		logx.Info(ctx, "legacy_operation", "message", logx.Format("[ingest] 清理残留原图目录 %d 个", n))
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"ifami/internal/pkg/logx"
 	"strconv"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 )
 
 var errJoinCollision = errors.New("join code collision")
+var joinLimitedLog logx.Throttle
 
 // JoinRegistration is encrypted before persistence; plaintext never enters Redis.
 type JoinRegistration struct {
@@ -79,20 +81,23 @@ func (r *RedisJoinCodeRegistry) family(fid uint64) string {
 func (r *RedisJoinCodeRegistry) ready() bool {
 	return r.client != nil && r.field != nil && r.secret != ""
 }
-func (r *RedisJoinCodeRegistry) decode(v string) (*JoinRegistration, error) {
+func (r *RedisJoinCodeRegistry) decode(ctx context.Context, v string) (*JoinRegistration, error) {
 	if v == "" {
 		return nil, nil
 	}
 	var raw []byte
 	if e := json.Unmarshal([]byte(v), &raw); e != nil {
+		logx.Failure(ctx, "join.decode_json", e)
 		return nil, ErrJoinUnavailable
 	}
 	plain, e := r.field.Decrypt(raw)
 	if e != nil {
+		logx.Failure(ctx, "join.decrypt", e)
 		return nil, ErrJoinUnavailable
 	}
 	var out JoinRegistration
 	if e = json.Unmarshal(plain, &out); e != nil {
+		logx.Failure(ctx, "join.decode_record", e)
 		return nil, ErrJoinUnavailable
 	}
 	return &out, nil
@@ -107,13 +112,14 @@ return redis.call('HGET',KEYS[1],'data') or ''`
 
 func (r *RedisJoinCodeRegistry) Current(ctx context.Context, fid uint64, now time.Time) (*JoinRegistration, error) {
 	if !r.ready() {
+		logx.Error(ctx, "join_registry_unavailable", "cause", "missing_configuration")
 		return nil, ErrJoinUnavailable
 	}
-	v, e := r.client.Eval(ctx, currentJoinLua, []string{r.family(fid)}, now.Unix()).Text()
+	v, e := r.eval(ctx, currentJoinLua, []string{r.family(fid)}, now.Unix()).Text()
 	if e != nil {
 		return nil, ErrJoinUnavailable
 	}
-	return r.decode(v)
+	return r.decode(ctx, v)
 }
 
 const rotateJoinLua = `
@@ -138,6 +144,7 @@ return ARGV[3]`
 
 func (r *RedisJoinCodeRegistry) Rotate(ctx context.Context, in *JoinRegistration, key string, now time.Time) (*JoinRegistration, error) {
 	if !r.ready() {
+		logx.Error(ctx, "join_registry_unavailable", "cause", "missing_configuration")
 		return nil, ErrJoinUnavailable
 	}
 	raw, e := json.Marshal(in)
@@ -154,14 +161,14 @@ func (r *RedisJoinCodeRegistry) Rotate(ctx context.Context, in *JoinRegistration
 	}
 	index := r.prefix + "digit:" + r.digest(in.JoinCode)
 	op := r.prefix + "op:" + r.digest(strconv.FormatUint(in.ActorUserID, 10)+":"+strconv.FormatUint(in.FamilyID, 10)+":"+key)
-	v, e := r.client.Eval(ctx, rotateJoinLua, []string{r.family(in.FamilyID), index, op}, now.Unix(), in.GenerationID, string(data), in.ExpiresAt.Unix()).Text()
+	v, e := r.eval(ctx, rotateJoinLua, []string{r.family(in.FamilyID), index, op}, now.Unix(), in.GenerationID, string(data), in.ExpiresAt.Unix()).Text()
 	if e != nil {
 		return nil, ErrJoinUnavailable
 	}
 	if v == "COLLISION" {
 		return nil, errJoinCollision
 	}
-	return r.decode(v)
+	return r.decode(ctx, v)
 }
 
 const revokeJoinLua = `
@@ -172,9 +179,10 @@ redis.call('DEL',KEYS[1]); return 1`
 
 func (r *RedisJoinCodeRegistry) Revoke(ctx context.Context, fid uint64, generation string, now time.Time) error {
 	if !r.ready() {
+		logx.Error(ctx, "join_registry_unavailable", "cause", "missing_configuration")
 		return ErrJoinUnavailable
 	}
-	if e := r.client.Eval(ctx, revokeJoinLua, []string{r.family(fid)}, generation).Err(); e != nil {
+	if e := r.eval(ctx, revokeJoinLua, []string{r.family(fid)}, generation).Err(); e != nil {
 		return ErrJoinUnavailable
 	}
 	return nil
@@ -188,13 +196,14 @@ return redis.call('HGET',family,'data') or ''`
 
 func (r *RedisJoinCodeRegistry) Resolve(ctx context.Context, code string, now time.Time) (*JoinRegistration, error) {
 	if !r.ready() {
+		logx.Error(ctx, "join_registry_unavailable", "cause", "missing_configuration")
 		return nil, ErrJoinUnavailable
 	}
-	v, e := r.client.Eval(ctx, resolveJoinLua, []string{r.prefix + "digit:" + r.digest(code)}, now.Unix()).Text()
+	v, e := r.eval(ctx, resolveJoinLua, []string{r.prefix + "digit:" + r.digest(code)}, now.Unix()).Text()
 	if e != nil {
 		return nil, ErrJoinUnavailable
 	}
-	return r.decode(v)
+	return r.decode(ctx, v)
 }
 func (r *RedisJoinCodeRegistry) guardKeys(uid uint64, ip string) []string {
 	return []string{r.prefix + "failed:user:" + strconv.FormatUint(uid, 10), r.prefix + "failed:ip:" + r.digest(ip)}
@@ -263,6 +272,7 @@ return 1`
 
 func (r *RedisJoinCodeRegistry) Reserve(ctx context.Context, uid uint64, ip string) (*JoinLookupReservation, error) {
 	if !r.ready() {
+		logx.Error(ctx, "join_registry_unavailable", "cause", "missing_configuration")
 		return nil, ErrJoinUnavailable
 	}
 	token := make([]byte, 16)
@@ -271,14 +281,16 @@ func (r *RedisJoinCodeRegistry) Reserve(ctx context.Context, uid uint64, ip stri
 	}
 	keys := r.guardKeys(uid, ip)
 	keys = append(keys, keys[0]+":epoch", keys[1]+":epoch", r.prefix+"budget:"+hex.EncodeToString(token))
-	epochs, err := r.client.Eval(ctx, reserveJoinLua, keys, r.protection.UserLimit, r.protection.IPLimit, r.protection.Window.Milliseconds(), hex.EncodeToString(token)).StringSlice()
+	epochs, err := r.eval(ctx, reserveJoinLua, keys, r.protection.UserLimit, r.protection.IPLimit, r.protection.Window.Milliseconds(), hex.EncodeToString(token)).StringSlice()
 	if err != nil {
 		return nil, ErrJoinUnavailable
 	}
 	if len(epochs) == 0 {
+		joinLimitedLog.Warn(ctx, "join_lookup_limited", 5*time.Second, "operation", "redis.join.reserve", "code", 1016)
 		return nil, ErrJoinLimited
 	}
 	if len(epochs) != 2 {
+		logx.Error(ctx, "reservation_unconfirmed", "operation", "redis.join.reserve", "cause", "unexpected_reply")
 		return nil, ErrJoinUnavailable
 	}
 	return &JoinLookupReservation{keys: keys, epochs: epochs}, nil
@@ -295,9 +307,32 @@ func (r *RedisJoinCodeRegistry) Finish(ctx context.Context, reservation *JoinLoo
 		if failed {
 			keep = 1
 		}
-		if done, err := r.client.Eval(ctx, finishJoinLua, reservation.keys, keep, reservation.epochs[0], reservation.epochs[1]).Int(); err != nil || done != 1 {
+		if done, err := r.eval(ctx, finishJoinLua, reservation.keys, keep, reservation.epochs[0], reservation.epochs[1]).Int(); err != nil || done != 1 {
+			logx.Error(ctx, "reservation_unconfirmed", "operation", "redis.join.finish", "cause", "missing_or_mismatched_receipt")
 			reservation.finishErr = ErrJoinUnavailable
 		}
 	})
 	return reservation.finishErr
+}
+
+func (r *RedisJoinCodeRegistry) eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd {
+	name := "unknown"
+	switch script {
+	case currentJoinLua:
+		name = "current"
+	case rotateJoinLua:
+		name = "rotate"
+	case revokeJoinLua:
+		name = "revoke"
+	case resolveJoinLua:
+		name = "resolve"
+	case reserveJoinLua:
+		name = "reserve"
+	case finishJoinLua:
+		name = "finish"
+	}
+	done := logx.Operation(ctx, "redis.join."+name, 200*time.Millisecond)
+	cmd := r.client.Eval(ctx, script, keys, args...)
+	done(cmd.Err())
+	return cmd
 }
